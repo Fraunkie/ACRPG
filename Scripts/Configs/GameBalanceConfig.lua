@@ -131,4 +131,97 @@ GameBalance.NODE_COORDS = GameBalance.NODE_COORDS or {
     },
 }
 
+--==================================================
+-- Respawn / Elite / Threat knobs (added; merge-safe)
+--==================================================
+do
+    local function ensureTable(tbl, k)
+        if type(tbl[k]) ~= "table" then tbl[k] = {} end
+        return tbl[k]
+    end
+    local function ensure(tbl, k, v)
+        if tbl[k] == nil then tbl[k] = v end
+        return tbl[k]
+    end
+    local function mergeDefaults(dst, defaults)
+        for k, v in pairs(defaults) do
+            if type(v) == "table" then
+                ensureTable(dst, k)
+                mergeDefaults(dst[k], v)
+            else
+                if dst[k] == nil then dst[k] = v end
+            end
+        end
+    end
+
+    -- Default profile set (only fills missing keys)
+    local DEFAULT_RESPAWN_PROFILES = {
+        Default           = { delay = 10.0, jitter = 4.0, batch = 2, throttlePerSec = 8 },
+        HFIL_Starter      = { delay = 10.0, jitter = 4.0, batch = 2, throttlePerSec = 8 },
+        Overworld_Default = { delay = 22.0, jitter = 6.0, batch = 3, throttlePerSec = 6 },
+        Dungeon_NoTrash   = { delay = 9999.0, jitter = 0.0, batch = 0, throttlePerSec = 0 },
+        Dungeon_Wipe      = { delay = 28.0,   jitter = 6.0, batch = 4, throttlePerSec = 4 },
+        Trial_Phase1      = { delay = 14.0, jitter = 4.0, batch = 3, throttlePerSec = 6 },
+        Trial_Phase2      = { delay = 18.0, jitter = 5.0, batch = 3, throttlePerSec = 5 },
+        Trial_Phase3      = { delay = 24.0, jitter = 6.0, batch = 2, throttlePerSec = 4 },
+    }
+
+    local DEFAULT_ELITE_CONFIG = {
+        defaultChance        = 2,     -- percent
+        hpX                  = 3.0,   -- HP multiplier
+        dmgX                 = 1.5,   -- damage multiplier
+        eliteCapPerZone      = 12,
+        eliteCapPerCamp      = 1,
+        eliteCooldownPerCamp = 90,    -- seconds
+        scale                = 1.10,
+        nameTagPrefix        = "[Elite] ",
+        rewardSoulMult       = 2.0,
+        rewardLootTierBonus  = 1,
+        rewardChestChanceBonus = 15,  -- percent
+    }
+
+    local DEFAULT_THREAT_CONFIG = {
+        Elite = {
+            dmgMult     = 2.0,
+            abilityMult = 1.5,
+            healerMult  = 1.25,
+        },
+        Spawn = {
+            basePing      = 15,
+            enablePing    = true,
+            graceSuppress = true,
+        },
+        Pack = {
+            leaderAuraThreatBonus = 0.10,
+            linkFocus             = true,
+        },
+        Taunt = {
+            eliteStickBonus = 1.5,
+            eliteResistAfter= 1.0,
+        },
+    }
+
+    GameBalance.RespawnProfiles = GameBalance.RespawnProfiles or {}
+    GameBalance.EliteConfig     = GameBalance.EliteConfig     or {}
+    GameBalance.Threat          = GameBalance.Threat          or {}
+
+    mergeDefaults(GameBalance.RespawnProfiles, DEFAULT_RESPAWN_PROFILES)
+    mergeDefaults(GameBalance.EliteConfig,     DEFAULT_ELITE_CONFIG)
+    mergeDefaults(GameBalance.Threat,          DEFAULT_THREAT_CONFIG)
+
+    -- Zone → default profile mapping (controllers can switch these at runtime)
+    GameBalance.ZoneRespawnProfile = GameBalance.ZoneRespawnProfile or {}
+    local Z = GameBalance.ZoneRespawnProfile
+    if Z.HFIL       == nil then Z.HFIL       = "HFIL_Starter" end
+    if Z.OVERWORLD  == nil then Z.OVERWORLD  = "Overworld_Default" end
+    if Z.DUNGEON    == nil then Z.DUNGEON    = "Dungeon_NoTrash" end
+    if Z.TRIAL      == nil then Z.TRIAL      = "Trial_Phase1" end
+end
+
+OnInit.final(function()
+    if InitBroker and InitBroker.SystemReady then
+        InitBroker.SystemReady("GameBalanceConfig")
+    end
+end)
+
 if Debug and Debug.endFile then Debug.endFile() end

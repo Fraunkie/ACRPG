@@ -1,0 +1,106 @@
+# 🌌 **Animecraft RPG**
+**A Multiverse Warcraft III RPG Experience**  
+*Created and directed by Gizmo*  
+*Powered by ChatGPT (GPT-5) collaboration*  
+
+---
+
+## 🧠 Overview
+
+**Animecraft RPG** is a fully custom **Warcraft III Reforged** map merging multiple anime universes into one connected world.  
+You awaken as a lost soul in **HFIL** — the “Home For Infinite Losers” — after the catastrophic **Great Convergence** tore rifts across worlds.  
+From there, you’ll rebuild your power, earn your life back, and ascend through universes.
+
+---
+
+## ⚔️ Gameplay Highlights
+
+### 🕊️ The Soul & Spirit Systems
+- **Soul Energy** – your XP system inspired by RuneScape. Earned **only on kill**, not per hit.  
+- **Spirit Drive** – a rage-like meter that fills on combat hits (+8 per hit default) and drains OOC.  
+  When full, it enables Ascension, special skills, or ultimate bursts.
+
+### 💀 HFIL – Starting Zone
+- Tutorial hub led by **King Yemma**.  
+- Learn Souls, Fragments, and Threat mechanics.  
+- Souls = progression XP → raise Power Level → unlock new zones.
+
+### 💎 Fragments & Shards
+- Duplicate Shards convert to **Fragments** (main currency).  
+- Each family (Saiyan, Namekian, Pokémon, etc.) has unique Shards & Ascension paths.  
+- Charged Shards are consumed at **Ascension Gates** to transform heroes.
+
+### 🔮 Ascension Gates
+- Require Charged Shard + Tier + Power Level + Full Spirit Drive.  
+- Grant temporary buff packages and permanent unlocks.  
+- Each Gate features cinematic FX and timed challenges.
+
+### ⚔️ Combat & Threat
+- **ThreatSystem** tracks per-unit aggro like WoW, with decay and healing threat.  
+- **AggroManager** links packs and handles AI taunts or assists.  
+- **CombatHUD** shows target threat list and group average DPS.
+
+### 💰 Loot & Economy
+- **Shared Loot:** each player in the threat group gets personal drops.  
+- **Roll Chest:** rare items spawn shared rollable chests for timed rolls.  
+- **Fragments** = main economy; **Soul Energy** = progression XP.  
+- If inventory is full, loot auto-routes to the **Bag Follower Unit** (ignored in combat).
+
+---
+
+## 🏰 Core Systems
+
+| Category | File | Description |
+|-----------|------|-------------|
+| Config | `GameBalanceConfig.lua` | Master tuning knobs and IDs |
+| Player | `PlayerData.lua` | Per-player runtime store |
+| Progression | `SoulEnergy.lua`, `SpiritDrive.lua`, `SpiritDriveOOC.lua` | XP & Rage Systems |
+| Combat | `CombatEventsBridge.lua`, `ThreatSystem.lua`, `AggroManager.lua`, `ThreatBridge.lua` | Damage, Threat & AI |
+| UI | `CombatThreatHUD.lua`, `PlayerMenu.lua`, `SpiritPowerLabelBridge.lua` | HUD and UI Modules |
+| Utility | `InitBroker.lua`, `ChatTriggerRegistry.lua`, `DevMode.lua`, `Dev_commands.lua` | Init and Dev Tools |
+
+---
+
+## 🧩 Development Workflow
+
+### Total Initialization
+Every system runs inside `OnInit.final()` — **load order no longer matters.**
+
+### Centralized Chat Commands
+All dev and test commands live in `ChatTriggerRegistry.lua` for clean maintenance.
+
+### Threat & AI Integration
+`ThreatSystem` and `AggroManager` cooperate to decide:
+- Which target each mob attacks  
+- When packs assist or reset  
+- When AI switches target based on Threat ratios  
+
+### Loot System Bridge
+`CombatEventsBridge` → Loot systems → drops items to heroes or Bag.  
+Shared rolls display winner to all and announce via UI toast.
+
+---
+
+## 🧠 Technical Summary
+- 100 % Lua with Total Initialization.  
+- No `%` in strings (uses concatenation).  
+- No top-level natives — FourCC runs inside `OnInit.final`.  
+- Fully editor-safe (WC3 syntax & save).  
+- Modular and hot-reloadable via InitBroker system.  
+
+---
+
+## 📚 Codex System
+The **Lore Codex** is the in-game encyclopedia that unlocks as you progress:
+- **Pages** are awarded from quests, zone entries, boss kills, and cinematics.  
+- **UI Panel Hotkey:** `L` (to open per-player Codex window).  
+- **Debug Commands:** `-lore give <id>`, `-lore reset`, `-lore all`.  
+- Each entry contains narrative text and art fragments for the Great Convergence.  
+
+---
+
+## 🧠 Sync & Snapshot System
+
+### Snapshot Builder
+```bash
+python tools/make_snapshot.py

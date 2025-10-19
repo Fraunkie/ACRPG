@@ -2,88 +2,140 @@ if Debug and Debug.beginFile then Debug.beginFile("PlayerData.lua") end
 --==================================================
 -- PlayerData.lua
 -- Canonical per-player runtime store and helpers
--- Adds onboarding flags for Yemma Choice flow
+-- • Includes soul progression mirrors and XP bonus knob
+-- • ASCII only
 --==================================================
 
 do
     PlayerData = PlayerData or {}
     _G.PlayerData = PlayerData
 
-    -- Public: get or create the per-player table
-    function PlayerData.Get(pid)
-        if not PLAYER_DATA then PLAYER_DATA = {} end
-        PLAYER_DATA[pid] = PLAYER_DATA[pid] or PlayerData._defaultTable()
-        return PLAYER_DATA[pid]
-    end
-
-    -- Public: shallow set helper
-    function PlayerData.Set(pid, key, value)
-        local t = PlayerData.Get(pid)
-        t[key] = value
-        return t[key]
-    end
-
-    -- Public: get helper with default fallback
-    function PlayerData.GetField(pid, key, defaultValue)
-        local t = PlayerData.Get(pid)
-        local v = t[key]
-        if v == nil then
-            return defaultValue
-        end
-        return v
-    end
-    
-    -- Public: resets only the Yemma Choice onboarding flags for this player
-    function PlayerData.ResetStartFlags(pid)
-        local t = PlayerData.Get(pid)
-        t.hasStarted = false
-        t.introChoice = nil
-        t.yemmaPromptShown = false
-        t.yemmaPromptMinimized = false
-        t.introCompleted = false -- Track if the intro is completed
-        t.introStyle = nil      -- Store selected intro style (e.g., "Full" or "Skip")
-    end
-
-    -- Internal: default per-player table
-    function PlayerData._defaultTable()
+    -- Default per-player table
+    local function defaultTable()
         return {
             hero = nil,
             tier = 0,
             role = "NONE",
             zone = "YEMMA",
             powerLevel = 0,
-            soulEnergy = 0,
-            fragments = 0,
-            ownedShards = {},
-            spiritDrive = 0,
+
+            -- Soul progression mirrors (Runescape-like)
+            soulEnergy = 0,     -- total lifetime soul points (for now)
+            soulLevel  = 1,
+            soulXP     = 0,
+            soulNextXP = 200,
+
+            -- Tunables and bonuses
+            xpBonusPercent = 0,          -- numeric percent
+            statChanceBonusPermil = 0,   -- out of 1000
+            dropLuckBonusPermil = 0,
+
+            -- Currency / ownership
+            fragments    = 0,
+            ownedShards  = {},
+
+            -- Spirit Drive
+            spiritDrive  = 0,
+
+            -- UX toggles
             lootChatEnabled = true,
 
-            -- Onboarding flags for the Yemma Choice flow
-            hasStarted = false,
-            introChoice = nil,  -- Track the intro style choice
-            yemmaPromptShown = false,
-            yemmaPromptMinimized = false,
+            -- capsule bags
+            capsulebag = nil,
 
-            -- Intro-related flags
-            introCompleted = false, -- Whether the intro has been completed
-            introStyle = nil,      -- The chosen intro style ("Full" or "Skip")
+            -- Intro / Yemma flow
+            hasStarted            = false,
+            introChoice           = nil,
+            introCompleted        = false,
+            introStyle            = nil,
+            yemmaPromptShown      = false,
+            yemmaPromptMinimized  = false,
 
-            -- Session flags reserved for Teleport and Hub flows
-            teleports = {},
+            -- Tasks (legacy mirror; safe defaults)
+            hfilTask = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" },
+            activeTask = nil,
+
+            -- Misc session
+            teleports  = {},
+            killCounts = {},
+            lastKillAt = 0,
+            statFinds  = 0,
+            pity       = { stat=0, shard=0, fragment=0 },
+            xpShareEnabled = true,
         }
     end
 
-    -- Ensure all player tables exist at startup
+    -- Public API
+    function PlayerData.Get(pid)
+        if not PLAYER_DATA then PLAYER_DATA = {} end
+        PLAYER_DATA[pid] = PLAYER_DATA[pid] or defaultTable()
+        return PLAYER_DATA[pid]
+    end
+
+    function PlayerData.Set(pid, key, val)
+        local t = PlayerData.Get(pid)
+        t[key] = val
+        return t[key]
+    end
+
+    function PlayerData.GetField(pid, key, defaultValue)
+        local t = PlayerData.Get(pid)
+        local v = t[key]
+        if v == nil then return defaultValue end
+        return v
+    end
+
+    -- Legacy task helpers (kept for UI safety)
+    function PlayerData.SetActiveTask(pid, task)
+        local pd = PlayerData.Get(pid)
+        local ht = pd.hfilTask
+        ht.active   = true
+        ht.id       = task.id or ht.id
+        ht.name     = task.name or ""
+        ht.desc     = task.desc or ""
+        ht.goalType = task.goalType or ""
+        ht.rarity   = task.rarity or "Common"
+        ht.need     = task.goal or task.need or 1
+        ht.have     = task.progress or 0
+        pd.activeTask = { name=ht.name, rarity=ht.rarity, goal=ht.need, progress=ht.have }
+        return ht
+    end
+
+    function PlayerData.GetActiveTask(pid)
+        local pd = PlayerData.Get(pid)
+        local ht = pd.hfilTask
+        if ht and ht.active then
+            return { name=ht.name, rarity=ht.rarity, goal=ht.need, progress=ht.have }
+        end
+        return nil
+    end
+
+    function PlayerData.AddTaskProgress(pid, amount)
+        local pd = PlayerData.Get(pid)
+        local ht = pd.hfilTask
+        if not ht or not ht.active then return end
+        ht.have = math.min((ht.have or 0) + (amount or 1), ht.need or 1)
+        pd.activeTask = { name=ht.name, rarity=ht.rarity, goal=ht.need, progress=ht.have }
+    end
+
+    function PlayerData.ClearTask(pid)
+        local pd = PlayerData.Get(pid)
+        pd.hfilTask = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" }
+        pd.activeTask = nil
+    end
+
+    -- Boot-time ensure for all human slots
     OnInit.final(function()
         if not PLAYER_DATA then PLAYER_DATA = {} end
-        for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do
+        for pid=0,bj_MAX_PLAYERS-1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
-                PLAYER_DATA[pid] = PLAYER_DATA[pid] or PlayerData._defaultTable()
+                PLAYER_DATA[pid] = PLAYER_DATA[pid] or defaultTable()
             end
         end
-        print("[PlayerData] Initialized per-player tables")
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+            InitBroker.SystemReady("PlayerData")
+        end
     end)
-
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

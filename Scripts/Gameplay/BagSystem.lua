@@ -13,7 +13,7 @@ do
     --------------------------------------------------
     -- Config
     --------------------------------------------------
-    local BAG_UNIT_ID  = FourCC("hBAG") -- custom bag unit
+    local BAG_UNIT_ID  = FourCC("H003") -- custom bag unit
     local CHECK_INTERVAL = 0.50
     local MAX_DISTANCE = (GameBalance and GameBalance.BAG and GameBalance.BAG.MAX_DISTANCE) or 400.0
     local FX_ON_SNAP = (GameBalance and GameBalance.BAG and GameBalance.BAG.FX_ON_SNAP)

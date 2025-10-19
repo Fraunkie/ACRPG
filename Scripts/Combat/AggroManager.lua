@@ -15,9 +15,9 @@ if not AggroManager then AggroManager = {} end
 _G.AggroManager = AggroManager
 
 do
-    --------------------------------------------------
+    ---------------------------------------------------
     -- Config
-    --------------------------------------------------
+    ---------------------------------------------------
     local BASE_PER_HIT    = 1.0     -- flat threat per damaging hit
     local SCALE_PER_DMG   = 0.5     -- threat per raw damage point
     local SCALE_PER_HEAL  = 0.5     -- threat per effective healing point

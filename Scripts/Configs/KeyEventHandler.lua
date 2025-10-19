@@ -1,55 +1,71 @@
 if Debug and Debug.beginFile then Debug.beginFile("KeyEventHandler.lua") end
+--==================================================
+-- KeyEventHandler.lua
+-- Centralized key events with per-player debounce.
+-- • L toggles PlayerMenu
+-- • P toggles CombatThreatHUD
+-- • No percent symbols anywhere
+--==================================================
 
--- Centralized Key Event Management
-local keyState = {}  -- Table to track debounce states
+do
+    -- per player -> per key -> last time pressed
+    local lastPress = {}      -- lastPress[pid][key] = os.clock value
+    local debounce  = {       -- seconds per key
+        [OSKEY_L] = 0.25,
+        [OSKEY_P] = 0.25,
+    }
 
--- Config (for each custom key)
-local keyConfig = {
-    [OSKEY_L] = { debounce = 0.25, isPressed = false, action = "toggleMenu" },  -- 'L' toggles Player Menu
-    -- Add more keys here if needed (e.g., OSKEY_P for other actions)
-}
-
--- Function to handle key events (with debounce)
-local function HandleKeyEvent(pid, key)
-    local keyInfo = keyConfig[key]
-    if not keyInfo or keyInfo.isPressed then return end  -- If no action or key is still in cooldown, do nothing
-
-    keyInfo.isPressed = true  -- Mark key as pressed
-    DisplayTextToPlayer(Player(pid), 0, 0, "[Debug] Key Pressed: " .. key)  -- Debug output for key press
-
-    -- Perform the action based on the key pressed
-    if keyInfo.action == "toggleMenu" then
-        -- Call Player Menu toggle function
-        PlayerMenu.Toggle(pid)
+    -- helpers
+    local function now()
+        if os and os.clock then return os.clock() end
+        return 0
+    end
+    local function okToFire(pid, key)
+        lastPress[pid] = lastPress[pid] or {}
+        local t = now()
+        local lp = lastPress[pid][key] or 0
+        if (t - lp) < (debounce[key] or 0.25) then return false end
+        lastPress[pid][key] = t
+        return true
     end
 
-    -- Debounce: Set a timer to reset the key state after debounce time
-    local t = CreateTimer()
-    TimerStart(t, keyInfo.debounce, false, function()
-        keyInfo.isPressed = false  -- Reset debounce
-        DestroyTimer(t)
-    end)
-end
+    local function handle(pid, key)
+        if not okToFire(pid, key) then return end
 
--- Register key events for all players
-OnInit.final(function()
-    -- Register player key events
-    for pid = 0, bj_MAX_PLAYERS - 1 do
-        local trig = CreateTrigger()
-        for key, _ in pairs(keyConfig) do
-            -- Register OS key event for each key
-            BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), key, 0, true)
+        -- L -> PlayerMenu
+        if key == OSKEY_L then
+            if _G.PlayerMenu and PlayerMenu.Toggle then
+                pcall(PlayerMenu.Toggle, pid)
+            end
+            return
         end
 
-        TriggerAddAction(trig, function()
-            local p = GetTriggerPlayer()
-            local id = GetPlayerId(p)
-            -- We check which key was pressed using the `key` config
-            local pressedKey = GetTriggerPlayer()  -- Check the key press and validate it
-
-            HandleKeyEvent(id, pressedKey)  -- Call the handler
-        end)
+        -- P -> CombatThreatHUD
+        if key == OSKEY_P then
+            if _G.CombatThreatHUD and CombatThreatHUD.Toggle then
+                pcall(CombatThreatHUD.Toggle, pid)
+            end
+            return
+        end
     end
-end)
+
+    OnInit.final(function()
+        -- one trigger per player, register both keys
+        for pid = 0, bj_MAX_PLAYERS - 1 do
+            local trig = CreateTrigger()
+            BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_L, 0, true)
+            BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_P, 0, true)
+            TriggerAddAction(trig, function()
+                local p   = GetTriggerPlayer()
+                local id  = GetPlayerId(p)
+                local key = BlzGetTriggerPlayerKey()
+                handle(id, key)
+            end)
+        end
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+            InitBroker.SystemReady("KeyEventHandler")
+        end
+    end)
+end
 
 if Debug and Debug.endFile then Debug.endFile() end

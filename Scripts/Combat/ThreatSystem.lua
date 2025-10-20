@@ -1,9 +1,14 @@
 if Debug and Debug.beginFile then Debug.beginFile("ThreatSystem.lua") end
 --==================================================
--- ThreatSystem.lua  (proxy + nil-safe ignores)
--- • Nil-safe Bag detection (no hard dependency)
--- • Thin wrapper that forwards threat to AggroManager
--- • Wires to ProcBus: OnDealtDamage, OnKill
+-- ThreatSystem.lua
+-- Minimal, safe threat tracker used by HUD and SD.
+--  • Stores threat per target unit
+--  • Accepts source as unit OR pid
+--  • Nil / invalid unit guarded everywhere
+--  • Compatible with readers:
+--      _raw[targetHandle].byPid, bySrcHandle, sum
+--  • Optional helpers: Register, ClearUnit, Dump
+--  • Spawn/Death shims: OnCreepSpawn / OnCreepDeath
 --==================================================
 
 if not ThreatSystem then ThreatSystem = {} end
@@ -13,126 +18,105 @@ do
     --------------------------------------------------
     -- Helpers
     --------------------------------------------------
-    local function DEV_ON()
-        local DM = rawget(_G, "DevMode")
-        if DM and type(DM.IsOn) == "function" then return DM.IsOn() end
-        if DM and type(DM.IsEnabled) == "function" then return DM.IsEnabled() end
-        return false
-    end
-    local function dprint(s) if DEV_ON() then print("[ThreatSystem] " .. tostring(s)) end end
+    local function ValidUnit(u) return u ~= nil and GetUnitTypeId(u) ~= 0 end
 
-    local function validUnit(u) return u and GetUnitTypeId(u) ~= 0 end
-    local function pidOf(u) local p = u and GetOwningPlayer(u) return p and GetPlayerId(p) end
-
-    -- Nil-safe "Bag" ignore and a couple of fallbacks
-    local function isIgnored(u)
-        if not validUnit(u) then return true end
-
-        -- 1) Optional Bag system (guarded)
-        do
-            local B = rawget(_G, "Bag")
-            if B then
-                if type(B.IsBagUnit) == "function" then
-                    local ok, res = pcall(B.IsBagUnit, u)
-                    if ok and res then return true end
-                elseif type(B.IsBag) == "function" then
-                    local ok, res = pcall(B.IsBag, u)
-                    if ok and res then return true end
-                end
-            end
-        end
-
-        -- 2) Optional hard filter via GameBalance.THREAT_IGNORE_TYPES
-        do
-            local GB = rawget(_G, "GameBalance")
-            local ignore = GB and GB.THREAT_IGNORE_TYPES
-            if ignore then
-                local ut = GetUnitTypeId(u)
-                if ignore[ut] then return true end
-            end
-        end
-
-        -- 3) Best-effort name sniff (plain, case-insensitive)
-        do
-            local nm = GetUnitName(u)
-            if nm then
-                local s = string.lower(nm)
-                if string.find(s, "bag", 1, true) then
-                    return true
-                end
-            end
-        end
-
-        return false
-    end
-
-    --------------------------------------------------
-    -- Public API (forward to AggroManager)
-    --------------------------------------------------
-    function ThreatSystem.AddThreat(source, target, amount)
-        if not validUnit(source) or not validUnit(target) then return end
-        if isIgnored(source) or isIgnored(target) then return end
-        local pid = pidOf(source)
-        if pid == nil then return end
-        local amt = tonumber(amount or 0) or 0
-        if amt <= 0 then return end
-
-        if _G.AggroManager and AggroManager.AddThreat then
-            AggroManager.AddThreat(target, pid, amt)
-        end
-    end
-
-    function ThreatSystem.ClearTarget(target)
-        if not validUnit(target) then return end
-        if _G.AggroManager and AggroManager.ClearTarget then
-            AggroManager.ClearTarget(target)
-        end
-    end
-
-    -- Optional: expose top threat query (proxy)
-    function ThreatSystem.GetTop(target)
-        if _G.AggroManager and AggroManager.GetTop then
-            return AggroManager.GetTop(target)
+    local function pidOf(src)
+        if type(src) == "number" then return src end
+        if ValidUnit(src) then
+            local p = GetOwningPlayer(src)
+            if p then return GetPlayerId(p) end
         end
         return nil
     end
 
-    --------------------------------------------------
-    -- ProcBus wiring
-    --------------------------------------------------
-    local function wireBus()
-        local PB = rawget(_G, "ProcBus")
-        if not PB or type(PB.On) ~= "function" then
-            dprint("ProcBus not found; threat will not auto-update")
-            return
+    local function cellFor(target)
+        ThreatSystem._raw = ThreatSystem._raw or {}
+        local hid = GetHandleId(target)
+        local c = ThreatSystem._raw[hid]
+        if not c then
+            c = { byPid = {}, bySrcHandle = {}, sum = 0 }
+            ThreatSystem._raw[hid] = c
         end
+        return c
+    end
 
-        PB.On("OnDealtDamage", function(e)
-            -- e.pid (attacker pid), e.source (unit), e.target (unit), e.amount (number)
-            local src  = e and e.source
-            local tgt  = e and e.target
-            local amt  = e and e.amount or 0
-            if not validUnit(src) or not validUnit(tgt) then return end
-            if isIgnored(src) or isIgnored(tgt) then return end
-            if amt <= 0 then return end
-            ThreatSystem.AddThreat(src, tgt, amt)
-        end)
+    local function dprint(s)
+        if rawget(_G, "DevMode") and DevMode.IsOn and DevMode.IsOn(0) then
+            print("[ThreatSystem] " .. tostring(s))
+        end
+    end
 
-        PB.On("OnKill", function(e)
-            local tgt = e and e.target
-            if validUnit(tgt) then
-                ThreatSystem.ClearTarget(tgt)
-            end
-        end)
+    --------------------------------------------------
+    -- API
+    --------------------------------------------------
 
-        dprint("wired to ProcBus")
+    -- Optional: mark a target as tracked
+    function ThreatSystem.Register(target)
+        if not ValidUnit(target) then return end
+        cellFor(target)
+    end
+
+    -- Optional: clear all threat for a target
+    function ThreatSystem.ClearUnit(target)
+        if not ValidUnit(target) then return end
+        if not ThreatSystem._raw then return end
+        ThreatSystem._raw[GetHandleId(target)] = nil
+    end
+
+    -- Main entry: add threat from source to target
+    -- source: unit or pid
+    function ThreatSystem.AddThreat(source, target, amount)
+        if not ValidUnit(target) then return end
+        local pid = pidOf(source); if pid == nil then return end
+        local n = tonumber(amount or 0) or 0
+        if n == 0 then return end
+
+        local c = cellFor(target)
+        c.byPid[pid] = (c.byPid[pid] or 0) + n
+        c.sum = (c.sum or 0) + n
+
+        if ValidUnit(source) then
+            local sh = GetHandleId(source)
+            c.bySrcHandle[sh] = (c.bySrcHandle[sh] or 0) + n
+        end
+    end
+
+    -- Compatibility shim used by some old code
+    function ThreatSystem.OnDamage(source, target, amount)
+        ThreatSystem.AddThreat(source, target, amount)
+    end
+
+    -- Optional signal from spawn systems
+    function ThreatSystem.OnCreepSpawn(u, isElite, packId)
+        if ValidUnit(u) then ThreatSystem.Register(u) end
+    end
+
+    -- Optional signal from death systems
+    function ThreatSystem.OnCreepDeath(u)
+        if ValidUnit(u) then ThreatSystem.ClearUnit(u) end
+    end
+
+    -- Utility used by ThreatBridge or checks
+    function ThreatSystem.IsTracked(u)
+        if not ValidUnit(u) then return false end
+        local raw = ThreatSystem._raw
+        return raw ~= nil and raw[GetHandleId(u)] ~= nil
+    end
+
+    -- Debug helper
+    function ThreatSystem.Dump()
+        dprint("Dump start")
+        local raw = ThreatSystem._raw or {}
+        for hid, c in pairs(raw) do
+            dprint(" target " .. tostring(hid) .. " sum " .. tostring(c.sum or 0))
+        end
+        dprint("Dump end")
     end
 
     --------------------------------------------------
     -- Init
     --------------------------------------------------
     OnInit.final(function()
-        wireBus()
         dprint("ready")
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("ThreatSystem")

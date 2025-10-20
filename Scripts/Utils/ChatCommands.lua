@@ -47,6 +47,15 @@ do
         return tonumber(s) or 0
     end
 
+    local function parseName(msg, cmd)
+        -- returns the substring after "<cmd> " trimmed of leading spaces
+        local s = string.sub(msg, string.len(cmd) + 2)
+        -- trim leading spaces
+        local i = 1
+        while string.sub(s, i, i) == " " do i = i + 1 end
+        return string.sub(s, i)
+    end
+
     --------------------------------------------------
     -- Debug / DevMode
     --------------------------------------------------
@@ -170,6 +179,108 @@ do
                 DisplayTextToPlayer(p, 0, 0, "Threat HUD off")
             end
         end
+    end)
+
+    --------------------------------------------------
+    -- Respawn / Elite / Slot (CreepRespawnSystem)
+    --------------------------------------------------
+    registerChat("-respawn debug", function(p, pid)
+        if not _G.CreepRespawnSystem or not CreepRespawnSystem.ToggleDebug then
+            DisplayTextToPlayer(p, 0, 0, "[Respawn] System not found")
+            return
+        end
+        CreepRespawnSystem.ToggleDebug()
+        DisplayTextToPlayer(p, 0, 0, "[Respawn] Debug toggled")
+    end)
+
+    registerChat("-respawn now", function(p, pid, msg)
+        if not _G.CreepRespawnSystem or not CreepRespawnSystem.RespawnNow then
+            DisplayTextToPlayer(p, 0, 0, "[Respawn] System not found")
+            return
+        end
+        local n = parseNum(msg, "-respawn now")
+        if n <= 0 then
+            DisplayTextToPlayer(p, 0, 0, "Usage: -respawn now N")
+            return
+        end
+        CreepRespawnSystem.RespawnNow(n, false)
+        DisplayTextToPlayer(p, 0, 0, "[Respawn] Forced respawn slot " .. tostring(n))
+    end)
+
+    registerChat("-elite now", function(p, pid, msg)
+        if not _G.CreepRespawnSystem or not CreepRespawnSystem.RespawnNow then
+            DisplayTextToPlayer(p, 0, 0, "[Respawn] System not found")
+            return
+        end
+        local n = parseNum(msg, "-elite now")
+        if n <= 0 then
+            DisplayTextToPlayer(p, 0, 0, "Usage: -elite now N")
+            return
+        end
+        CreepRespawnSystem.RespawnNow(n, true)
+        DisplayTextToPlayer(p, 0, 0, "[Respawn] Forced ELITE respawn slot " .. tostring(n))
+    end)
+
+    registerChat("-slot info", function(p, pid, msg)
+        local n = parseNum(msg, "-slot info")
+        if n <= 0 then
+            DisplayTextToPlayer(p, 0, 0, "Usage: -slot info N")
+            return
+        end
+        local shown = false
+        if _G.CreepRespawnSystem and CreepRespawnSystem._DebugGetSlot then
+            local s = CreepRespawnSystem._DebugGetSlot(n)
+            if s then
+                DisplayTextToPlayer(p, 0, 0, "[Slot] id " .. tostring(s.id) ..
+                    " x " .. tostring(math.floor(s.x)) ..
+                    " y " .. tostring(math.floor(s.y)) ..
+                    " face " .. tostring(math.floor(s.facing)))
+                shown = true
+            end
+        end
+        if not shown then
+            DisplayTextToPlayer(p, 0, 0, "[Slot] Info not available")
+        end
+    end)
+
+    --------------------------------------------------
+    -- Respawn Profile switcher (RespawnProfileSwitcher.lua)
+    --------------------------------------------------
+    registerChat("-profile list", function(p, pid)
+        if not _G.GameBalance or not GameBalance.RespawnProfiles then
+            DisplayTextToPlayer(p, 0, 0, "[Profile] No profiles defined")
+            return
+        end
+        DisplayTextToPlayer(p, 0, 0, "[Profile] Available:")
+        for k, _ in pairs(GameBalance.RespawnProfiles) do
+            DisplayTextToPlayer(p, 0, 0, "  " .. tostring(k))
+        end
+    end)
+
+    registerChat("-profile set", function(p, pid, msg)
+        if not _G.RespawnProfile or not RespawnProfile.Set then
+            DisplayTextToPlayer(p, 0, 0, "[Profile] Switcher missing")
+            return
+        end
+        local name = parseName(msg, "-profile set")
+        if not name or name == "" then
+            DisplayTextToPlayer(p, 0, 0, "Usage: -profile set NAME")
+            return
+        end
+        local ok = RespawnProfile.Set(name)
+        if ok then
+            DisplayTextToPlayer(p, 0, 0, "[Profile] Switched to " .. name)
+        else
+            DisplayTextToPlayer(p, 0, 0, "[Profile] Unknown profile " .. name)
+        end
+    end)
+
+    registerChat("-profile current", function(p, pid)
+        local id = "?"
+        if _G.RespawnProfile and RespawnProfile.CurrentId then
+            id = RespawnProfile.CurrentId()
+        end
+        DisplayTextToPlayer(p, 0, 0, "[Profile] Current: " .. tostring(id))
     end)
 
     --------------------------------------------------

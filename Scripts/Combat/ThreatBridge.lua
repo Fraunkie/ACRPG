@@ -1,71 +1,61 @@
 if Debug and Debug.beginFile then Debug.beginFile("ThreatBridge.lua") end
 --==================================================
 -- ThreatBridge.lua
--- Wires combat events (via ProcBus) into AggroManager.
--- • Ignores "bag" or invalid units safely (no global Bag touch).
+-- Listens to ProcBus creep events and syncs Threat/Aggro.
+-- Safe if CreepRespawnSystem already registered: we check IsTracked first.
 --==================================================
 
-if not ThreatBridge then ThreatBridge = {} end
-_G.ThreatBridge = ThreatBridge
-
 do
-    local function valid(u) return u and GetUnitTypeId(u) ~= 0 end
-    local function isStructure(u) return IsUnitType(u, UNIT_TYPE_STRUCTURE) end
+    if not ThreatBridge then ThreatBridge = {} end
+    _G.ThreatBridge = ThreatBridge
 
-    -- conservative bag ignore: rely on a feature flag if present, otherwise
-    -- skip units with Locust or structures.
-    local ALOC = FourCC and FourCC('Aloc') or nil
-    local function isBagUnit(u)
-        if not valid(u) then return true end
-        if ALOC and UnitHasBuffBJ and UnitHasBuffBJ(u, ALOC) then return true end
-        if isStructure(u) then return true end
-        if _G.BagSystem and type(BagSystem.IsBag)=="function" then
-            local ok, res = pcall(BagSystem.IsBag, u)
-            if ok and res then return true end
-        end
+    local function ValidUnit(u) return u ~= nil and GetUnitTypeId(u) ~= 0 end
+    local function IsTracked(u)
+        if not ThreatSystem then return false end
+        if ThreatSystem.IsTracked then return ThreatSystem.IsTracked(u) == true end
+        if ThreatSystem._eliteFlagByUnit and ThreatSystem._eliteFlagByUnit[u] ~= nil then return true end
         return false
     end
 
-    local function addDamage(pid, target, amount)
-        if not _G.AggroManager then return end
-        if valid(target) and not isBagUnit(target) then
-            AggroManager.AddDamage(target, pid, amount or 0)
+    local function Register(u, isElite, packId)
+        if AggroManager and AggroManager.Register then AggroManager.Register(u) end
+        if ThreatSystem then
+            if ThreatSystem.OnCreepSpawn then ThreatSystem.OnCreepSpawn(u, isElite, packId)
+            elseif ThreatSystem.Register then ThreatSystem.Register(u) end
         end
     end
-    local function addHeal(pid, target, amount)
-        if not _G.AggroManager then return end
-        if valid(target) and not isBagUnit(target) then
-            AggroManager.AddHeal(target, pid, amount or 0)
+    local function Clear(u)
+        if ThreatSystem then
+            if ThreatSystem.OnCreepDeath then ThreatSystem.OnCreepDeath(u)
+            elseif ThreatSystem.ClearUnit then ThreatSystem.ClearUnit(u) end
         end
+        if AggroManager and AggroManager.Unregister then AggroManager.Unregister(u) end
+    end
+
+    local function onSpawn(payload)
+        if not payload then return end
+        local u = payload.unit; if not ValidUnit(u) or IsTracked(u) then return end
+        Register(u, payload.isElite == true, payload.packId)
+    end
+    local function onDeath(payload)
+        if not payload then return end
+        local u = payload.unit; if not ValidUnit(u) then return end
+        Clear(u)
     end
 
     OnInit.final(function()
-        local PB = rawget(_G, "ProcBus")
-        if not PB or not PB.On then
-            print("[ThreatBridge] ProcBus missing; no wiring")
-            return
+        if ProcBus then
+            if ProcBus.Subscribe then
+                ProcBus.Subscribe("CREEP_SPAWN", onSpawn)
+                ProcBus.Subscribe("CREEP_DEATH", onDeath)
+            elseif ProcBus.On then
+                ProcBus.On("CREEP_SPAWN", onSpawn)
+                ProcBus.On("CREEP_DEATH", onDeath)
+            end
         end
-
-        PB.On("OnDealtDamage", function(e)
-            if not e then return end
-            local pid = e.pid
-            local tgt = e.target
-            local amt = tonumber(e.amount or 0) or 0
-            if pid ~= nil and amt > 0 then addDamage(pid, tgt, amt) end
-        end)
-
-        PB.On("OnHealed", function(e)
-            if not e then return end
-            local pid = e.pid
-            local tgt = e.target
-            local amt = tonumber(e.amount or 0) or 0
-            if pid ~= nil and amt > 0 then addHeal(pid, tgt, amt) end
-        end)
-
-        if rawget(_G,"InitBroker") and InitBroker.SystemReady then
+        if InitBroker and InitBroker.SystemReady then
             InitBroker.SystemReady("ThreatBridge")
         end
-        print("[ThreatBridge] ready")
     end)
 end
 

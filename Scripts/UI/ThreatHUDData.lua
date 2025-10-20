@@ -2,8 +2,9 @@ if Debug and Debug.beginFile then Debug.beginFile("ThreatHUD_Data.lua") end
 --==================================================
 -- ThreatHUD_Data.lua
 -- Rolling DPS per player + threat snapshot helpers
--- • Listens to ProcBus.OnDealtDamage
+-- • Listens to ProcBus.OnDealtDamage (Subscribe fallback)
 -- • Queries AggroManager / ThreatSystem when present
+-- • Ignores non-human player PIDs for DPS
 --==================================================
 
 if not ThreatHUD_Data then ThreatHUD_Data = {} end
@@ -21,9 +22,16 @@ do
     --------------------------------------------------
     -- dpsBuf[pid] = { {t, n}, {t, n}, ... } recent hits
     local dpsBuf = {}
-    local now    = function()
+
+    local function now()
         if os and os.clock then return os.clock() end
         return 0
+    end
+
+    local function isHumanPid(pid)
+        if pid == nil then return false end
+        if pid < 0 or pid >= bj_MAX_PLAYERS then return false end
+        return GetPlayerController(Player(pid)) == MAP_CONTROL_USER
     end
 
     local function buf(pid)
@@ -48,7 +56,7 @@ do
     -- Public: add damage sample (pid = source player id)
     --------------------------------------------------
     function ThreatHUD_Data.AddDamage(pid, amount)
-        if pid == nil then return end
+        if not isHumanPid(pid) then return end  -- ignore creeps/neutral
         local n = tonumber(amount or 0) or 0
         if n <= 0 then return end
         local tnow = now()
@@ -61,7 +69,7 @@ do
     -- Public: current DPS for pid
     --------------------------------------------------
     function ThreatHUD_Data.GetDPS(pid)
-        if pid == nil then return 0 end
+        if not isHumanPid(pid) then return 0 end
         local tnow = now()
         prune(pid, tnow)
         local b = buf(pid)
@@ -74,12 +82,12 @@ do
 
     --------------------------------------------------
     -- Public: top threat list for a target (pid,value pairs)
-    -- Uses AggroManager when available, else ThreatSystem.
+    -- Prefers AggroManager; falls back to ThreatSystem if it exposes a getter.
     --------------------------------------------------
     function ThreatHUD_Data.TopThreatForTarget(target, maxCount)
         local list = {}
 
-        -- Preferred: AggroManager snapshot
+        -- Preferred: AggroManager snapshot (expected shape: { {pid=, value=}, ... })
         local AM = rawget(_G, "AggroManager")
         if AM and AM.GetThreatList then
             local tl = AM.GetThreatList(target) or {}
@@ -87,21 +95,15 @@ do
                 list[#list+1] = { pid = tl[i].pid, value = tl[i].value }
             end
         else
-            -- Fallback: raw ThreatSystem table
+            -- Fallback: ThreatSystem public getter if present
             local TS = rawget(_G, "ThreatSystem")
-            if TS and target then
-                local key = GetHandleId(target)
-                local tab = TS._raw and TS._raw[key] or nil -- expose if available
-                if tab and tab.bySrcHandle then
-                    -- convert source handles to pid when possible
-                    for sk, v in pairs(tab.bySrcHandle) do
-                        -- try owner pid if handle is a unit
-                        local u = BlzGetUnitById and BlzGetUnitById(sk) or nil
-                        local pid = (u and GetPlayerId(GetOwningPlayer(u))) or -1
-                        list[#list+1] = { pid = pid, value = v }
-                    end
+            if TS and TS.GetThreatList then
+                local tl = TS.GetThreatList(target) or {}
+                for i = 1, #tl do
+                    list[#list+1] = { pid = tl[i].pid, value = tl[i].value }
                 end
             end
+            -- (Intentionally avoiding private tables / handle lookups to keep it safe)
         end
 
         table.sort(list, function(a,b) return (a.value or 0) > (b.value or 0) end)
@@ -116,13 +118,16 @@ do
     --------------------------------------------------
     local function wireBus()
         local PB = rawget(_G, "ProcBus")
-        if PB and PB.On then
-            PB.On("OnDealtDamage", function(e)
-                if not e then return end
-                if e.pid == nil then return end
-                local amt = tonumber(e.amount or 0) or 0
-                if amt > 0 then ThreatHUD_Data.AddDamage(e.pid, amt) end
-            end)
+        local handler = function(e)
+            if not e then return end
+            local pid = e.pid
+            local amt = tonumber(e.amount or 0) or 0
+            if amt > 0 then ThreatHUD_Data.AddDamage(pid, amt) end
+        end
+        if PB and PB.Subscribe then
+            PB.Subscribe("OnDealtDamage", handler)
+        elseif PB and PB.On then
+            PB.On("OnDealtDamage", handler)
         end
     end
 

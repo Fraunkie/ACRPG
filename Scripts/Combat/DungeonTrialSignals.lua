@@ -3,7 +3,6 @@ if Debug and Debug.beginFile then Debug.beginFile("DungeonTrialSignals.lua") end
 -- DungeonTrialSignals.lua
 -- Emits standardized instance signals over ProcBus.
 -- Drives RespawnProfileSwitcher (via DUNGEON_* / TRIAL_PHASE_*).
--- • ASCII-only, WC3-safe, no percent symbols
 --==================================================
 
 do
@@ -17,9 +16,8 @@ do
     end
 
     --------------------------------------------------
-    -- Public API (manual signals)
+    -- Public API
     --------------------------------------------------
-    -- Dungeon / Raid
     function InstanceSignals.BossPullStart(dungeonId)
         emit("BOSS_PULL_START", { dungeonId = dungeonId })
     end
@@ -32,8 +30,6 @@ do
     function InstanceSignals.Wipe(dungeonId)
         emit("DUNGEON_WIPE", { dungeonId = dungeonId })
     end
-
-    -- Trials (phases 1–3)
     function InstanceSignals.TrialPhase(trialId, phase)
         if phase == 1 then emit("TRIAL_PHASE_1", { trialId = trialId })
         elseif phase == 2 then emit("TRIAL_PHASE_2", { trialId = trialId })
@@ -42,7 +38,7 @@ do
     end
 
     --------------------------------------------------
-    -- Dev chat commands (standalone; DevMode-gated)
+    -- Dev chat commands (DevMode-gated)
     --------------------------------------------------
     local function devOn(pid)
         local DM = rawget(_G, "DevMode")
@@ -74,7 +70,7 @@ do
         return string.sub(s, i)
     end
 
-    -- Boss pull / end / win
+    -- Boss / wipe / trial test commands
     reg("-boss pull", function(p, pid, msg)
         local id = parseTail(msg, "-boss pull")
         InstanceSignals.BossPullStart(id ~= "" and id or "DUNGEON")
@@ -90,19 +86,17 @@ do
         InstanceSignals.BossDefeated(id ~= "" and id or "DUNGEON", "BOSS")
         DisplayTextToPlayer(p, 0, 0, "[Signal] Boss defeated")
     end)
-    -- Wipe
     reg("-wipe", function(p, pid, msg)
         local id = parseTail(msg, "-wipe")
         InstanceSignals.Wipe(id ~= "" and id or "DUNGEON")
         DisplayTextToPlayer(p, 0, 0, "[Signal] Wipe")
     end)
-    -- Trials
     reg("-trial 1", function(p) InstanceSignals.TrialPhase("TRIAL", 1); DisplayTextToPlayer(p,0,0,"[Signal] Trial Phase 1") end)
     reg("-trial 2", function(p) InstanceSignals.TrialPhase("TRIAL", 2); DisplayTextToPlayer(p,0,0,"[Signal] Trial Phase 2") end)
     reg("-trial 3", function(p) InstanceSignals.TrialPhase("TRIAL", 3); DisplayTextToPlayer(p,0,0,"[Signal] Trial Phase 3") end)
 
     --------------------------------------------------
-    -- Init marker
+    -- Init
     --------------------------------------------------
     OnInit.final(function()
         if InitBroker and InitBroker.SystemReady then

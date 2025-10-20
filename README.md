@@ -27,103 +27,31 @@ This folder is your one-stop portal for the game’s systems: combat events, XP/
   - [🧰 DevMode & Chat Commands](./DevMode_Guide.md)
 - **Contributing**
   - [Coding Conventions](#-coding-conventions)
-  - [Testing & Debugging](#-testing--debugging)
-  - [Checklist Before Commit](#-pre-commit-checklist)
+  ...existing code...
+
 - **Appendix**
   - [Troubleshooting](#-troubleshooting)
   - [Glossary](#-glossary)
 
 ---
 
-## 🚀 Quick Start
-
-1. **Clone** the repo and open the map project in your editor.
-2. Ensure the following **core scripts** are present and enabled:
-   - `ProcBus.lua`, `InitBroker.lua`
-   - `DamageEngine.lua`, `CombatEventsBridge.lua`
-   - `SoulEnergy.lua`, `SoulEnergyLogic.lua`
-   - `SpiritDrive.lua`, `SpiritPowerLabelBridge.lua`, `SpiritDriveOOC.lua`
-   - `ThreatSystem.lua`, `AggroManager.lua`
-   - `HFIL_UnitConfig.lua`
-   - `ChatTriggerRegistry.lua`, `DevMode.lua` (or `ACDebug.lua`)
-3. Import (or re-import) the **BLP** UI assets if needed for HUDs.
-4. Launch a local test:
-   - **Dev toggles:** `-dev on`
-   - **HUD:** `-thud`
-   - **XP sanity:** `-soul`, kill a configured HFIL creep (`HFIL_UnitConfig.lua`)
-   - **Spirit sanity:** hit a unit; watch SD fill & drain via `SpiritDriveOOC`
-
----
-
-## 🏗 Local Setup
-
-- **War3 Lua:** Ensure **Lua mode** is enabled and total initialization is used (we follow the same init style).
-- **No `%` prints:** All logs avoid percent symbols for editor stability.
 - **Top-level natives:** Avoid calling natives (like `FourCC`) at file top-level. Build those lookups in `OnInit.final` only.
 
----
-
-## 🧩 Architecture Overview
 
 **One bus to rule them all:**
-- `DamageEngine` hooks all native damage/heal events.
-- `CombatEventsBridge` normalizes & emits:
-  - `OnDealtDamage`, `OnKill`, `OnHeal`, (plus pid/unit payloads)
-- Systems subscribe through **`ProcBus`**:
-  - **ThreatSystem** adds/decays threat.
-  - **SoulEnergyLogic** awards XP on kill (per-unit config).
-  - **SpiritDrive** gains on hit; drains OOC via `SpiritDriveOOC`.
   - **HUDs** & UI sync via `SpiritPowerLabelBridge` and HUD APIs.
-
----
 
 ## 🔀 Event Flow: Combat → Rewards → UI
 
-1. **Hit occurs** → `DamageEngine` fires BEFORE/AFTER/LETHAL.
-2. **Bridge** emits `OnDealtDamage` and (if lethal) `OnKill`.
-3. **ThreatSystem** updates tables; **AggroManager** may retarget.
-4. **SoulEnergyLogic** calculates XP from `HFIL_UnitConfig` and shares to allies.
 5. **SpiritDrive** bumps on hit, drains OOC; full triggers optional events.
 6. **UI Bridges** update the soul/spirit labels; **HUDs** reflect threat & DPS.
-
 ---
 
-## 🧠 System APIs
-
-- **XP:** [⚡ SoulEnergy](./SoulEnergy_API.md)
-- **Rage:** [🔥 SpiritDrive](./SpiritDrive_API.md)
-- **Threat:** [💀 ThreatSystem](./ThreatSystem_API.md)
-- **AI Packs:** [🦾 AggroManager](./AggroManager_API.md)
-- **Events:** [⚔️ CombatEventsBridge](./CombatEventsBridge_API.md)
-- **Bus:** [🧵 ProcBus Events](./ProcBus_Events.md)
-
----
-
-## 🧪 Testing & Debugging
 
 Common chat commands (all gated by DevMode):
-
-- **Dev mode:** `-dev on`, `-dev off`, `-dev toggle`
-- **XP:** `-soul`, `-souladd 50`, `-soulset 100`
-- **SpiritDrive:** `-sd 50`, `-sdadd 8`
-- **HUDs:** `-thud` (Threat HUD toggle)
 - **Init:** `-initdump`
 - **Watch:** `-watchdog` (10 ticks to detect freezes)
 
-> Add/remove commands centrally in `ChatTriggerRegistry.lua`.
-
----
-
-## ✍️ Coding Conventions
-
-- **Initialization:** Always use `OnInit.final(function() ... end)` for setup.
-- **Logging:** ASCII-only; prefix with system tag, e.g. `[Threat] ...`.
-- **Safety:** Wrap external callbacks with `pcall` to prevent hard crashes.
-- **Globals:** Write through `_G.Name = Name` for cross-file access.
-
----
-
-## ✅ Pre-Commit Checklist
 
 - [ ] No top-level native calls (e.g., `FourCC`) outside `OnInit.final`.
 - [ ] No `%` in any `print()` / debug strings.

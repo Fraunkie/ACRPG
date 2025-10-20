@@ -1,24 +1,17 @@
 if Debug and Debug.beginFile then Debug.beginFile("SoulEnergyLogic.lua") end
 --==================================================
 -- SoulEnergyLogic.lua
--- Core Soul XP economy:
---  • XP only on kill (no gain on hit)
---  • Pulls baseSoul from HFIL_UnitConfig
---  • Optional group-share via AggroManager
---  • Per-player xpBonusPercent applied AFTER split
---  • Emits ProcBus OnSoulChanged / OnSoulPing
---  • No percent glyphs in strings (editor-safe)
+-- Soul XP: kill-only, pulls baseSoul from HFIL_UnitConfig,
+-- optional group-share via AggroManager, per-player bonus,
+-- emits ProcBus updates.
 --==================================================
 
 if not SoulEnergyLogic then SoulEnergyLogic = {} end
 _G.SoulEnergyLogic = SoulEnergyLogic
-if not SoulEnergy then SoulEnergy = {} end -- adapter may shadow, but we keep API
+if not SoulEnergy then SoulEnergy = {} end
 _G.SoulEnergy = SoulEnergy
 
 do
-    --------------------------------------------------
-    -- Dev prints (gated)
-    --------------------------------------------------
     local function DEV_ON()
         local DM = rawget(_G, "DevMode")
         if DM then
@@ -29,40 +22,17 @@ do
     end
     local function dprint(msg) if DEV_ON() then print("[SoulLogic] " .. tostring(msg)) end end
 
-    --------------------------------------------------
-    -- Config
-    --------------------------------------------------
-    local UI_PING_MIN = 1   -- minimum delta to ping UI when changed
+    local UI_PING_MIN = 1
 
-    --------------------------------------------------
-    -- State
-    --------------------------------------------------
-    -- P[pid] = { value = n }
     local P = {}
+    local function PD(pid) P[pid] = P[pid] or { value = 0 }; return P[pid] end
 
-    local function PD(pid)
-        local t = P[pid]
-        if not t then
-            t = { value = 0 }
-            P[pid] = t
-        end
-        return t
-    end
-
-    --------------------------------------------------
-    -- Emit helpers
-    --------------------------------------------------
     local function emit(name, e)
         local PB = rawget(_G, "ProcBus")
         if PB and PB.Emit then PB.Emit(name, e) end
     end
 
-    --------------------------------------------------
-    -- Public API
-    --------------------------------------------------
-    function SoulEnergyLogic.Get(pid)
-        return PD(pid).value or 0
-    end
+    function SoulEnergyLogic.Get(pid) return PD(pid).value or 0 end
 
     function SoulEnergyLogic.Set(pid, value)
         local v = math.max(0, math.floor(value or 0))
@@ -96,37 +66,34 @@ do
         emit("OnSoulPing", { pid = pid, delta = amount or 0 })
     end
 
-    --------------------------------------------------
-    -- Reward lookup from HFIL_UnitConfig
-    --------------------------------------------------
+    -- ---------- Reward lookup (robust to either API) ----------
     function SoulEnergyLogic.GetReward(rawTypeId)
-        -- rawTypeId here is numeric (GetUnitTypeId)
         local HUC = rawget(_G, "HFILUnitConfig")
-        if not HUC then return 0 end
-        if type(rawTypeId) ~= "number" then return 0 end
+        if not HUC or type(rawTypeId) ~= "number" then return 0 end
+        local row = nil
         if HUC.GetByFour then
-            local row = HUC.GetByFour(rawTypeId)
-            if row and row.baseSoul then return math.floor(row.baseSoul) end
+            row = HUC.GetByFour(rawTypeId)
+        elseif HUC.GetByTypeId then
+            row = HUC.GetByTypeId(rawTypeId)
         end
+        if row and row.baseSoul then return math.floor(row.baseSoul) end
         return 0
     end
 
-    --------------------------------------------------
-    -- Group sharing
-    -- Returns array of participant pids; falls back to killer pid only.
-    --------------------------------------------------
+    -- ---------- Group share ----------
     local function collectParticipants(deadUnit, killerPid)
         local list = {}
 
-        -- Try config flag on the creeps row
         local row = nil
         if _G.HFILUnitConfig and HFILUnitConfig.GetByFour then
             row = HFILUnitConfig.GetByFour(GetUnitTypeId(deadUnit))
+        elseif _G.HFILUnitConfig and HFILUnitConfig.GetByTypeId then
+            row = HFILUnitConfig.GetByTypeId(GetUnitTypeId(deadUnit))
         end
 
         local share = (row and row.share) == true
         if share and rawget(_G, "AggroManager") and AggroManager.GetGroupForTarget then
-            local handles = AggroManager.GetGroupForTarget(deadUnit) -- returns array of unit handles (or pids)
+            local handles = AggroManager.GetGroupForTarget(deadUnit)
             if handles and #handles > 0 then
                 for i = 1, #handles do
                     local u = handles[i]
@@ -140,11 +107,8 @@ do
             end
         end
 
-        if #list == 0 then
-            list[1] = killerPid
-        end
+        if #list == 0 then list[1] = killerPid end
 
-        -- de-dup
         local uniq, out = {}, {}
         for i = 1, #list do
             local pid = list[i]
@@ -156,9 +120,6 @@ do
         return out
     end
 
-    --------------------------------------------------
-    -- Bonus percent (per-player, from PlayerData)
-    --------------------------------------------------
     local function xpWithBonus(pid, baseShare)
         local bonusPct = 0
         if rawget(_G, "PlayerData") and PlayerData.GetField then
@@ -168,11 +129,8 @@ do
         return final, bonusPct
     end
 
-    --------------------------------------------------
-    -- Award XP from kill event payload
-    --------------------------------------------------
+    -- ---------- Award from kill ----------
     local function awardFromKill(e)
-        -- Expect e.pid (killer pid), e.source (killer unit), e.target (dead unit)
         if not e then return end
         local dead  = e.target
         local killer= e.source
@@ -210,29 +168,20 @@ do
         end
     end
 
-    --------------------------------------------------
-    -- Bus wiring (kill-only)
-    --------------------------------------------------
     local function wireBus()
         local PB = rawget(_G, "ProcBus")
         if PB and PB.On then
             PB.On("OnKill", awardFromKill)
-            -- No gain on hit; keep Souls strictly kill-based
         end
     end
 
-    --------------------------------------------------
-    -- Adapter passthroughs for SoulEnergy (UI/Chat may use these)
-    --------------------------------------------------
+    -- Adapter passthroughs
     function SoulEnergy.Get(pid)      return SoulEnergyLogic.Get(pid) end
     function SoulEnergy.Set(pid, v)   return SoulEnergyLogic.Set(pid, v) end
     function SoulEnergy.Add(pid, d)   return SoulEnergyLogic.Add(pid, d) end
     function SoulEnergy.Spend(pid, c) return SoulEnergyLogic.Spend(pid, c) end
     function SoulEnergy.Ping(pid, a)  return SoulEnergyLogic.Ping(pid, a) end
 
-    --------------------------------------------------
-    -- Init
-    --------------------------------------------------
     OnInit.final(function()
         for pid = 0, bj_MAX_PLAYERS - 1 do PD(pid) end
         wireBus()

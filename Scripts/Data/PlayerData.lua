@@ -3,14 +3,20 @@ if Debug and Debug.beginFile then Debug.beginFile("PlayerData.lua") end
 -- PlayerData.lua
 -- Canonical per-player runtime store and helpers
 -- • Includes soul progression mirrors and XP bonus knob
--- • ASCII only
 --==================================================
 
 do
     PlayerData = PlayerData or {}
     _G.PlayerData = PlayerData
+    PLAYER_DATA = PLAYER_DATA or {}
 
+    -- keep old PlayerHero alias
+    PlayerHero = PlayerHero or {}
+    _G.PlayerHero = PlayerHero
+
+    --------------------------------------------------
     -- Default per-player table
+    --------------------------------------------------
     local function defaultTable()
         return {
             hero = nil,
@@ -18,44 +24,26 @@ do
             role = "NONE",
             zone = "YEMMA",
             powerLevel = 0,
-
-            -- Soul progression mirrors (Runescape-like)
-            soulEnergy = 0,     -- total lifetime soul points (for now)
+            soulEnergy = 0,
             soulLevel  = 1,
             soulXP     = 0,
             soulNextXP = 200,
-
-            -- Tunables and bonuses
-            xpBonusPercent = 0,          -- numeric percent
-            statChanceBonusPermil = 0,   -- out of 1000
+            xpBonusPercent = 0,
+            statChanceBonusPermil = 0,
             dropLuckBonusPermil = 0,
-
-            -- Currency / ownership
             fragments    = 0,
             ownedShards  = {},
-
-            -- Spirit Drive
             spiritDrive  = 0,
-
-            -- UX toggles
             lootChatEnabled = true,
-
-            -- capsule bags
             capsulebag = nil,
-
-            -- Intro / Yemma flow
-            hasStarted            = false,
-            introChoice           = nil,
-            introCompleted        = false,
-            introStyle            = nil,
-            yemmaPromptShown      = false,
-            yemmaPromptMinimized  = false,
-
-            -- Tasks (legacy mirror; safe defaults)
+            hasStarted = false,
+            introChoice = nil,
+            introCompleted = false,
+            introStyle = nil,
+            yemmaPromptShown = false,
+            yemmaPromptMinimized = false,
             hfilTask = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" },
             activeTask = nil,
-
-            -- Misc session
             teleports  = {},
             killCounts = {},
             lastKillAt = 0,
@@ -65,9 +53,10 @@ do
         }
     end
 
-    -- Public API
+    --------------------------------------------------
+    -- API
+    --------------------------------------------------
     function PlayerData.Get(pid)
-        if not PLAYER_DATA then PLAYER_DATA = {} end
         PLAYER_DATA[pid] = PLAYER_DATA[pid] or defaultTable()
         return PLAYER_DATA[pid]
     end
@@ -85,7 +74,36 @@ do
         return v
     end
 
-    -- Legacy task helpers (kept for UI safety)
+    --------------------------------------------------
+    -- Hero binding
+    --------------------------------------------------
+    function PlayerData.SetHero(pid, unit)
+        local pd = PlayerData.Get(pid)
+        pd.hero = unit
+        PlayerHero[pid] = unit
+        return unit
+    end
+
+    function PlayerData.GetHero(pid)
+        local pd = PlayerData.Get(pid)
+        return pd.hero
+    end
+
+    --------------------------------------------------
+    -- Power mirror refresh
+    --------------------------------------------------
+    function PlayerData.RefreshPower(pid)
+        local pd = PlayerData.Get(pid)
+        local str = (rawget(_G, "PlayerMStr") and PlayerMStr[pid]) or 0
+        local agi = (rawget(_G, "PlayerMAgi") and PlayerMAgi[pid]) or 0
+        local int = (rawget(_G, "PlayerMInt") and PlayerMInt[pid]) or 0
+        pd.powerLevel = (str or 0) + (agi or 0) + (int or 0)
+        return pd.powerLevel
+    end
+
+    --------------------------------------------------
+    -- Task legacy API (for HFIL UI safety)
+    --------------------------------------------------
     function PlayerData.SetActiveTask(pid, task)
         local pd = PlayerData.Get(pid)
         local ht = pd.hfilTask
@@ -124,9 +142,10 @@ do
         pd.activeTask = nil
     end
 
-    -- Boot-time ensure for all human slots
+    --------------------------------------------------
+    -- Init
+    --------------------------------------------------
     OnInit.final(function()
-        if not PLAYER_DATA then PLAYER_DATA = {} end
         for pid=0,bj_MAX_PLAYERS-1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 PLAYER_DATA[pid] = PLAYER_DATA[pid] or defaultTable()

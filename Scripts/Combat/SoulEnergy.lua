@@ -4,16 +4,12 @@ if Debug and Debug.beginFile then Debug.beginFile("SoulEnergy.lua") end
 -- Thin adapter over SoulEnergyLogic for UI bridges.
 -- • Updates SpiritPowerLabelBridge on changes
 -- • Listens to ProcBus to stay in sync
--- • No chat bindings here (use ChatTriggerRegistry)
 --==================================================
 
 if not SoulEnergy then SoulEnergy = {} end
 _G.SoulEnergy = SoulEnergy
 
 do
-    --------------------------------------------------
-    -- Helpers
-    --------------------------------------------------
     local function dprint(s)
         if _G.DevMode and DevMode.IsOn and DevMode.IsOn() then
             print("[SoulAdapter] " .. tostring(s))
@@ -39,12 +35,7 @@ do
         return 0
     end
 
-    --------------------------------------------------
-    -- Public passthroughs
-    --------------------------------------------------
-    function SoulEnergy.Get(pid)
-        return logicGet(pid)
-    end
+    function SoulEnergy.Get(pid) return logicGet(pid) end
 
     function SoulEnergy.Set(pid, value)
         local v = value or 0
@@ -72,9 +63,7 @@ do
     function SoulEnergy.Spend(pid, cost)
         if _G.SoulEnergyLogic and SoulEnergyLogic.Spend then
             local ok = SoulEnergyLogic.Spend(pid, cost or 0)
-            if ok then
-                setLabel(pid, logicGet(pid))
-            end
+            if ok then setLabel(pid, logicGet(pid)) end
             return ok
         end
         return false
@@ -87,18 +76,12 @@ do
         end
     end
 
-    --------------------------------------------------
-    -- Init: seed labels and wire bus
-    --------------------------------------------------
     OnInit.final(function()
-        -- seed labels for all user slots
         for pid = 0, bj_MAX_PLAYERS - 1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 setLabel(pid, logicGet(pid))
             end
         end
-
-        -- keep labels synced via ProcBus
         local PB = rawget(_G, "ProcBus")
         if PB and PB.On then
             PB.On("OnSoulChanged", function(e)
@@ -110,7 +93,6 @@ do
                 pingLabel(e.pid, e.delta or 0)
             end)
         end
-
         dprint("ready")
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("SoulEnergyAdapter")

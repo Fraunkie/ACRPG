@@ -1,119 +1,63 @@
-if Debug and Debug.beginFile then Debug.beginFile("RespawnProfileSwitcher.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("BagIgnore.lua") end
 --==================================================
--- RespawnProfileSwitcher.lua
--- Hot-swaps respawn timer profiles at runtime.
--- • Updates GameBalance.RespawnProfiles.Default (copy of target)
--- • Listens to ProcBus events (dungeon/trial signals)
--- • Exposes a small public API (Set/Push/Pop/CurrentId)
--- • ASCII-only, WC3-safe strings
+-- BagIgnore.lua
+-- Tiny helper so other systems can skip the Bag unit.
+-- • Central place to decide "is this the bag?"
+-- • Editor-safe (no natives at top level)
 --==================================================
 
+if not BagIgnore then BagIgnore = {} end
+_G.BagIgnore = BagIgnore
+
 do
-    if not RespawnProfile then RespawnProfile = {} end
-    _G.RespawnProfile = RespawnProfile
+    --------------------------------------------------
+    -- Config
+    --------------------------------------------------
+    -- Option A: by rawcode (recommended if your Bag is a distinct unit type)
+    --   Put your bag unit rawcode here once you know it. Example: "oBag".
+    local BAG_RAWCODE = nil  -- e.g., "oBag"
+
+    -- Option B: by unit name (fallback if type is reused)
+    local BAG_NAME = "Player Bag"  -- set to your bag’s in-game name, or leave as impossible name
 
     --------------------------------------------------
     -- Helpers
     --------------------------------------------------
-    local function gb() return _G.GameBalance end
-    local function copyInto(dst, src)
-        for k, v in pairs(dst) do dst[k] = nil end
-        for k, v in pairs(src) do dst[k] = v end
-        return dst
-    end
-    local function ensureDefaultExists()
-        local G = gb(); if not G then return end
-        G.RespawnProfiles = G.RespawnProfiles or {}
-        G.RespawnProfiles.Default = G.RespawnProfiles.Default or { delay = 10.0, jitter = 4.0, batch = 2, throttlePerSec = 8 }
-    end
-    local function profileById(id)
-        local G = gb(); if not G or not G.RespawnProfiles then return nil end
-        return G.RespawnProfiles[id]
+    local function isLive(u)
+        return u and GetUnitTypeId(u) ~= 0
     end
 
     --------------------------------------------------
-    -- State
+    -- Public
     --------------------------------------------------
-    local _stack = {}  -- push/pop overrides
-    local _currentId = "Default"
+    -- Returns true if the given unit is the Bag and should be ignored by combat/threat systems.
+    function BagIgnore.IsBag(u)
+        if not isLive(u) then return false end
 
-    local function applyProfile(id)
-        ensureDefaultExists()
-        local G = gb()
-        local src = profileById(id)
-        if not (G and src) then return false end
-        copyInto(G.RespawnProfiles.Default, src)
-        _currentId = id
-        if ProcBus and ProcBus.Emit then
-            ProcBus.Emit("RESPAWN_PROFILE_CHANGED", { id = id })
+        -- Match by rawcode when configured
+        if BAG_RAWCODE and type(BAG_RAWCODE) == "string" and #BAG_RAWCODE == 4 and type(FourCC) == "function" then
+            local ok, id = pcall(FourCC, BAG_RAWCODE)
+            if ok and id and GetUnitTypeId(u) == id then
+                return true
+            end
         end
-        return true
-    end
 
-    --------------------------------------------------
-    -- Public API
-    --------------------------------------------------
-    function RespawnProfile.Set(id)
-        if type(id) ~= "string" then return false end
-        return applyProfile(id)
-    end
+        -- Fallback: match by unit name (case sensitive)
+        local n = GetUnitName(u)
+        if n and BAG_NAME ~= "" and n == BAG_NAME then
+            return true
+        end
 
-    function RespawnProfile.Push(id)
-        if type(id) ~= "string" then return false end
-        table.insert(_stack, _currentId)
-        return applyProfile(id)
-    end
-
-    function RespawnProfile.Pop()
-        local prev = _stack[#_stack]
-        if not prev then return false end
-        _stack[#_stack] = nil
-        return applyProfile(prev)
-    end
-
-    function RespawnProfile.CurrentId()
-        return _currentId
-    end
-
-    --------------------------------------------------
-    -- Event wiring (ProcBus)
-    --------------------------------------------------
-    local EventToProfile = {
-        -- Dungeons
-        DUNGEON_WIPE       = "Dungeon_Wipe",
-        BOSS_PULL_START    = "Dungeon_NoTrash",
-        BOSS_PULL_END      = "Overworld_Default", -- back to normal pacing outside boss
-        BOSS_DEFEATED      = "Overworld_Default",
-
-        -- Trials (you can switch per phase)
-        TRIAL_PHASE_1      = "Trial_Phase1",
-        TRIAL_PHASE_2      = "Trial_Phase2",
-        TRIAL_PHASE_3      = "Trial_Phase3",
-    }
-
-    local function onEvent(payload, id)
-        local target = EventToProfile[id]
-        if not target then return end
-        RespawnProfile.Set(target)
+        return false
     end
 
     --------------------------------------------------
     -- Init
     --------------------------------------------------
     OnInit.final(function()
-        ensureDefaultExists()
-        if ProcBus and ProcBus.Subscribe then
-            for ev, _ in pairs(EventToProfile) do
-                ProcBus.Subscribe(ev, function(p) onEvent(p, ev) end)
-            end
-        elseif ProcBus and ProcBus.On then
-            for ev, _ in pairs(EventToProfile) do
-                ProcBus.On(ev, function(p) onEvent(p, ev) end)
-            end
-        end
-
-        if InitBroker and InitBroker.SystemReady then
-            InitBroker.SystemReady("RespawnProfileSwitcher")
+        -- No-op, kept for consistency/logging
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+            InitBroker.SystemReady("BagIgnore")
         end
     end)
 end

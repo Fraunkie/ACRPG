@@ -1,123 +1,152 @@
 if Debug and Debug.beginFile then Debug.beginFile("ThreatSystem.lua") end
 --==================================================
 -- ThreatSystem.lua
--- Minimal, safe threat tracker used by HUD and SD.
---  • Stores threat per target unit
---  • Accepts source as unit OR pid
---  • Nil / invalid unit guarded everywhere
---  • Compatible with readers:
---      _raw[targetHandle].byPid, bySrcHandle, sum
---  • Optional helpers: Register, ClearUnit, Dump
---  • Spawn/Death shims: OnCreepSpawn / OnCreepDeath
+-- Unit-target threat tracking keyed by player pids.
+-- • AddThreat(source, target, amount)
+-- • GetThreat(source, target) -> number
+-- • GetLeader(target) -> handle id of top hero (for AI)
+-- • GetList(target) -> { {pid=0, value=123}, ... } sorted
+-- • OnCreepSpawn(u, isElite, packId) / OnCreepDeath(u)
+-- • OnTargetDeath(target, killer) / ClearUnit(target) / Register(u)
+-- Notes:
+--  - Ignores Bag units
+--  - Emits ProcBus "ThreatChanged" with { target = unit }
 --==================================================
 
 if not ThreatSystem then ThreatSystem = {} end
 _G.ThreatSystem = ThreatSystem
 
 do
+    local CU = _G.CoreUtils or {}
+
+    --------------------------------------------------
+    -- State
+    --------------------------------------------------
+    -- threat[handleId(target)] = { [pid] = value }
+    local threat = {}
+    -- lastAttacker[handleId(target)] = pid
+    local lastAttacker = {}
+
     --------------------------------------------------
     -- Helpers
     --------------------------------------------------
-    local function ValidUnit(u) return u ~= nil and GetUnitTypeId(u) ~= 0 end
+    local function valid(u) return CU.ValidUnit and CU.ValidUnit(u) or (u and GetUnitTypeId(u) ~= 0) end
+    local function isBag(u) return CU.IsBag and CU.IsBag(u) end
+    local function hid(u) return GetHandleId(u) end
 
-    local function pidOf(src)
-        if type(src) == "number" then return src end
-        if ValidUnit(src) then
-            local p = GetOwningPlayer(src)
-            if p then return GetPlayerId(p) end
-        end
-        return nil
+    local function ensure(target)
+        local h = hid(target)
+        if not threat[h] then threat[h] = {} end
+        return threat[h]
     end
 
-    local function cellFor(target)
-        ThreatSystem._raw = ThreatSystem._raw or {}
-        local hid = GetHandleId(target)
-        local c = ThreatSystem._raw[hid]
-        if not c then
-            c = { byPid = {}, bySrcHandle = {}, sum = 0 }
-            ThreatSystem._raw[hid] = c
+    local function emitChanged(target)
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.Emit then
+            PB.Emit("ThreatChanged", { target = target })
         end
-        return c
     end
 
-    local function dprint(s)
-        if rawget(_G, "DevMode") and DevMode.IsOn and DevMode.IsOn(0) then
-            print("[ThreatSystem] " .. tostring(s))
-        end
+    local function pidOf(u)
+        if not u then return nil end
+        local p = GetOwningPlayer(u)
+        return p and GetPlayerId(p) or nil
     end
 
     --------------------------------------------------
     -- API
     --------------------------------------------------
-
-    -- Optional: mark a target as tracked
-    function ThreatSystem.Register(target)
-        if not ValidUnit(target) then return end
-        cellFor(target)
-    end
-
-    -- Optional: clear all threat for a target
-    function ThreatSystem.ClearUnit(target)
-        if not ValidUnit(target) then return end
-        if not ThreatSystem._raw then return end
-        ThreatSystem._raw[GetHandleId(target)] = nil
-    end
-
-    -- Main entry: add threat from source to target
-    -- source: unit or pid
     function ThreatSystem.AddThreat(source, target, amount)
-        if not ValidUnit(target) then return end
+        if not valid(source) or not valid(target) then return end
+        if isBag(source) or isBag(target) then return end
         local pid = pidOf(source); if pid == nil then return end
-        local n = tonumber(amount or 0) or 0
-        if n == 0 then return end
-
-        local c = cellFor(target)
-        c.byPid[pid] = (c.byPid[pid] or 0) + n
-        c.sum = (c.sum or 0) + n
-
-        if ValidUnit(source) then
-            local sh = GetHandleId(source)
-            c.bySrcHandle[sh] = (c.bySrcHandle[sh] or 0) + n
-        end
+        local amt = tonumber(amount or 0) or 0
+        if amt == 0 then return end
+        local tab = ensure(target)
+        tab[pid] = math.max(0, (tab[pid] or 0) + amt)
+        lastAttacker[hid(target)] = pid
+        emitChanged(target)
     end
 
-    -- Compatibility shim used by some old code
+    -- Back compat
     function ThreatSystem.OnDamage(source, target, amount)
         ThreatSystem.AddThreat(source, target, amount)
     end
 
-    -- Optional signal from spawn systems
-    function ThreatSystem.OnCreepSpawn(u, isElite, packId)
-        if ValidUnit(u) then ThreatSystem.Register(u) end
+    function ThreatSystem.GetThreat(source, target)
+        if not valid(source) or not valid(target) then return 0 end
+        local pid = pidOf(source); if pid == nil then return 0 end
+        local tab = threat[hid(target)]; if not tab then return 0 end
+        return tab[pid] or 0
     end
 
-    -- Optional signal from death systems
-    function ThreatSystem.OnCreepDeath(u)
-        if ValidUnit(u) then ThreatSystem.ClearUnit(u) end
-    end
-
-    -- Utility used by ThreatBridge or checks
-    function ThreatSystem.IsTracked(u)
-        if not ValidUnit(u) then return false end
-        local raw = ThreatSystem._raw
-        return raw ~= nil and raw[GetHandleId(u)] ~= nil
-    end
-
-    -- Debug helper
-    function ThreatSystem.Dump()
-        dprint("Dump start")
-        local raw = ThreatSystem._raw or {}
-        for hid, c in pairs(raw) do
-            dprint(" target " .. tostring(hid) .. " sum " .. tostring(c.sum or 0))
+    -- Sorted list for HUDs
+    function ThreatSystem.GetList(target)
+        if not valid(target) then return {} end
+        local tab = threat[hid(target)]; if not tab then return {} end
+        local out, i = {}, 1
+        for pid, val in pairs(tab) do
+            if val and val > 0 then
+                out[i] = { pid = pid, value = val }
+                i = i + 1
+            end
         end
-        dprint("Dump end")
+        table.sort(out, function(a, b) return a.value > b.value end)
+        return out
+    end
+
+    -- For AI: return handle id of current top hero if any
+    function ThreatSystem.GetLeader(target)
+        if not valid(target) then return nil end
+        local list = ThreatSystem.GetList(target)
+        if #list == 0 then return nil end
+        local topPid = list[1].pid
+        if _G.PlayerData and PlayerData.Get then
+            local pd = PlayerData.Get(topPid)
+            if pd and pd.hero and valid(pd.hero) then
+                return GetHandleId(pd.hero)
+            end
+        end
+        -- fallback: return nil if hero not known
+        return nil
+    end
+
+    function ThreatSystem.GetLastAttackerPid(target)
+        if not valid(target) then return nil end
+        return lastAttacker[hid(target)]
+    end
+
+    function ThreatSystem.ClearUnit(target)
+        if not valid(target) then return end
+        local h = hid(target)
+        threat[h] = nil
+        lastAttacker[h] = nil
+        emitChanged(target)
+    end
+
+    -- Called when a creep spawns so HUDs can start tracking
+    function ThreatSystem.Register(u)
+        if not valid(u) then return end
+        ensure(u)
+    end
+
+    function ThreatSystem.OnCreepSpawn(u, isElite, packId)
+        ThreatSystem.Register(u)
+    end
+
+    function ThreatSystem.OnCreepDeath(u)
+        ThreatSystem.ClearUnit(u)
+    end
+
+    -- Called when the target dies
+    function ThreatSystem.OnTargetDeath(target, killer)
+        ThreatSystem.ClearUnit(target)
     end
 
     --------------------------------------------------
     -- Init
     --------------------------------------------------
     OnInit.final(function()
-        dprint("ready")
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("ThreatSystem")
         end

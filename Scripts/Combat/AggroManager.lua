@@ -26,8 +26,9 @@ do
     end
     local function valid(u) return u and GetUnitTypeId(u) ~= 0 end
     local function hid(u) return GetHandleId(u) end
+
     local function pbEmitTarget(t)
-        local PB = rawget(_G,"ProcBus")
+        local PB = rawget(_G, "ProcBus")
         if PB and PB.Emit then PB.Emit("AggroChanged", { target = t }) end
     end
 
@@ -92,7 +93,7 @@ do
         duration = duration or TAUNT_DURATION
         value    = value or 1000
         local h  = hid(target)
-        softLock[h] = { pid = pid, ["until"] = now() + duration }  -- FIXED: quote the key
+        softLock[h] = { pid = pid, ["until"] = now() + duration }
         AggroManager.AddThreat(target, pid, value)
     end
 

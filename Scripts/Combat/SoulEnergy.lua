@@ -1,101 +1,92 @@
 if Debug and Debug.beginFile then Debug.beginFile("SoulEnergy.lua") end
 --==================================================
 -- SoulEnergy.lua
--- Thin adapter over SoulEnergyLogic for UI bridges.
--- • Updates SpiritPowerLabelBridge on changes
--- • Listens to ProcBus to stay in sync
+-- Per-player Soul Energy store and events.
+-- • Add(pid, amount)
+-- • Get(pid)
+-- • Set(pid, value)
+-- • OnKill handled by CombatEventsBridge via SoulEnergyLogic
+-- Emits:
+--  - SoulEnergyChanged { pid, value, delta }
+--  - SoulEnergyGained  { pid, gain, total }
 --==================================================
 
 if not SoulEnergy then SoulEnergy = {} end
 _G.SoulEnergy = SoulEnergy
 
 do
-    local function dprint(s)
-        if _G.DevMode and DevMode.IsOn and DevMode.IsOn() then
-            print("[SoulAdapter] " .. tostring(s))
+    local VAL = {}  -- pid -> total soul xp
+
+    local function clampNonNeg(n)
+        if not n or n < 0 then return 0 end
+        return n
+    end
+
+    local function updateLabel(pid)
+        if _G.SpiritPowerLabelBridge and SpiritPowerLabelBridge.UpdateSoul then
+            local v = VAL[pid] or 0
+            pcall(SpiritPowerLabelBridge.UpdateSoul, pid, v)
         end
     end
 
-    local function setLabel(pid, value)
-        if _G.SpiritPowerLabelBridge and SpiritPowerLabelBridge.SetSoul then
-            pcall(SpiritPowerLabelBridge.SetSoul, pid, value or 0)
+    local function emit(name, payload)
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.Emit then
+            PB.Emit(name, payload)
         end
     end
 
-    local function pingLabel(pid, delta)
-        if _G.SpiritPowerLabelBridge and SpiritPowerLabelBridge.PingSoul then
-            pcall(SpiritPowerLabelBridge.PingSoul, pid, delta or 0)
-        end
+    --------------------------------------------------
+    -- Public API
+    --------------------------------------------------
+    function SoulEnergy.Get(pid)
+        return VAL[pid] or 0
     end
-
-    local function logicGet(pid)
-        if _G.SoulEnergyLogic and SoulEnergyLogic.Get then
-            return SoulEnergyLogic.Get(pid)
-        end
-        return 0
-    end
-
-    function SoulEnergy.Get(pid) return logicGet(pid) end
 
     function SoulEnergy.Set(pid, value)
-        local v = value or 0
-        if _G.SoulEnergyLogic and SoulEnergyLogic.Set then
-            v = SoulEnergyLogic.Set(pid, v)
-        end
-        setLabel(pid, v)
-        dprint("Set pid " .. tostring(pid) .. " = " .. tostring(v))
-        return v
+        local old = VAL[pid] or 0
+        local v = clampNonNeg(value)
+        VAL[pid] = v
+        updateLabel(pid)
+        emit("SoulEnergyChanged", { pid = pid, value = v, delta = v - old })
     end
 
-    function SoulEnergy.Add(pid, delta)
-        local v = logicGet(pid)
-        if _G.SoulEnergyLogic and SoulEnergyLogic.Add then
-            v = SoulEnergyLogic.Add(pid, delta or 0)
-        end
-        if math.abs(delta or 0) > 0 then
-            pingLabel(pid, delta or 0)
-        end
-        setLabel(pid, v)
-        dprint("Add pid " .. tostring(pid) .. " +" .. tostring(delta or 0) .. " -> " .. tostring(v))
-        return v
+    function SoulEnergy.Add(pid, amount)
+        if not pid then return end
+        local add = clampNonNeg(amount)
+        if add == 0 then return end
+        local v = (VAL[pid] or 0) + add
+        VAL[pid] = v
+        updateLabel(pid)
+        emit("SoulEnergyGained",  { pid = pid, gain = add, total = v })
+        emit("SoulEnergyChanged", { pid = pid, value = v,  delta = add })
     end
 
-    function SoulEnergy.Spend(pid, cost)
-        if _G.SoulEnergyLogic and SoulEnergyLogic.Spend then
-            local ok = SoulEnergyLogic.Spend(pid, cost or 0)
-            if ok then setLabel(pid, logicGet(pid)) end
-            return ok
-        end
-        return false
-    end
-
-    function SoulEnergy.Ping(pid, amount)
-        pingLabel(pid, amount or 0)
-        if _G.SoulEnergyLogic and SoulEnergyLogic.Ping then
-            pcall(SoulEnergyLogic.Ping, pid, amount or 0)
+    --------------------------------------------------
+    -- Optional: convenience for kill handler
+    --------------------------------------------------
+    function SoulEnergy.RewardKill(killer, dead)
+        if not _G.SoulEnergyLogic or not SoulEnergyLogic.GetReward then return end
+        if not killer or GetUnitTypeId(killer) == 0 or not dead or GetUnitTypeId(dead) == 0 then return end
+        local pid = GetPlayerId(GetOwningPlayer(killer))
+        if pid == nil then return end
+        local base = SoulEnergyLogic.GetReward(GetUnitTypeId(dead)) or 0
+        if base > 0 then
+            SoulEnergy.Add(pid, base)
         end
     end
 
     OnInit.final(function()
-        for pid = 0, bj_MAX_PLAYERS - 1 do
-            if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
-                setLabel(pid, logicGet(pid))
-            end
-        end
+        -- Optional: wire to ProcBus if someone emits explicit rewards
         local PB = rawget(_G, "ProcBus")
         if PB and PB.On then
-            PB.On("OnSoulChanged", function(e)
-                if not e or e.pid == nil then return end
-                setLabel(e.pid, e.value or 0)
-            end)
-            PB.On("OnSoulPing", function(e)
-                if not e or e.pid == nil then return end
-                pingLabel(e.pid, e.delta or 0)
+            PB.On("SoulReward", function(e)
+                if not e then return end
+                if e.pid and e.amount then SoulEnergy.Add(e.pid, e.amount) end
             end)
         end
-        dprint("ready")
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
-            InitBroker.SystemReady("SoulEnergyAdapter")
+            InitBroker.SystemReady("SoulEnergy")
         end
     end)
 end

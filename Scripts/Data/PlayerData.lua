@@ -1,70 +1,76 @@
 if Debug and Debug.beginFile then Debug.beginFile("PlayerData.lua") end
 --==================================================
 -- PlayerData.lua
--- Canonical per-player runtime store and helpers
--- • Includes soul progression mirrors and XP bonus knob
+-- Single source of truth for per-player runtime state.
+--  - Long-lived, cross-system data lives here
+--  - System-specific logic stays in its own module
+--  - Mirrors read-only combat stats from HeroStatSystem
 --==================================================
 
+if not PlayerData then PlayerData = {} end
+_G.PlayerData = PlayerData
+PLAYER_DATA = PLAYER_DATA or {}
+PlayerHero  = PlayerHero or {}
+
 do
-    PlayerData = PlayerData or {}
-    _G.PlayerData = PlayerData
-    PLAYER_DATA = PLAYER_DATA or {}
-
-    -- keep old PlayerHero alias
-    PlayerHero = PlayerHero or {}
-    _G.PlayerHero = PlayerHero
-
     --------------------------------------------------
-    -- Default per-player table
+    -- Defaults
     --------------------------------------------------
     local function defaultTable()
         return {
+            -- identity / session
             hero = nil,
-            tier = 0,
-            role = "NONE",
             zone = "YEMMA",
+            role = "NONE",
+            hasStarted = false,
+
+            -- power/progression mirrors
             powerLevel = 0,
             soulEnergy = 0,
             soulLevel  = 1,
             soulXP     = 0,
             soulNextXP = 200,
-            xpBonusPercent = 0,
-            statChanceBonusPermil = 0,
-            dropLuckBonusPermil = 0,
-            fragments    = 0,
-            ownedShards  = {},
-            spiritDrive  = 0,
+            spiritDrive= 0,
+
+            -- read-only combat stats mirror (kept in sync by events)
+            stats = { power = 0, defense = 0, speed = 0, crit = 0 },
+
+            -- loot / shards
+            fragments   = 0,
+            ownedShards = {},
+
+            -- UX flags
             lootChatEnabled = true,
-            capsulebag = nil,
-            hasStarted = false,
+            yemmaPromptShown = false,
+            yemmaPromptMinimized = false,
+
+            -- intro/meta
             introChoice = nil,
             introCompleted = false,
             introStyle = nil,
-            yemmaPromptShown = false,
-            yemmaPromptMinimized = false,
+
+            -- tasks / teleports
             hfilTask = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" },
             activeTask = nil,
-            teleports  = {},
-            killCounts = {},
-            lastKillAt = 0,
-            statFinds  = 0,
-            pity       = { stat=0, shard=0, fragment=0 },
-            xpShareEnabled = true,
+            teleports = {},
+
+            -- optional misc bonuses
+            xpBonusPercent = 0,
+            statChanceBonusPermil = 0,
+            dropLuckBonusPermil = 0,
         }
     end
 
     --------------------------------------------------
-    -- API
+    -- Accessors
     --------------------------------------------------
     function PlayerData.Get(pid)
-        PLAYER_DATA[pid] = PLAYER_DATA[pid] or defaultTable()
-        return PLAYER_DATA[pid]
-    end
-
-    function PlayerData.Set(pid, key, val)
-        local t = PlayerData.Get(pid)
-        t[key] = val
-        return t[key]
+        local t = PLAYER_DATA[pid]
+        if t == nil then
+            t = defaultTable()
+            PLAYER_DATA[pid] = t
+        end
+        return t
     end
 
     function PlayerData.GetField(pid, key, defaultValue)
@@ -90,67 +96,102 @@ do
     end
 
     --------------------------------------------------
-    -- Power mirror refresh
+    -- Power mirror refresh (example based on external stat arrays)
     --------------------------------------------------
     function PlayerData.RefreshPower(pid)
         local pd = PlayerData.Get(pid)
         local str = (rawget(_G, "PlayerMStr") and PlayerMStr[pid]) or 0
         local agi = (rawget(_G, "PlayerMAgi") and PlayerMAgi[pid]) or 0
         local int = (rawget(_G, "PlayerMInt") and PlayerMInt[pid]) or 0
-        pd.powerLevel = (str or 0) + (agi or 0) + (int or 0)
+        pd.powerLevel = math.max(0, math.floor((str + agi + int) / 3))
         return pd.powerLevel
     end
 
     --------------------------------------------------
-    -- Task legacy API (for HFIL UI safety)
+    -- Souls / shards small helpers
     --------------------------------------------------
-    function PlayerData.SetActiveTask(pid, task)
+    function PlayerData.AddSoul(pid, amount)
         local pd = PlayerData.Get(pid)
-        local ht = pd.hfilTask
-        ht.active   = true
-        ht.id       = task.id or ht.id
-        ht.name     = task.name or ""
-        ht.desc     = task.desc or ""
-        ht.goalType = task.goalType or ""
-        ht.rarity   = task.rarity or "Common"
-        ht.need     = task.goal or task.need or 1
-        ht.have     = task.progress or 0
-        pd.activeTask = { name=ht.name, rarity=ht.rarity, goal=ht.need, progress=ht.have }
-        return ht
+        pd.soulEnergy = math.max(0, (pd.soulEnergy or 0) + (amount or 0))
+        return pd.soulEnergy
     end
 
-    function PlayerData.GetActiveTask(pid)
+    function PlayerData.AddFragments(pid, amount)
         local pd = PlayerData.Get(pid)
-        local ht = pd.hfilTask
-        if ht and ht.active then
-            return { name=ht.name, rarity=ht.rarity, goal=ht.need, progress=ht.have }
+        pd.fragments = math.max(0, (pd.fragments or 0) + (amount or 0))
+        return pd.fragments
+    end
+
+    --------------------------------------------------
+    -- Zone helpers
+    --------------------------------------------------
+    function PlayerData.SetZone(pid, zone)
+        local pd = PlayerData.Get(pid)
+        pd.zone = zone or pd.zone
+        return pd.zone
+    end
+
+    function PlayerData.GetZone(pid)
+        local pd = PlayerData.Get(pid)
+        return pd.zone
+    end
+
+    --------------------------------------------------
+    -- Read-only stats mirror (from HeroStatSystem)
+    --------------------------------------------------
+    function PlayerData.SetStats(pid, tbl)
+        local pd = PlayerData.Get(pid)
+        local s = pd.stats or {}
+        s.power   = (tbl and tbl.power)   or s.power   or 0
+        s.defense = (tbl and tbl.defense) or s.defense or 0
+        s.speed   = (tbl and tbl.speed)   or s.speed   or 0
+        s.crit    = (tbl and tbl.crit)    or s.crit    or 0
+        pd.stats = s
+        return s
+    end
+
+    function PlayerData.GetStats(pid)
+        local pd = PlayerData.Get(pid)
+        local s = pd.stats
+        if not s then
+            s = { power = 0, defense = 0, speed = 0, crit = 0 }
+            pd.stats = s
         end
-        return nil
-    end
-
-    function PlayerData.AddTaskProgress(pid, amount)
-        local pd = PlayerData.Get(pid)
-        local ht = pd.hfilTask
-        if not ht or not ht.active then return end
-        ht.have = math.min((ht.have or 0) + (amount or 1), ht.need or 1)
-        pd.activeTask = { name=ht.name, rarity=ht.rarity, goal=ht.need, progress=ht.have }
-    end
-
-    function PlayerData.ClearTask(pid)
-        local pd = PlayerData.Get(pid)
-        pd.hfilTask = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" }
-        pd.activeTask = nil
+        return s
     end
 
     --------------------------------------------------
-    -- Init
+    -- Init and event wiring
     --------------------------------------------------
     OnInit.final(function()
-        for pid=0,bj_MAX_PLAYERS-1 do
+        -- ensure slots exist for human players
+        for pid = 0, bj_MAX_PLAYERS - 1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 PLAYER_DATA[pid] = PLAYER_DATA[pid] or defaultTable()
             end
         end
+
+        -- Mirror HeroStatSystem updates into PlayerData.stats
+        local function _PD_OnHeroStatsChanged(e)
+            if not e or not e.unit then return end
+            local p = GetPlayerId(GetOwningPlayer(e.unit))
+            if p == nil then return end
+            if _G.HeroStatSystem and HeroStatSystem.GetAll then
+                local all = HeroStatSystem.GetAll(e.unit)
+                PlayerData.SetStats(p, {
+                    power   = (all and all.power)   or 0,
+                    defense = (all and all.defense) or 0,
+                    speed   = (all and all.speed)   or 0,
+                    crit    = (all and all.crit)    or 0,
+                })
+            end
+        end
+
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.On then
+            PB.On("HeroStatsChanged", _PD_OnHeroStatsChanged)
+        end
+
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("PlayerData")
         end

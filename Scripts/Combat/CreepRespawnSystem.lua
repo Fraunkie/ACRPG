@@ -1,11 +1,11 @@
 if Debug and Debug.beginFile then Debug.beginFile("CreepRespawnSystem.lua") end
 --==================================================
 -- CreepRespawnSystem.lua
--- Minimal, safe respawn manager for neutral creeps.
+-- Minimal neutral creep respawn manager.
 -- • Define spawn points and respawn time
 -- • Emits ProcBus "CREEP_SPAWN" and "CREEP_DEATH"
 -- • Calls ThreatSystem.OnCreepSpawn / OnCreepDeath
--- • Works with string raw ids or numeric FourCC
+-- • Accepts string raw ids or numeric FourCC
 --==================================================
 
 if not CreepRespawnSystem then CreepRespawnSystem = {} end
@@ -28,13 +28,15 @@ do
     end
 
     local function dprint(s)
-        if rawget(_G, "DevMode") and DevMode.IsOn and DevMode.IsOn(0) then
-            print("[Respawn] " .. tostring(s))
-        end
+        local DM = rawget(_G, "DevMode")
+        if DM and DM.IsOn and DM.IsOn(0) then print("[Respawn] " .. tostring(s)) end
     end
 
     local function PB() return rawget(_G, "ProcBus") end
-    local function emit(name, e) local bus = PB(); if bus and bus.Emit then bus.Emit(name, e) end end
+    local function emit(name, e)
+        local bus = PB()
+        if bus and bus.Emit then bus.Emit(name, e) end
+    end
 
     local function TS() return rawget(_G, "ThreatSystem") end
     local function TS_OnSpawn(u, isElite, packId)
@@ -51,11 +53,10 @@ do
     --------------------------------------------------
     -- State
     --------------------------------------------------
-    --- Spawn row fields:
-    --- id, raw, x, y, face, owner, isElite, packId, respawnSec
-    local SPAWNS = {}          -- id -> row
-    local BY_UNIT = {}         -- handle -> row
-    local timers = {}          -- id -> timer
+    -- row fields: id, raw, x, y, face, owner, isElite, packId, respawnSec, onSpawn
+    local SPAWNS  = {}    -- id -> row
+    local BY_UNIT = {}    -- handle -> row
+    local timers  = {}    -- id -> timer
 
     --------------------------------------------------
     -- Spawning
@@ -63,24 +64,18 @@ do
     local function doSpawn(row)
         if not row then return nil end
         local owner = row.owner or NEUTRAL
-        local raw = toFour(row.raw)
-        if raw == 0 then
-            dprint("bad raw for spawn " .. tostring(row.id))
-            return nil
-        end
+        local raw   = toFour(row.raw)
+        if raw == 0 then dprint("bad raw for spawn " .. tostring(row.id)); return nil end
 
         local u = CreateUnit(owner, raw, row.x or 0, row.y or 0, row.face or 270)
         if not ValidUnit(u) then return nil end
 
-        -- track and tag
         BY_UNIT[GetHandleId(u)] = row
 
-        -- optional setup by map code
         if row.onSpawn and type(row.onSpawn) == "function" then
             pcall(row.onSpawn, u, row)
         end
 
-        -- threat + bus
         TS_OnSpawn(u, row.isElite == true, row.packId)
         emit("CREEP_SPAWN", { unit = u, isElite = row.isElite == true, packId = row.packId, id = row.id })
 
@@ -92,7 +87,7 @@ do
         if not row then return end
         local sec = tonumber(row.respawnSec or 10) or 10
         if sec <= 0 then return end
-        if timers[row.id] then DestroyTimer(timers[row.id]); timers[row.id] = nil end
+        local old = timers[row.id]; if old then DestroyTimer(old); timers[row.id] = nil end
 
         local t = CreateTimer(); timers[row.id] = t
         TimerStart(t, sec, false, function()
@@ -100,14 +95,12 @@ do
             doSpawn(row)
             DestroyTimer(t)
         end)
-        dprint("scheduled respawn for " .. tostring(row.id) .. " in " .. tostring(sec) .. " sec")
+        dprint("scheduled " .. tostring(row.id) .. " in " .. tostring(sec) .. " sec")
     end
 
     --------------------------------------------------
     -- Public API
     --------------------------------------------------
-    -- Define a spawn point
-    -- args: { id, raw, x, y, face, owner, isElite, packId, respawnSec, onSpawn }
     function CreepRespawnSystem.AddSpawn(args)
         if not args or not args.id then return end
         SPAWNS[args.id] = {
@@ -125,33 +118,23 @@ do
         return SPAWNS[args.id]
     end
 
-    -- Force immediate spawn by id
     function CreepRespawnSystem.SpawnNow(id)
         local row = SPAWNS[id]; if not row then return nil end
         return doSpawn(row)
     end
 
-    -- Called by external systems when a creep dies
     function CreepRespawnSystem.OnDeath(u)
         if not ValidUnit(u) then return end
-        local row = BY_UNIT[GetHandleId(u)]
-        if not row then return end
-
-        -- clear tracking first
-        BY_UNIT[GetHandleId(u)] = nil
-
-        -- notify integrations
+        local h = GetHandleId(u)
+        local row = BY_UNIT[h]; if not row then return end
+        BY_UNIT[h] = nil
         TS_OnDeath(u)
         emit("CREEP_DEATH", { unit = u, id = row.id })
-
-        -- schedule next
         scheduleRespawn(row)
     end
 
-    -- Convenience: called by external system when spawned from elsewhere
     function CreepRespawnSystem.OnSpawn(u, isElite, packId)
         if not ValidUnit(u) then return end
-        -- try to find a row that matches location and raw
         local raw = GetUnitTypeId(u)
         for _, row in pairs(SPAWNS) do
             if toFour(row.raw) == raw then
@@ -162,30 +145,27 @@ do
             end
         end
         TS_OnSpawn(u, isElite == true, packId)
-        emit("CREEP_SPAWN", { unit = u, isElite = isElite == true, packId = packId, id = (BY_UNIT[GetHandleId(u)] and BY_UNIT[GetHandleId(u)].id) or nil })
+        local r = BY_UNIT[GetHandleId(u)]
+        emit("CREEP_SPAWN", { unit = u, isElite = isElite == true, packId = packId, id = r and r.id or nil })
     end
 
-    -- Get info by unit
     function CreepRespawnSystem.GetRowByUnit(u)
         if not ValidUnit(u) then return nil end
         return BY_UNIT[GetHandleId(u)]
     end
 
-    -- Iterate all spawns
     function CreepRespawnSystem.List()
         return SPAWNS
     end
 
     --------------------------------------------------
-    -- Death trigger wiring (native)
+    -- Death wiring
     --------------------------------------------------
     OnInit.final(function()
-        -- global death hook
         local tk = CreateTrigger()
         for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
             TriggerRegisterPlayerUnitEvent(tk, Player(i), EVENT_PLAYER_UNIT_DEATH, nil)
         end
-        -- include neutral aggressive
         TriggerRegisterPlayerUnitEvent(tk, NEUTRAL, EVENT_PLAYER_UNIT_DEATH, nil)
 
         TriggerAddAction(tk, function()

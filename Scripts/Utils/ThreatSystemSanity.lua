@@ -16,7 +16,7 @@ do
     local function log(msg) if CU.Log then CU.Log("ThreatSanity", msg) end end
     local function valid(u) return CU.ValidUnit and CU.ValidUnit(u) or (u and GetUnitTypeId(u) ~= 0) end
 
-    -- Optional knob for healing threat multiplier (like classic aggro 0.5x)
+    -- Optional knob for healing threat multiplier (classic 0.5x)
     local HEAL_THREAT_MULT = 0.50
 
     -- Return threat value if available, else 0 (bag-safe)
@@ -81,14 +81,13 @@ do
         return { entries = list, total = total, average = avg }
     end
 
-    -- Optional heal adapter: call this from your healing pipeline if you want heals to add threat
+    -- Optional heal adapter: map healing into threat
     function ThreatSystem_Sanity.OnHealed(healer, target, healedAmount)
         if not valid(healer) or not valid(target) then return end
         if (healedAmount or 0) <= 0 then return end
-        -- Over-heal handling: clamp to missing health if you pass that in; here we assume already clamped upstream
-        local threatGain = math.floor((healedAmount or 0) * HEAL_THREAT_MULT + 0.5)
-        if threatGain > 0 then
-            safeAddThreat(healer, target, threatGain)
+        local gain = math.floor((healedAmount or 0) * HEAL_THREAT_MULT + 0.5)
+        if gain > 0 then
+            safeAddThreat(healer, target, gain)
         end
     end
 
@@ -100,19 +99,13 @@ do
         DisplayTextToPlayer(GetLocalPlayer(), 0, 0, "[Threat] top " .. who .. " value " .. tostring(val))
     end
 
-    -- ProcBus listeners: OPTIONAL heal mapping if DamageEngine heal events exist
+    -- ProcBus listeners: OPTIONAL heal mapping if your pipeline emits heals
     local function wireHealIfPresent()
         local PB = rawget(_G, "ProcBus")
         if not (PB and PB.On) then return end
-
-        -- If your DamageEngine emits healing payloads via PB, map them here:
         PB.On("OnHealed", function(e)
-            -- Expect e = { healer = unit, target = unit, amount = number }
             if not e then return end
-            local h = e.healer
-            local t = e.target
-            local n = e.amount or 0
-            ThreatSystem_Sanity.OnHealed(h, t, n)
+            ThreatSystem_Sanity.OnHealed(e.healer, e.target, e.amount or 0)
         end)
     end
 

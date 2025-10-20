@@ -1,154 +1,82 @@
 if Debug and Debug.beginFile then Debug.beginFile("ProcBus.lua") end
 --==================================================
--- ProcBus.lua
--- Central lightweight event bus
--- • Supports On / Once / Emit
--- • Adds aliases: Subscribe, SubscribeOnce, Publish
--- • Adds Off (remove one fn) and Clear (remove all)
--- • Safe for multiplayer and nil-safe
+-- ProcBus.lua (re-entrancy safe)
+-- Global event bus (On, Once, Emit) with per-event
+-- re-entrancy guard and a small deferred queue.
 --==================================================
 
+if not ProcBus then ProcBus = {} end
+_G.ProcBus = ProcBus
+
 do
-    if not _G.ProcBus then _G.ProcBus = {} end
-    local PB = _G.ProcBus
+    local listeners = {}   -- name -> {fn1, fn2, ...}
+    local onceList  = {}   -- name -> {fn1, fn2, ...}
 
-    --------------------------------------------------
-    -- Internal state
-    --------------------------------------------------
-    local listeners = listeners or {}   -- name -> { fn, fn, ... }
-    local onceList  = onceList  or {}   -- name -> { fn, fn, ... }
-    local firing    = firing    or {}   -- stack protection
+    -- Re-entrancy / deferral
+    local emitting  = {}   -- name -> true while emitting
+    local pending   = {}   -- name -> { {payload}, ... } queued while emitting
+    local MAX_FLUSH = 64   -- safety cap to avoid pathological loops
 
-    --------------------------------------------------
-    -- Helpers
-    --------------------------------------------------
-    local function dprint(s)
-        if Debug and Debug.printf then Debug.printf("[ProcBus] " .. tostring(s)) end
-    end
-
-    local function add(tbl, name, fn)
-        if type(name) ~= "string" or type(fn) ~= "function" then return end
-        tbl[name] = tbl[name] or {}
-        table.insert(tbl[name], fn)
-    end
-
-    local function removeOne(tbl, name, fn)
-        local list = tbl[name]
-        if not list then return end
-        for i = #list, 1, -1 do
-            if list[i] == fn then
-                table.remove(list, i)
-                if #list == 0 then tbl[name] = nil end
-                return
+    local function _deliver_one(name, payload)
+        local list = listeners[name]
+        if list then
+            for _, fn in ipairs(list) do
+                local ok, err = pcall(fn, payload)
+                if not ok then
+                    print("[ProcBus] " .. tostring(name) .. " handler error: " .. tostring(err))
+                end
+            end
+        end
+        local once = onceList[name]
+        if once then
+            onceList[name] = nil
+            for _, fn in ipairs(once) do
+                local ok, err = pcall(fn, payload)
+                if not ok then
+                    print("[ProcBus] once " .. tostring(name) .. " error: " .. tostring(err))
+                end
             end
         end
     end
 
-    --------------------------------------------------
-    -- Register a persistent listener
-    --------------------------------------------------
-    function PB.On(name, fn)
-        add(listeners, name, fn)
-        dprint("On " .. name .. " (" .. tostring(#listeners[name]) .. " total)")
-    end
+    function ProcBus.Emit(name, payload)
+        if not name then return end
 
-    --------------------------------------------------
-    -- Register a one-time listener
-    --------------------------------------------------
-    function PB.Once(name, fn)
-        add(onceList, name, fn)
-        dprint("Once " .. name)
-    end
-
-    --------------------------------------------------
-    -- Remove a single listener (persistent or once)
-    --------------------------------------------------
-    function PB.Off(name, fn)
-        if type(name) ~= "string" or type(fn) ~= "function" then return end
-        removeOne(listeners, name, fn)
-        removeOne(onceList,  name, fn)
-    end
-
-    --------------------------------------------------
-    -- Clear all listeners for an event name
-    --------------------------------------------------
-    function PB.Clear(name)
-        if type(name) ~= "string" then return end
-        listeners[name] = nil
-        onceList[name]  = nil
-        dprint("Cleared " .. name)
-    end
-
-    --------------------------------------------------
-    -- Emit an event (safe for all)
-    --------------------------------------------------
-    function PB.Emit(name, data)
-        if type(name) ~= "string" then return end
-        if firing[name] then
-            dprint("Skipping nested emit for " .. name)
+        -- If we're already in Emit(name), queue and return.
+        if emitting[name] then
+            pending[name] = pending[name] or {}
+            pending[name][#pending[name] + 1] = payload
             return
         end
-        firing[name] = true
 
-        local ok, err = pcall(function()
-            -- persistent listeners
-            local list = listeners[name]
-            if list then
-                -- copy to prevent mutation during iteration
-                local copy = {}
-                for i = 1, #list do copy[i] = list[i] end
-                for i = 1, #copy do
-                    local fn = copy[i]
-                    if type(fn) == "function" then
-                        local ok2, err2 = pcall(fn, data)
-                        if not ok2 then dprint("Listener error (" .. name .. "): " .. tostring(err2)) end
-                    end
-                end
-            end
-            -- one-time listeners
-            local once = onceList[name]
-            if once then
-                onceList[name] = nil
-                for i = 1, #once do
-                    local fn = once[i]
-                    if type(fn) == "function" then
-                        local ok3, err3 = pcall(fn, data)
-                        if not ok3 then dprint("Once listener error (" .. name .. "): " .. tostring(err3)) end
-                    end
-                end
-            end
-        end)
+        emitting[name] = true
+        _deliver_one(name, payload)
 
-        if not ok then dprint("Emit error for " .. name .. ": " .. tostring(err)) end
-        firing[name] = false
+        -- Flush any queued payloads for the same event (bounded)
+        local flushes = 0
+        while pending[name] and #pending[name] > 0 and flushes < MAX_FLUSH do
+            local p = table.remove(pending[name], 1)
+            _deliver_one(name, p)
+            flushes = flushes + 1
+        end
+        pending[name] = nil
+        emitting[name] = nil
     end
 
-    --------------------------------------------------
-    -- Aliases (compat with older/newer code)
-    --------------------------------------------------
-    PB.Subscribe      = PB.On
-    PB.SubscribeOnce  = PB.Once
-    PB.Publish        = PB.Emit
-
-    --------------------------------------------------
-    -- Debug dump
-    --------------------------------------------------
-    function PB.Dump()
-        dprint("Listeners:")
-        for name, list in pairs(listeners) do
-            dprint("  " .. name .. " (" .. tostring(#list) .. ")")
-        end
-        dprint("Once:")
-        for name, list in pairs(onceList) do
-            dprint("  " .. name .. " (" .. tostring(#list) .. ")")
-        end
+    function ProcBus.On(name, fn)
+        if not name or type(fn) ~= "function" then return end
+        listeners[name] = listeners[name] or {}
+        listeners[name][#listeners[name] + 1] = fn
     end
 
-    --------------------------------------------------
-    -- Init
-    --------------------------------------------------
+    function ProcBus.Once(name, fn)
+        if not name or type(fn) ~= "function" then return end
+        onceList[name] = onceList[name] or {}
+        onceList[name][#onceList[name] + 1] = fn
+    end
+
     OnInit.final(function()
-        dprint("ready (event bus online)")
+        print("[ProcBus] ready")
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("ProcBus")
         end

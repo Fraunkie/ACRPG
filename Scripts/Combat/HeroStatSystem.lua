@@ -1,290 +1,147 @@
-if Debug and Debug.beginFile then Debug.beginFile('HeroStatSystem') end
-
+if Debug and Debug.beginFile then Debug.beginFile("HeroStatSystem.lua") end
 --==================================================
--- HERO STAT SYSTEM (v2 - Integrated with PLAYER_DATA)
+-- HeroStatSystem.lua
+-- Lightweight per-hero stats store.
+-- • BindHero(pid, hero)
+-- • Get(hero, key) -> number
+-- • Set(hero, key, value)
+-- • Add(hero, key, delta)
+-- • GetAll(hero) -> table (read-only copy)
+-- Emits ProcBus:
+--   - HeroStatsChanged { unit=hero, key=key, value=value, delta=delta or 0 }
+-- Notes:
+--   - No top-level natives; WC3 editor safe
+--   - Cleans on unit death
 --==================================================
--- Handles base stats, multipliers, automatic updates,
--- and synchronizes with PLAYER_DATA.powerLevel.
---==================================================
-if Debug and Debug.beginFile then Debug.beginFile("StatGlobals") end
-
---==================================================
--- GLOBAL STAT TABLES
---==================================================
-
-if not PlayerBaseStr then PlayerBaseStr = {} end
-if not PlayerBaseAgi then PlayerBaseAgi = {} end
-if not PlayerBaseInt then PlayerBaseInt = {} end
-
-if not PlayerMStr then PlayerMStr = {} end
-if not PlayerMAgi then PlayerMAgi = {} end
-if not PlayerMInt then PlayerMInt = {} end
-
-if Debug and Debug.endFile then Debug.endFile() end
 
 if not HeroStatSystem then HeroStatSystem = {} end
 _G.HeroStatSystem = HeroStatSystem
 
 do
     --------------------------------------------------
-    -- CONSTANTS
+    -- State
     --------------------------------------------------
-    local UPDATE_INTERVAL = 1.00
+    -- STATS[hid] = { key = number, ... }
+    local STATS = {}
+    -- OWNER[hid] = pid
+    local OWNER = {}
 
-    local DEFAULT_BASE_STR = 2
-    local DEFAULT_BASE_AGI = 2
-    local DEFAULT_BASE_INT = 2
-    local DEFAULT_MULTIPLIER = 1.0
+    local function hid(u) return GetHandleId(u) end
+    local function valid(u) return u ~= nil and GetUnitTypeId(u) ~= 0 end
 
-    --------------------------------------------------
-    -- INTERNAL TABLES
-    --------------------------------------------------
-    local HeroStatMultipliers = {}
-    local StatUpdateTimers = {}
-    local DEBUG_ENABLED = false
-
-    -- Soul Haste passive (A000) integration
-    local AURA_PASSIVE_ID = FourCC('A000')
-    local AURA_FX_ID = "fx_soul_haste_aura"
-    local SoulHasteAura = {}
-
-    --------------------------------------------------
-    -- UTILITIES
-    --------------------------------------------------
-    local function DebugPrint(msg)
-        if DEBUG_ENABLED then print("STATS DEBUG: " .. msg) end
-    end
-
-    local function ToggleDebug()
-        DEBUG_ENABLED = not DEBUG_ENABLED
-        print("Stat debug messages: " .. (DEBUG_ENABLED and "ENABLED" or "DISABLED"))
-    end
-
-    local function isHumanPid(pid)
-        if pid == nil or pid < 0 or pid >= bj_MAX_PLAYERS then return false end
-        return GetPlayerController(Player(pid)) == MAP_CONTROL_USER
-    end
-
-    --------------------------------------------------
-    -- INITIALIZATION
-    --------------------------------------------------
-    local function InitializePlayerStats(playerId)
-        PlayerBaseStr[playerId] = DEFAULT_BASE_STR
-        PlayerBaseAgi[playerId] = DEFAULT_BASE_AGI
-        PlayerBaseInt[playerId] = DEFAULT_BASE_INT
-
-        HeroStatMultipliers[playerId] = {
-            strength = DEFAULT_MULTIPLIER,
-            agility = DEFAULT_MULTIPLIER,
-            intelligence = DEFAULT_MULTIPLIER,
-            global = DEFAULT_MULTIPLIER
-        }
-
-        PlayerMStr[playerId] = 0
-        PlayerMAgi[playerId] = 0
-        PlayerMInt[playerId] = 0
-    end
-
-    local function CalculateCurrentStat(playerId, base, mult, global)
-        local result = math.floor((base * mult) * global + 0.5)
-        if result < 1 then result = 1 end
-        return result
-    end
-
-    local function RefreshPlayerPower(pid)
-        if not isHumanPid(pid) then return end
-        local pd = PLAYER_DATA and PLAYER_DATA[pid]
-        if not pd then return end
-        pd.powerLevel = (PlayerMStr[pid] or 0) + (PlayerMAgi[pid] or 0) + (PlayerMInt[pid] or 0)
-    end
-
-    local function UpdateHeroAttributes(playerId)
-        local heroTbl = rawget(_G, "PlayerHero")
-        local hero = heroTbl and heroTbl[playerId] or nil
-        if not hero or GetWidgetLife(hero) <= 0 then return false end
-
-        local mult = HeroStatMultipliers[playerId] or {}
-        local global = mult.global or DEFAULT_MULTIPLIER
-
-        local baseStr = PlayerBaseStr[playerId] or DEFAULT_BASE_STR
-        local baseAgi = PlayerBaseAgi[playerId] or DEFAULT_BASE_AGI
-        local baseInt = PlayerBaseInt[playerId] or DEFAULT_BASE_INT
-
-        local newStr = CalculateCurrentStat(playerId, baseStr, mult.strength or 1, global)
-        local newAgi = CalculateCurrentStat(playerId, baseAgi, mult.agility or 1, global)
-        local newInt = CalculateCurrentStat(playerId, baseInt, mult.intelligence or 1, global)
-
-        SetHeroStr(hero, newStr, true)
-        SetHeroAgi(hero, newAgi, true)
-        SetHeroInt(hero, newInt, true)
-
-        PlayerMStr[playerId] = newStr
-        PlayerMAgi[playerId] = newAgi
-        PlayerMInt[playerId] = newInt
-
-        RefreshPlayerPower(playerId)
-
-        -- Passive: Soul Haste (A000) +120% attack speed via StatSystem
-        local S = rawget(_G, "StatSystem")
-        if S and S.SetUnitStat and S.STAT_ATTACK_SPEED then
-            if GetUnitAbilityLevel(hero, AURA_PASSIVE_ID) > 0 then
-                pcall(S.SetUnitStat, hero, S.STAT_ATTACK_SPEED, 120)
-                if not SoulHasteAura[hero] then
-                    local FX = rawget(_G, "FX")
-                    if FX and FX.play then
-                        pcall(FX.play, AURA_FX_ID, { unit = hero, localTo = GetOwningPlayer(hero) })
-                    end
-                    SoulHasteAura[hero] = true
-                end
-            else
-                pcall(S.SetUnitStat, hero, S.STAT_ATTACK_SPEED, 0)
-            end
-        end
-
-        return true
-    end
-
-    local function StartStatUpdates(playerId)
-        if StatUpdateTimers[playerId] then
-            DestroyTimer(StatUpdateTimers[playerId])
-        end
-
-        StatUpdateTimers[playerId] = CreateTimer()
-        TimerStart(StatUpdateTimers[playerId], UPDATE_INTERVAL, true, function()
-            UpdateHeroAttributes(playerId)
-        end)
-    end
-
-    --------------------------------------------------
-    -- PUBLIC INTERFACE
-    --------------------------------------------------
-    function HeroStatSystem.InitializeHeroStats(playerId)
-        InitializePlayerStats(playerId)
-        StartStatUpdates(playerId)
-
-        local heroTbl = rawget(_G, "PlayerHero")
-        local hero = heroTbl and heroTbl[playerId] or nil
-        if hero then
-            UpdateHeroAttributes(playerId)
-        end
-        RefreshPlayerPower(playerId)
-    end
-
-    function HeroStatSystem.UpdateHeroAttributes(playerId)
-        UpdateHeroAttributes(playerId)
-    end
-
-    function HeroStatSystem.GetPowerLevel(playerId)
-        local pdata = PLAYER_DATA and PLAYER_DATA[playerId]
-        return (pdata and pdata.powerLevel) or 0
-    end
-
-    function HeroStatSystem.RefreshPowerLevel(playerId)
-        RefreshPlayerPower(playerId)
-    end
-
-    function HeroStatSystem.SetPlayerBaseStat(playerId, stat, value)
-        if not HeroStatMultipliers[playerId] then
-            InitializePlayerStats(playerId)
-        end
-
-        if stat == "strength" or stat == "str" then
-            PlayerBaseStr[playerId] = value
-        elseif stat == "agility" or stat == "agi" then
-            PlayerBaseAgi[playerId] = value
-        elseif stat == "intelligence" or stat == "int" then
-            PlayerBaseInt[playerId] = value
-        end
-
-        UpdateHeroAttributes(playerId)
-    end
-
-    function HeroStatSystem.SetPlayerMultiplier(playerId, stat, mult)
-        if not HeroStatMultipliers[playerId] then
-            InitializePlayerStats(playerId)
-        end
-
-        local m = HeroStatMultipliers[playerId]
-        if stat == "strength" or stat == "str" then
-            m.strength = mult
-        elseif stat == "agility" or stat == "agi" then
-            m.agility = mult
-        elseif stat == "intelligence" or stat == "int" then
-            m.intelligence = mult
-        elseif stat == "global" then
-            m.global = mult
-        end
-
-        UpdateHeroAttributes(playerId)
-    end
-
-    --------------------------------------------------
-    -- BUS & STAT EVENTS SYNC
-    --------------------------------------------------
-    local function wireEvents()
-        -- Whenever a stat is applied via StatSystem, re-sync powerLevel if it's a hero.
-        local S = rawget(_G, "StatSystem")
-        if S and S.RegisterStatEvent and not HeroStatSystem._statHooked then
-            S.RegisterStatEvent(function()
-                local u = S.GetStatEventUnit and S.GetStatEventUnit() or nil
-                if not u then return end
-                local owner = GetOwningPlayer(u)
-                if not owner then return end
-                local pid = GetPlayerId(owner)
-                -- Only adjust if this unit is the tracked hero for that player
-                local heroTbl = rawget(_G, "PlayerHero")
-                if heroTbl and heroTbl[pid] == u then
-                    RefreshPlayerPower(pid)
-                end
-            end)
-            HeroStatSystem._statHooked = true
-        end
-
-        -- Optional ProcBus hero-binding events (safe if not present)
+    local function emitChanged(u, key, value, delta)
         local PB = rawget(_G, "ProcBus")
-        local function tryInit(e)
-            if not e then return end
-            local pid = e.pid or (e.playerId) or nil
-            if pid ~= nil then HeroStatSystem.InitializeHeroStats(pid) end
+        if PB and PB.Emit then
+            PB.Emit("HeroStatsChanged", { unit = u, key = key, value = value, delta = delta or 0 })
         end
-        if PB then
-            if PB.Subscribe then
-                PB.Subscribe("HERO_CREATED", tryInit)
-                PB.Subscribe("HERO_BOUND", tryInit)
-            elseif PB.On then
-                PB.On("HERO_CREATED", tryInit)
-                PB.On("HERO_BOUND", tryInit)
+    end
+
+    local function ensure(u)
+        local h = hid(u)
+        if not STATS[h] then
+            STATS[h] = {
+                -- seed defaults here if desired
+                power = 0,
+                defense = 0,
+                speed = 0,
+                crit = 0,
+                hpRegen = 0,
+                mpRegen = 0,
+            }
+        end
+        return STATS[h]
+    end
+
+    --------------------------------------------------
+    -- Public API
+    --------------------------------------------------
+    function HeroStatSystem.BindHero(pid, hero)
+        if not valid(hero) then return end
+        OWNER[hid(hero)] = pid
+        ensure(hero)
+        if _G.PlayerData and PlayerData.SetHero then
+            PlayerData.SetHero(pid, hero)
+        end
+    end
+
+    function HeroStatSystem.Get(u, key)
+        if not valid(u) or type(key) ~= "string" then return 0 end
+        local t = STATS[hid(u)]; if not t then return 0 end
+        local v = t[key]
+        if type(v) ~= "number" then return 0 end
+        return v
+    end
+
+    function HeroStatSystem.Set(u, key, value)
+        if not valid(u) or type(key) ~= "string" then return end
+        local t = ensure(u)
+        local old = tonumber(t[key] or 0) or 0
+        local v = tonumber(value or 0) or 0
+        t[key] = v
+        emitChanged(u, key, v, v - old)
+    end
+
+    function HeroStatSystem.Add(u, key, delta)
+        if not valid(u) or type(key) ~= "string" then return end
+        local t = ensure(u)
+        local old = tonumber(t[key] or 0) or 0
+        local d = tonumber(delta or 0) or 0
+        if d == 0 then return end
+        local v = old + d
+        t[key] = v
+        emitChanged(u, key, v, d)
+    end
+
+    function HeroStatSystem.GetAll(u)
+        if not valid(u) then return {} end
+        local src = STATS[hid(u)]; if not src then return {} end
+        local out = {}
+        for k, v in pairs(src) do out[k] = v end
+        return out
+    end
+
+    -- Optional: convenience to add multiple at once
+    function HeroStatSystem.AddMany(u, tbl)
+        if not valid(u) or type(tbl) ~= "table" then return end
+        for k, v in pairs(tbl) do
+            if type(v) == "number" then
+                HeroStatSystem.Add(u, k, v)
             end
         end
     end
 
+    -- Optional: remove a key entirely (rarely needed)
+    function HeroStatSystem.ClearKey(u, key)
+        if not valid(u) or type(key) ~= "string" then return end
+        local t = STATS[hid(u)]; if not t then return end
+        local old = t[key]
+        if old ~= nil then
+            t[key] = nil
+            emitChanged(u, key, 0, - (tonumber(old or 0) or 0))
+        end
+    end
+
     --------------------------------------------------
-    -- CHAT COMMANDS
+    -- Cleanup on death
     --------------------------------------------------
-    local function SetupStatCommands()
-        local trig = CreateTrigger()
+    local function onDeath()
+        local u = GetTriggerUnit()
+        if not valid(u) then return end
+        local h = hid(u)
+        STATS[h] = nil
+        OWNER[h] = nil
+    end
+
+    OnInit.final(function()
+        local t = CreateTrigger()
         for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
-            TriggerRegisterPlayerChatEvent(trig, Player(i), "-statsdebug", true)
+            TriggerRegisterPlayerUnitEvent(t, Player(i), EVENT_PLAYER_UNIT_DEATH, nil)
         end
-        TriggerAddAction(trig, function() ToggleDebug() end)
-    end
+        TriggerAddAction(t, onDeath)
 
-    --------------------------------------------------
-    -- AUTO-INIT
-    --------------------------------------------------
-    local initTimer = CreateTimer()
-    TimerStart(initTimer, 1.0, false, function()
-        SetupStatCommands()
-        wireEvents()
-        -- Boot-time ensure for all human slots (no-op if hero not spawned yet)
-        for pid = 0, bj_MAX_PLAYERS - 1 do
-            if isHumanPid(pid) then
-                if not HeroStatMultipliers[pid] then InitializePlayerStats(pid) end
-                StartStatUpdates(pid)
-            end
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+            InitBroker.SystemReady("HeroStatSystem")
         end
-        print("HeroStatSystem Initialized.")
-        DestroyTimer(initTimer)
     end)
 end
 

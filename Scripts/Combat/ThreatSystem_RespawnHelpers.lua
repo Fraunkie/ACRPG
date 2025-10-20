@@ -1,134 +1,57 @@
 if Debug and Debug.beginFile then Debug.beginFile("ThreatSystem_RespawnHelpers.lua") end
 --==================================================
 -- ThreatSystem_RespawnHelpers.lua
--- Thin helpers for creep respawn integration.
--- Keeps core ThreatSystem untouched; safe to include multiple times.
+-- Wires creep spawn/death signals into ThreatSystem.
+-- • Listens to ProcBus: CREEP_SPAWN / CREEP_DEATH
+-- • Fallback: native death watcher (just in case)
 --==================================================
 
 do
-    if not ThreatSystem then
-        ThreatSystem = {}
-        _G.ThreatSystem = ThreatSystem
+    local function valid(u) return u and GetUnitTypeId(u) ~= 0 end
+
+    local function onSpawn(e)
+        if not e or not valid(e.unit) then return end
+        if _G.ThreatSystem and ThreatSystem.OnCreepSpawn then
+            pcall(ThreatSystem.OnCreepSpawn, e.unit, e.isElite == true, e.packId)
+        elseif _G.ThreatSystem and ThreatSystem.Register then
+            pcall(ThreatSystem.Register, e.unit)
+        end
     end
 
-    -- Internal aux tables (do not rely on metatables; WC3-safe)
-    ThreatSystem._eliteFlagByUnit = ThreatSystem._eliteFlagByUnit or {}
-    ThreatSystem._eliteMultByUnit = ThreatSystem._eliteMultByUnit or {}
-    ThreatSystem._packIdByUnit    = ThreatSystem._packIdByUnit or {}
-
-    --------------------------------------------------
-    -- Safe checker for unit validity
-    --------------------------------------------------
-    local function ValidUnit(u)
-        return u ~= nil and GetUnitTypeId(u) ~= 0
+    local function onDeath(e)
+        if not e or not valid(e.unit) then return end
+        if _G.ThreatSystem and ThreatSystem.OnCreepDeath then
+            pcall(ThreatSystem.OnCreepDeath, e.unit)
+        elseif _G.ThreatSystem and ThreatSystem.ClearUnit then
+            pcall(ThreatSystem.ClearUnit, e.unit)
+        end
     end
 
-    --------------------------------------------------
-    -- Public helpers (used by CreepRespawnSystem)
-    --------------------------------------------------
+    OnInit.final(function()
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.On then
+            PB.On("CREEP_SPAWN", onSpawn)
+            PB.On("CREEP_DEATH", onDeath)
+        end
 
-    -- Registers a spawned creep with optional elite flag and pack link.
-    if not ThreatSystem.OnCreepSpawn then
-        function ThreatSystem.OnCreepSpawn(u, isElite, packId)
-            if not ValidUnit(u) then return end
-
-            -- Prefer existing Register API names from your core system
-            if ThreatSystem.RegisterEnemy then
-                ThreatSystem.RegisterEnemy(u)
-            elseif ThreatSystem.Register then
-                ThreatSystem.Register(u)
+        -- Fallback native watcher: if a tracked unit dies without bus event
+        local t = CreateTrigger()
+        for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
+            TriggerRegisterPlayerUnitEvent(t, Player(i), EVENT_PLAYER_UNIT_DEATH, nil)
+        end
+        TriggerRegisterPlayerUnitEvent(t, Player(PLAYER_NEUTRAL_AGGRESSIVE), EVENT_PLAYER_UNIT_DEATH, nil)
+        TriggerAddAction(t, function()
+            local u = GetTriggerUnit()
+            if not valid(u) then return end
+            if _G.ThreatSystem and ThreatSystem.ClearUnit then
+                pcall(ThreatSystem.ClearUnit, u)
             end
+        end)
 
-            -- Track elite state and pack link for HUD or multipliers
-            ThreatSystem._eliteFlagByUnit[u] = isElite and true or false
-
-            if isElite then
-                -- Default damage multiplier storage for future use by the core system
-                -- (your AddThreat can consult this if desired)
-                local gb = _G.GameBalance
-                local mult = 2.0
-                if gb and gb.Threat and gb.Threat.Elite and gb.Threat.Elite.dmgMult then
-                    mult = gb.Threat.Elite.dmgMult
-                end
-                ThreatSystem._eliteMultByUnit[u] = mult
-            else
-                ThreatSystem._eliteMultByUnit[u] = 1.0
-            end
-
-            if packId ~= nil then
-                ThreatSystem._packIdByUnit[u] = packId
-            end
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+            InitBroker.SystemReady("ThreatSystem_RespawnHelpers")
         end
-    end
-
-    -- Clears a creep from tracking on death or despawn.
-    if not ThreatSystem.OnCreepDeath then
-        function ThreatSystem.OnCreepDeath(u)
-            if not u then return end
-
-            -- Clear incoming threat first if available
-            if ThreatSystem.ClearUnit then
-                ThreatSystem.ClearUnit(u)
-            end
-
-            -- Remove from core registry
-            if ThreatSystem.Unregister then
-                ThreatSystem.Unregister(u)
-            elseif ThreatSystem.Remove then
-                ThreatSystem.Remove(u)
-            end
-
-            -- Wipe aux flags
-            ThreatSystem._eliteFlagByUnit[u] = nil
-            ThreatSystem._eliteMultByUnit[u] = nil
-            ThreatSystem._packIdByUnit[u]    = nil
-        end
-    end
-
-    -- Optional: set a custom elite multiplier at runtime for a unit.
-    if not ThreatSystem.SetEliteMultiplier then
-        function ThreatSystem.SetEliteMultiplier(u, mult)
-            if not ValidUnit(u) then return end
-            if type(mult) ~= "number" or mult <= 0 then return end
-            ThreatSystem._eliteMultByUnit[u] = mult
-        end
-    end
-
-    -- Optional: associate or change the pack link of a unit.
-    if not ThreatSystem.SetPackLink then
-        function ThreatSystem.SetPackLink(u, packId)
-            if not ValidUnit(u) then return end
-            ThreatSystem._packIdByUnit[u] = packId
-        end
-    end
-
-    --------------------------------------------------
-    -- Lightweight getters (useful for HUD or bridges)
-    --------------------------------------------------
-    if not ThreatSystem.IsEliteUnit then
-        function ThreatSystem.IsEliteUnit(u)
-            return ThreatSystem._eliteFlagByUnit[u] == true
-        end
-    end
-
-    if not ThreatSystem.GetEliteMult then
-        function ThreatSystem.GetEliteMult(u)
-            local m = ThreatSystem._eliteMultByUnit[u]
-            if type(m) == "number" then return m end
-            return 1.0
-        end
-    end
-
-    if not ThreatSystem.GetPackId then
-        function ThreatSystem.GetPackId(u)
-            return ThreatSystem._packIdByUnit[u]
-        end
-    end
-end
-
--- Ready banner
-if InitBroker and InitBroker.SystemReady then
-    InitBroker.SystemReady("ThreatSystem_RespawnHelpers")
+    end)
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

@@ -1,59 +1,47 @@
 if Debug and Debug.beginFile then Debug.beginFile("ThreatBridge.lua") end
 --==================================================
 -- ThreatBridge.lua
--- Listens to ProcBus creep events and syncs Threat/Aggro.
--- Safe if CreepRespawnSystem already registered: we check IsTracked first.
+-- Connects CombatEventsBridge to ThreatSystem safely.
+-- • Listens to OnDealtDamage and OnKill from ProcBus
+-- • Ignores bags and invalid units
 --==================================================
 
+if not ThreatBridge then ThreatBridge = {} end
+_G.ThreatBridge = ThreatBridge
+
 do
-    if not ThreatBridge then ThreatBridge = {} end
-    _G.ThreatBridge = ThreatBridge
+    local CU = _G.CoreUtils or {}
 
-    local function ValidUnit(u) return u ~= nil and GetUnitTypeId(u) ~= 0 end
-    local function IsTracked(u)
-        if not ThreatSystem then return false end
-        if ThreatSystem.IsTracked then return ThreatSystem.IsTracked(u) == true end
-        if ThreatSystem._eliteFlagByUnit and ThreatSystem._eliteFlagByUnit[u] ~= nil then return true end
-        return false
-    end
+    local function valid(u) return CU.ValidUnit and CU.ValidUnit(u) or (u and GetUnitTypeId(u) ~= 0) end
+    local function isBag(u) return CU.IsBag and CU.IsBag(u) end
 
-    local function Register(u, isElite, packId)
-        if AggroManager and AggroManager.Register then AggroManager.Register(u) end
-        if ThreatSystem then
-            if ThreatSystem.OnCreepSpawn then ThreatSystem.OnCreepSpawn(u, isElite, packId)
-            elseif ThreatSystem.Register then ThreatSystem.Register(u) end
+    local function onDamage(e)
+        if not e then return end
+        local src, tgt, amt = e.source, e.target, e.amount or 0
+        if not valid(src) or not valid(tgt) or isBag(src) or isBag(tgt) then return end
+        local TS = rawget(_G, "ThreatSystem")
+        if TS and TS.AddThreat then
+            pcall(TS.AddThreat, src, tgt, amt)
         end
     end
-    local function Clear(u)
-        if ThreatSystem then
-            if ThreatSystem.OnCreepDeath then ThreatSystem.OnCreepDeath(u)
-            elseif ThreatSystem.ClearUnit then ThreatSystem.ClearUnit(u) end
-        end
-        if AggroManager and AggroManager.Unregister then AggroManager.Unregister(u) end
-    end
 
-    local function onSpawn(payload)
-        if not payload then return end
-        local u = payload.unit; if not ValidUnit(u) or IsTracked(u) then return end
-        Register(u, payload.isElite == true, payload.packId)
-    end
-    local function onDeath(payload)
-        if not payload then return end
-        local u = payload.unit; if not ValidUnit(u) then return end
-        Clear(u)
+    local function onKill(e)
+        if not e then return end
+        local src, tgt = e.source, e.target
+        if not valid(src) or not valid(tgt) then return end
+        local TS = rawget(_G, "ThreatSystem")
+        if TS and TS.OnTargetDeath then
+            pcall(TS.OnTargetDeath, tgt, src)
+        end
     end
 
     OnInit.final(function()
-        if ProcBus then
-            if ProcBus.Subscribe then
-                ProcBus.Subscribe("CREEP_SPAWN", onSpawn)
-                ProcBus.Subscribe("CREEP_DEATH", onDeath)
-            elseif ProcBus.On then
-                ProcBus.On("CREEP_SPAWN", onSpawn)
-                ProcBus.On("CREEP_DEATH", onDeath)
-            end
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.On then
+            PB.On("OnDealtDamage", onDamage)
+            PB.On("OnKill", onKill)
         end
-        if InitBroker and InitBroker.SystemReady then
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("ThreatBridge")
         end
     end)

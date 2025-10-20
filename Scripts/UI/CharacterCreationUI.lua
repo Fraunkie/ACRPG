@@ -1,110 +1,246 @@
-if Debug and Debug.beginFile then Debug.beginFile("CharacterCreation_UI.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("CharacterCreationUI.lua") end
 --==================================================
--- CharacterCreation_UI.lua
--- • Builds the UI for "New Soul" and "Load Soul" buttons
--- • Style matched to TeleportShop (same button and backdrop style)
--- • Opens as part of the Bootflow sequence after loading bar
+-- CharacterCreationUI.lua
+-- • Main menu: Create (New Soul) + Load (opens slot picker)
+-- • Slot picker: 6 slots, each with LOAD and SAVE buttons
+-- • Local-only visibility, safe reuse if already created
 --==================================================
 
 if not CharacterCreation_UI then CharacterCreation_UI = {} end
 _G.CharacterCreation_UI = CharacterCreation_UI
 
 do
-    local BTN_TEX = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller"  -- Button texture (same as the shop)
-    local BG_TEX  = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"  -- Background texture (same as the shop)
-
-    local frameMenu = {}
-    local trigNew   = {}
-    local trigLoad  = {}
+    --------------------------------------------------
+    -- Textures (match your TeleportShop look)
+    --------------------------------------------------
+    local BTN_TEX = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller"
+    local BG_TEX  = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
 
     --------------------------------------------------
-    -- Helper: player data
+    -- Per-player UI state
     --------------------------------------------------
-    local function PD(pid)
-        PLAYER_DATA = PLAYER_DATA or {}
-        PLAYER_DATA[pid] = PLAYER_DATA[pid] or {}
-        return PLAYER_DATA[pid]
+    local rootMain   = {}  -- main menu frame per pid
+    local rootSlots  = {}  -- slot menu frame per pid
+    local trigCreate = {}
+    local trigOpen   = {}
+    local trigClose  = {}
+    local trigSlot   = {}  -- trigSlot[pid] = { load = {t1..t6}, save = {t1..t6}, back = t }
+
+    local SLOT_COUNT = 6
+
+    local function isLocal(pid) return GetLocalPlayer() == Player(pid) end
+
+    local function setVisible(frame, vis, pid)
+        if not frame then return end
+        if isLocal(pid) then BlzFrameSetVisible(frame, vis) end
+    end
+
+    local function hideAll(pid)
+        setVisible(rootMain[pid], false, pid)
+        setVisible(rootSlots[pid], false, pid)
     end
 
     --------------------------------------------------
-    -- UI Setup for Character Creation Menu
+    -- BUILD: Main Menu (Create + Load)
     --------------------------------------------------
-    function CharacterCreation_UI.ShowMenu(pid)
-        if frameMenu[pid] then
-            if GetLocalPlayer() == Player(pid) then
-                BlzFrameSetVisible(frameMenu[pid], true)  -- Only show for local player
-            end
-            return
-        end
+    local function ensureMain(pid)
+        if rootMain[pid] then return rootMain[pid] end
 
-        -- Make sure only the local player is interacting with the UI
         local ui = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
-        local root = BlzCreateFrameByType("BACKDROP", "CreateMenuRoot", ui, "", 0)
+        local root = BlzCreateFrameByType("BACKDROP", "AC_CreateMenuRoot", ui, "", 0)
         BlzFrameSetSize(root, 0.30, 0.20)
-        BlzFrameSetPoint(root, FRAMEPOINT_CENTER, ui, FRAMEPOINT_CENTER, 0, 0)
+        BlzFrameSetPoint(root, FRAMEPOINT_CENTER, ui, FRAMEPOINT_CENTER, 0.00, 0.00)
         BlzFrameSetTexture(root, BG_TEX, 0, true)
         BlzFrameSetEnable(root, false)
-        frameMenu[pid] = root
+        rootMain[pid] = root
 
-        --------------------------------------------------
-        -- Button: New Soul (with properly sized hitbox)
-        --------------------------------------------------
-        local btnNew = BlzCreateFrameByType("GLUETEXTBUTTON", "BtnNewSoul", root, "ScriptDialogButton", 0)
-        BlzFrameSetSize(btnNew, 0.24, 0.06)  -- Set button size to match the backdrop
-        BlzFrameSetPoint(btnNew, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, 0, 0.03)
-        BlzFrameSetLevel(btnNew, 10)  -- Ensure the button is above all other frames
-        local bgNew = BlzCreateFrameByType("BACKDROP", "", btnNew, "", 0)
-        BlzFrameSetAllPoints(bgNew, btnNew)
-        BlzFrameSetTexture(bgNew, BTN_TEX, 0, true)
-        local txtNew = BlzCreateFrameByType("TEXT", "", btnNew, "", 0)
-        BlzFrameSetPoint(txtNew, FRAMEPOINT_CENTER, btnNew, FRAMEPOINT_CENTER, 0, 0)
-        BlzFrameSetTextAlignment(txtNew, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
-        BlzFrameSetText(txtNew, "New Soul")
+        -- Title
+        local title = BlzCreateFrameByType("TEXT", "AC_CreateTitle", root, "", 0)
+        BlzFrameSetPoint(title, FRAMEPOINT_TOP, root, FRAMEPOINT_TOP, 0.00, -0.015)
+        BlzFrameSetTextAlignment(title, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+        BlzFrameSetText(title, "Soul Menu")
 
-        --------------------------------------------------
-        -- Button: Load Soul (with properly sized hitbox)
-        --------------------------------------------------
-        local btnLoad = BlzCreateFrameByType("GLUETEXTBUTTON", "BtnLoadSoul", root, "ScriptDialogButton", 0)
-        BlzFrameSetSize(btnLoad, 0.24, 0.06)  -- Set button size to match the backdrop
-        BlzFrameSetPoint(btnLoad, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, 0, -0.04)
-        BlzFrameSetLevel(btnLoad, 10)  -- Ensure the button is above all other frames
-        local bgLoad = BlzCreateFrameByType("BACKDROP", "", btnLoad, "", 0)
-        BlzFrameSetAllPoints(bgLoad, btnLoad)
-        BlzFrameSetTexture(bgLoad, BTN_TEX, 0, true)
-        local txtLoad = BlzCreateFrameByType("TEXT", "", btnLoad, "", 0)
-        BlzFrameSetPoint(txtLoad, FRAMEPOINT_CENTER, btnLoad, FRAMEPOINT_CENTER, 0, 0)
-        BlzFrameSetTextAlignment(txtLoad, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
-        BlzFrameSetText(txtLoad, "Load Soul")
+        -- Create Button
+        local btnCreate = BlzCreateFrameByType("GLUETEXTBUTTON", "AC_BtnCreate", root, "ScriptDialogButton", 0)
+        BlzFrameSetSize(btnCreate, 0.24, 0.06)
+        BlzFrameSetPoint(btnCreate, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, 0.00, 0.03)
+        local bgCreate = BlzCreateFrameByType("BACKDROP", "", btnCreate, "", 0)
+        BlzFrameSetAllPoints(bgCreate, btnCreate)
+        BlzFrameSetTexture(bgCreate, BTN_TEX, 0, true)
+        local txtCreate = BlzCreateFrameByType("TEXT", "", btnCreate, "", 0)
+        BlzFrameSetPoint(txtCreate, FRAMEPOINT_CENTER, btnCreate, FRAMEPOINT_CENTER, 0, 0)
+        BlzFrameSetTextAlignment(txtCreate, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+        BlzFrameSetText(txtCreate, "Create New Soul")
 
-        --------------------------------------------------
-        -- Button triggers
-        --------------------------------------------------
-        trigNew[pid] = CreateTrigger()
-        BlzTriggerRegisterFrameEvent(trigNew[pid], btnNew, FRAMEEVENT_CONTROL_CLICK)
-        TriggerAddAction(trigNew[pid], function()
-            if GetLocalPlayer() == Player(pid) then
-                BlzFrameSetVisible(frameMenu[pid], false)
-            end
-            -- For now: directly create soul
+        -- Load Button (opens slot picker)
+        local btnOpen = BlzCreateFrameByType("GLUETEXTBUTTON", "AC_BtnOpenLoad", root, "ScriptDialogButton", 0)
+        BlzFrameSetSize(btnOpen, 0.24, 0.06)
+        BlzFrameSetPoint(btnOpen, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, 0.00, -0.04)
+        local bgOpen = BlzCreateFrameByType("BACKDROP", "", btnOpen, "", 0)
+        BlzFrameSetAllPoints(bgOpen, btnOpen)
+        BlzFrameSetTexture(bgOpen, BTN_TEX, 0, true)
+        local txtOpen = BlzCreateFrameByType("TEXT", "", btnOpen, "", 0)
+        BlzFrameSetPoint(txtOpen, FRAMEPOINT_CENTER, btnOpen, FRAMEPOINT_CENTER, 0, 0)
+        BlzFrameSetTextAlignment(txtOpen, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+        BlzFrameSetText(txtOpen, "Load / Save Slots")
+
+        -- Triggers
+        trigCreate[pid] = CreateTrigger()
+        BlzTriggerRegisterFrameEvent(trigCreate[pid], btnCreate, FRAMEEVENT_CONTROL_CLICK)
+        TriggerAddAction(trigCreate[pid], function()
+            hideAll(pid)
             if CharacterCreation and CharacterCreation.Begin then
                 pcall(CharacterCreation.Begin, pid)
             end
         end)
 
-        trigLoad[pid] = CreateTrigger()
-        BlzTriggerRegisterFrameEvent(trigLoad[pid], btnLoad, FRAMEEVENT_CONTROL_CLICK)
-        TriggerAddAction(trigLoad[pid], function()
-            DisplayTextToPlayer(Player(pid), 0, 0, "Load Soul not yet implemented.")
+        trigOpen[pid] = CreateTrigger()
+        BlzTriggerRegisterFrameEvent(trigOpen[pid], btnOpen, FRAMEEVENT_CONTROL_CLICK)
+        TriggerAddAction(trigOpen[pid], function()
+            setVisible(rootMain[pid], false, pid)
+            local sroot = ensureSlots(pid)
+            setVisible(sroot, true, pid)
         end)
 
-        --------------------------------------------------
-        -- Show for local player (checks if it’s the local player)
-        --------------------------------------------------
-        if GetLocalPlayer() == Player(pid) then
-            BlzFrameSetVisible(root, true)
-        end
+        return root
     end
 
+    --------------------------------------------------
+    -- BUILD: Slot Menu (6 slots with Load/Save)
+    --------------------------------------------------
+    function ensureSlots(pid)
+        if rootSlots[pid] then return rootSlots[pid] end
+
+        local ui = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
+        local root = BlzCreateFrameByType("BACKDROP", "AC_SlotMenuRoot", ui, "", 0)
+        BlzFrameSetSize(root, 0.36, 0.32)
+        BlzFrameSetPoint(root, FRAMEPOINT_CENTER, ui, FRAMEPOINT_CENTER, 0.00, 0.00)
+        BlzFrameSetTexture(root, BG_TEX, 0, true)
+        BlzFrameSetEnable(root, false)
+        rootSlots[pid] = root
+
+        local title = BlzCreateFrameByType("TEXT", "AC_SlotTitle", root, "", 0)
+        BlzFrameSetPoint(title, FRAMEPOINT_TOP, root, FRAMEPOINT_TOP, 0.00, -0.015)
+        BlzFrameSetTextAlignment(title, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+        BlzFrameSetText(title, "Slots")
+
+        trigSlot[pid] = { load = {}, save = {}, back = nil }
+
+        -- Grid layout: 3 rows x 2 cols
+        local startY = -0.06
+        local rowH   = 0.08
+        local colX   = { -0.12, 0.12 }
+
+        local idx = 1
+        for r = 1, 3 do
+            for c = 1, 2 do
+                if idx <= SLOT_COUNT then
+                    local rowY = startY - (r - 1) * rowH
+                    local col  = colX[c]
+
+                    -- Label
+                    local lbl = BlzCreateFrameByType("TEXT", "AC_SlotLabel_"..idx, root, "", 0)
+                    BlzFrameSetPoint(lbl, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, col, rowY + 0.028)
+                    BlzFrameSetTextAlignment(lbl, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+                    BlzFrameSetText(lbl, "Slot " .. tostring(idx))
+
+                    -- LOAD button
+                    local btnL = BlzCreateFrameByType("GLUETEXTBUTTON", "AC_SlotLoad_"..idx, root, "ScriptDialogButton", 0)
+                    BlzFrameSetSize(btnL, 0.10, 0.036)
+                    BlzFrameSetPoint(btnL, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, col - 0.05, rowY - 0.002)
+                    local bgL = BlzCreateFrameByType("BACKDROP", "", btnL, "", 0)
+                    BlzFrameSetAllPoints(bgL, btnL)
+                    BlzFrameSetTexture(bgL, BTN_TEX, 0, true)
+                    local txtL = BlzCreateFrameByType("TEXT", "", btnL, "", 0)
+                    BlzFrameSetPoint(txtL, FRAMEPOINT_CENTER, btnL, FRAMEPOINT_CENTER, 0, 0)
+                    BlzFrameSetTextAlignment(txtL, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+                    BlzFrameSetText(txtL, "Load")
+
+                    -- SAVE button
+                    local btnS = BlzCreateFrameByType("GLUETEXTBUTTON", "AC_SlotSave_"..idx, root, "ScriptDialogButton", 0)
+                    BlzFrameSetSize(btnS, 0.10, 0.036)
+                    BlzFrameSetPoint(btnS, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, col + 0.05, rowY - 0.002)
+                    local bgS = BlzCreateFrameByType("BACKDROP", "", btnS, "", 0)
+                    BlzFrameSetAllPoints(bgS, btnS)
+                    BlzFrameSetTexture(bgS, BTN_TEX, 0, true)
+                    local txtS = BlzCreateFrameByType("TEXT", "", btnS, "", 0)
+                    BlzFrameSetPoint(txtS, FRAMEPOINT_CENTER, btnS, FRAMEPOINT_CENTER, 0, 0)
+                    BlzFrameSetTextAlignment(txtS, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+                    BlzFrameSetText(txtS, "Save")
+
+                    -- Trigger: LOAD
+                    local tL = CreateTrigger()
+                    BlzTriggerRegisterFrameEvent(tL, btnL, FRAMEEVENT_CONTROL_CLICK)
+                    TriggerAddAction(tL, (function(slotIndex)
+                        return function()
+                            hideAll(pid)
+                            if CharacterCreation_Adapter and CharacterCreation_Adapter.LoadSoul then
+                                pcall(CharacterCreation_Adapter.LoadSoul, pid, slotIndex)
+                            end
+                        end
+                    end)(idx))
+                    trigSlot[pid].load[idx] = tL
+
+                    -- Trigger: SAVE
+                    local tS = CreateTrigger()
+                    BlzTriggerRegisterFrameEvent(tS, btnS, FRAMEEVENT_CONTROL_CLICK)
+                    TriggerAddAction(tS, (function(slotIndex)
+                        return function()
+                            if CharacterCreation_Adapter and CharacterCreation_Adapter.SaveSoul then
+                                pcall(CharacterCreation_Adapter.SaveSoul, pid, slotIndex)
+                            end
+                        end
+                    end)(idx))
+                    trigSlot[pid].save[idx] = tS
+
+                    idx = idx + 1
+                end
+            end
+        end
+
+        -- Back button
+        local btnBack = BlzCreateFrameByType("GLUETEXTBUTTON", "AC_SlotBack", root, "ScriptDialogButton", 0)
+        BlzFrameSetSize(btnBack, 0.14, 0.04)
+        BlzFrameSetPoint(btnBack, FRAMEPOINT_BOTTOM, root, FRAMEPOINT_BOTTOM, 0.00, 0.012)
+        local bgB = BlzCreateFrameByType("BACKDROP", "", btnBack, "", 0)
+        BlzFrameSetAllPoints(bgB, btnBack)
+        BlzFrameSetTexture(bgB, BTN_TEX, 0, true)
+        local txtB = BlzCreateFrameByType("TEXT", "", btnBack, "", 0)
+        BlzFrameSetPoint(txtB, FRAMEPOINT_CENTER, btnBack, FRAMEPOINT_CENTER, 0, 0)
+        BlzFrameSetTextAlignment(txtB, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+        BlzFrameSetText(txtB, "Back")
+
+        trigClose[pid] = CreateTrigger()
+        BlzTriggerRegisterFrameEvent(trigClose[pid], btnBack, FRAMEEVENT_CONTROL_CLICK)
+        TriggerAddAction(trigClose[pid], function()
+            setVisible(rootSlots[pid], false, pid)
+            setVisible(rootMain[pid], true, pid)
+        end)
+
+        return root
+    end
+
+    --------------------------------------------------
+    -- Public API
+    --------------------------------------------------
+    function CharacterCreation_UI.ShowMenu(pid)
+        local m = ensureMain(pid)
+        hideAll(pid)
+        setVisible(m, true, pid)
+    end
+
+    function CharacterCreation_UI.HideAll(pid)
+        hideAll(pid)
+    end
+
+    --------------------------------------------------
+    -- Init
+    --------------------------------------------------
+    OnInit.final(function()
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+            InitBroker.SystemReady("CharacterCreation_UI")
+        end
+    end)
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

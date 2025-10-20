@@ -1,4 +1,4 @@
-if Debug and Debug.beginFile then Debug.beginFile("ShardIgnorePatch.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("ShardIgnoreForce.lua") end
 --==================================================
 -- ShardIgnorePatch.lua
 -- Wraps common shard pickup hooks to ignore teleport tomes

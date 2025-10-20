@@ -1,4 +1,4 @@
-if Debug and Debug.beginFile then Debug.beginFile("ThreatHUD_TexttagBuilder.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("ThreatHUDBuild_Texttag.lua") end
 --==================================================
 -- ThreatHUDBuild: texttag HUD (target + top entries)
 -- Update(pid, list, targetName)

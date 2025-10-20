@@ -16,11 +16,14 @@ do
         return PLAYER_DATA[pid]
     end
 
-    -- Resolve spawn (supports either GameBalance.SPAWN or HUB_COORDS.SPAWN)
+    -- Resolve spawn (supports SPAWN in multiple layouts)
     local function readSpawnXY()
         if GameBalance then
             if GameBalance.SPAWN then
                 return GameBalance.SPAWN.x or 0, GameBalance.SPAWN.y or 0
+            end
+            if GameBalance.START_NODES and GameBalance.START_NODES.SPAWN then
+                return GameBalance.START_NODES.SPAWN.x or 0, GameBalance.START_NODES.SPAWN.y or 0
             end
             if GameBalance.HUB_COORDS and GameBalance.HUB_COORDS.SPAWN then
                 return GameBalance.HUB_COORDS.SPAWN.x or 0, GameBalance.HUB_COORDS.SPAWN.y or 0
@@ -29,7 +32,7 @@ do
         return 0, 0
     end
 
-    -- Resolve starting unit id (SOUL/START_HERO_ID with H001 fallback)
+    -- Resolve starting unit id (string or number), safe for CreateUnit
     local function readSoulId()
         if GameBalance then
             if GameBalance.SOUL and GameBalance.SOUL ~= "" then return GameBalance.SOUL end
@@ -38,34 +41,46 @@ do
         return "H001"
     end
 
+    local function toUnitId(v)
+        if type(v) == "number" then return v end
+        if type(v) == "string" then
+            local ok, id = pcall(FourCC, v)
+            if ok and id and id ~= 0 then return id end
+        end
+        return FourCC("H001")
+    end
+
     function CharacterCreation.Begin(pid)
         local pd = PD(pid)
-
         if pd.hero then
             DisplayTextToPlayer(Player(pid), 0, 0, "Soul already created.")
             return
         end
 
         local spawnX, spawnY = readSpawnXY()
-        local soulId         = readSoulId()
+        local soulRaw        = readSoulId()
+        local unitId         = toUnitId(soulRaw)
 
-        local hero = CreateUnit(Player(pid), FourCC(soulId), spawnX, spawnY, 270.0)
+        -- Optional dev print
+        if rawget(_G, "DevMode") and DevMode.IsOn and DevMode.IsOn() then
+            print("[Create] pid " .. pid .. " unitId " .. tostring(unitId) .. " x " .. tostring(spawnX) .. " y " .. tostring(spawnY))
+        end
+
+        local hero = CreateUnit(Player(pid), unitId, spawnX, spawnY, 270.0)
         pd.hero = hero
         if _G.PlayerHero then PlayerHero[pid] = hero end
-        pd.isInitialized    = true
-        pd.bootflow_active  = false
+        pd.isInitialized     = true
+        pd.bootflow_active   = false
         pd.yemmaIntroPending = false
 
         DisplayTextToPlayer(Player(pid), 0, 0, "Soul successfully created.")
 
-        -- >>> LOCAL-ONLY camera + selection for the owning player <<<
+        -- Local camera + selection
         if GetLocalPlayer() == Player(pid) then
-            -- gentle pan; SetCameraPosition works too, but PanCameraToTimed is nicer
             PanCameraToTimed(spawnX, spawnY, 0.35)
             ClearSelection()
             SelectUnit(hero, true)
         end
-        -- ^ never read camera/selection state outside local blocks
 
         if ProcBus and ProcBus.Emit then
             ProcBus.Emit("OnHeroCreated", { pid = pid, unit = hero })

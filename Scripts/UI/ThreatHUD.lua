@@ -1,215 +1,178 @@
 if Debug and Debug.beginFile then Debug.beginFile("ThreatHUD.lua") end
 --==================================================
--- ThreatHUD.lua (robust controller)
--- Finds threat list from multiple systems; merges DPS.
--- Falls back to DPS-only when threat data is absent.
--- Prints dev snapshot (Target, Name, DPS, Threat) when DevMode is ON.
+-- ThreatHUD.lua
+-- Single text display for threat/DPS, centered on screen.
+-- Uses ThreatHUDData.BuildSnapshot(pid).
+-- API:
+--   CombatThreatHUD.Show(pid)
+--   CombatThreatHUD.Hide(pid)
+--   CombatThreatHUD.Toggle(pid)
 --==================================================
 
-if not ThreatHUD then ThreatHUD = {} end
-_G.ThreatHUD = ThreatHUD
+if not CombatThreatHUD then CombatThreatHUD = {} end
+_G.CombatThreatHUD = CombatThreatHUD
 
 do
-    local ui, visible = {}, {}
+    --------------------------------------------------
+    -- Config
+    --------------------------------------------------
+    local TICK = 0.25
+    -- Center of screen; we will move later when you want
+    local POS_X, POS_Y = 0.40, 0.34
+    local FONT_SIZE = 0.018  -- about 18 px
 
-    -- remember most recent damaged unit per player (for primary target)
-    local recentTarget, TARGET_TTL = {}, 8.0
+    --------------------------------------------------
+    -- State
+    --------------------------------------------------
+    local frames   = {}   -- pid -> { root, text }
+    local enabled  = {}   -- pid -> bool
+    local timerObj = nil
 
-    local function now() if os and os.clock then return os.clock() end return 0 end
-    local function valid(u) return u and GetUnitTypeId(u) ~= 0 end
-    local function DEV_ON()
-        local D = rawget(_G, "DevMode")
-        if D then
-            if type(D.IsOn) == "function" then local ok,v=pcall(D.IsOn); if ok and v then return true end end
-            if type(D.IsEnabled) == "function" then local ok,v=pcall(D.IsEnabled); if ok and v then return true end end
+    --------------------------------------------------
+    -- Helpers
+    --------------------------------------------------
+    local function ValidUnit(u) return u and GetUnitTypeId(u) ~= 0 end
+
+    local function ensureFrame(pid)
+        if frames[pid] then return frames[pid] end
+
+        local parent = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
+        local root   = BlzCreateFrameByType("BACKDROP", "th_root_" .. pid, parent, "", 0)
+        BlzFrameSetSize(root, 0.28, 0.06) -- small box; invisible backdrop
+        BlzFrameSetAbsPoint(root, FRAMEPOINT_CENTER, POS_X, POS_Y)
+        BlzFrameSetVisible(root, false)
+        BlzFrameSetTexture(root, "", 0, true) -- no texture
+
+        local text = BlzCreateFrameByType("TEXT", "th_text_" .. pid, root, "", 0)
+        BlzFrameSetPoint(text, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, 0.0, 0.0)
+        BlzFrameSetTextAlignment(text, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+        BlzFrameSetScale(text, 1.0)
+        BlzFrameSetVisible(text, true)
+        BlzFrameSetText(text, "Threat HUD")
+
+        -- set font (use default if custom not present)
+        if BlzFrameSetFont then
+            BlzFrameSetFont(text, "Fonts\\frizqt__.ttf", FONT_SIZE, 0)
         end
-        return false
-    end
-    local function builder() return rawget(_G, "ThreatHUDBuild") end
 
-    -- wire damage so we always have a target
-    OnInit.final(function()
-        local PB = rawget(_G, "ProcBus")
-        if PB and PB.On then
-            PB.On("OnDealtDamage", function(e)
-                if not e or e.pid == nil or not valid(e.target) then return end
-                recentTarget[e.pid] = { unit = e.target, t = now() }
-            end)
-            PB.On("OnKill", function(e)
-                if not e or not e.target then return end
-                for pid, r in pairs(recentTarget) do
-                    if r and r.unit and GetHandleId(r.unit) == GetHandleId(e.target) then
-                        recentTarget[pid] = nil
+        frames[pid] = { root = root, text = text }
+        return frames[pid]
+    end
+
+    local function setVisibleLocal(pid, flag)
+        local f = ensureFrame(pid)
+        if GetLocalPlayer() == Player(pid) then
+            BlzFrameSetVisible(f.root, flag)
+        end
+    end
+
+    local function fmtNumber(x)
+        local n = tonumber(x or 0) or 0
+        -- show one decimal for DPS, integers for threat
+        return n
+    end
+
+    local function buildLine(pid)
+        local D = rawget(_G, "ThreatHUDData")
+        local tgt = nil
+        local dps = 0
+        local threat = 0
+        local tgtName = "No Target"
+        local playerName = GetPlayerName(Player(pid)) or ("Player " .. tostring(pid))
+
+        if D and D.BuildSnapshot then
+            local snap = D.BuildSnapshot(pid)
+            if snap then
+                tgtName = snap.targetName or tgtName
+                if snap.rows and #snap.rows > 0 then
+                    -- snapshot rows have current player first
+                    local row = snap.rows[1]
+                    if row then
+                        dps = tonumber(row.dps or 0) or 0
+                        threat = tonumber(row.threat or 0) or 0
                     end
                 end
-            end)
+            end
+        else
+            -- Fallback: try AggroManager if data layer is missing
+            local AM = rawget(_G, "AggroManager")
+            if AM and AM.GetAnyTargetForPid then
+                tgt = AM.GetAnyTargetForPid(pid)
+                if ValidUnit(tgt) then
+                    tgtName = GetUnitName(tgt) or tgtName
+                    if AM.GetThreatList then
+                        local list = AM.GetThreatList(tgt)
+                        if list then
+                            for i = 1, #list do
+                                local row = list[i]
+                                if row and row.pid == pid then
+                                    threat = row.value or 0
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end
+
+        -- Single line of text (no percent symbols)
+        -- Example: [Target] Wandering Spirit | Nerdymoney | DPS 125.4 | Threat 230
+        return "[Target] " .. tostring(tgtName) ..
+               " | " .. tostring(playerName) ..
+               " | DPS " .. string.format("%.1f", dps) ..
+               " | Threat " .. tostring(math.floor(threat + 0.5))
+    end
+
+    local function tick()
+        for pid = 0, bj_MAX_PLAYERS - 1 do
+            if enabled[pid] then
+                local f = ensureFrame(pid)
+                local line = buildLine(pid)
+                if GetLocalPlayer() == Player(pid) then
+                    BlzFrameSetText(f.text, line)
+                end
+            end
+        end
+    end
+
+    --------------------------------------------------
+    -- Public API
+    --------------------------------------------------
+    function CombatThreatHUD.Show(pid)
+        enabled[pid] = true
+        ensureFrame(pid)
+        setVisibleLocal(pid, true)
+    end
+
+    function CombatThreatHUD.Hide(pid)
+        enabled[pid] = false
+        setVisibleLocal(pid, false)
+    end
+
+    function CombatThreatHUD.Toggle(pid)
+        if enabled[pid] then
+            CombatThreatHUD.Hide(pid)
+        else
+            CombatThreatHUD.Show(pid)
+        end
+    end
+
+    --------------------------------------------------
+    -- Init
+    --------------------------------------------------
+    OnInit.final(function()
+        -- per-player initialize, hidden by default
+        for pid = 0, bj_MAX_PLAYERS - 1 do
+            ensureFrame(pid)
+            enabled[pid] = false
+        end
+
+        timerObj = CreateTimer()
+        TimerStart(timerObj, TICK, true, tick)
+
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("ThreatHUD")
-        end
-    end)
-
-    -- ---- ThreatSystem probes ----
-    local function ts_call(name, ...)  -- safe pcall to TS.fn(...)
-        local TS = rawget(_G, "ThreatSystem"); if not TS then return nil end
-        local f = TS[name]; if type(f) ~= "function" then return nil end
-        local ok, res = pcall(f, ...); if not ok then return nil end
-        return res
-    end
-    local function normalize(list)
-        if not list then return {} end
-        if type(list) == "table" and #list > 0 and type(list[1]) == "table" and list[1].pid ~= nil then
-            return list
-        end
-        local out = {}
-        if type(list) == "table" and #list > 0 and type(list[1]) == "number" then
-            for i=1,#list do out[#out+1] = { pid = list[i], value = 0 } end
-            return out
-        end
-        if type(list) == "table" then
-            for pid, val in pairs(list) do
-                if type(pid) == "number" then out[#out+1] = { pid = pid, value = tonumber(val) or 0 } end
-            end
-        end
-        return out
-    end
-
-    local function threatListForTarget(target)
-        if not valid(target) then return {} end
-
-        -- AggroManager (preferred)
-        if rawget(_G,"AggroManager") and AggroManager.GetThreatList then
-            local ok, l = pcall(AggroManager.GetThreatList, target)
-            if ok and type(l) == "table" and #l > 0 then return l end
-        end
-
-        -- ThreatSystem: try multiple likely names
-        local names = {
-            "GetThreatList","GetThreatGroup","GetGroupForTarget","GetPlayersForTarget",
-            "ListPlayersForTarget","GetPlayers"
-        }
-        for i=1,#names do
-            local raw = ts_call(names[i], target)
-            if raw then
-                local l = normalize(raw)
-                if #l > 0 then return l end
-            end
-        end
-
-        return {}
-    end
-
-    local function primaryTargetFor(pid)
-        if rawget(_G, "AggroManager") then
-            if AggroManager.GetPlayerPrimaryTarget then
-                local t = AggroManager.GetPlayerPrimaryTarget(pid); if valid(t) then return t end
-            end
-            if AggroManager.GetAnyTargetForPid then
-                local t = AggroManager.GetAnyTargetForPid(pid); if valid(t) then return t end
-            end
-        end
-        local r = recentTarget[pid]
-        if r and valid(r.unit) and (now() - (r.t or 0)) <= TARGET_TTL then return r.unit end
-        return nil
-    end
-
-    -- merge threat + DPS; if threat empty, build from DPS snapshot only
-    local function buildEntries(target)
-        local threat = threatListForTarget(target)
-        local snap = (rawget(_G,"ThreatHUDData") and ThreatHUDData.GetSnapshot) and ThreatHUDData.GetSnapshot(target) or {}
-
-        local byPid = {}
-        for i=1,#threat do
-            local e = threat[i]
-            local pid = e.pid
-            byPid[pid] = { pid = pid, threat = tonumber(e.value or 0) or 0, dps = 0 }
-        end
-        -- add DPS; create entries if threat list was empty
-        for pid, row in pairs(snap) do
-            local n = byPid[pid] or { pid = pid, threat = 0, dps = 0 }
-            n.dps = tonumber(row.dps or 0) or 0
-            byPid[pid] = n
-        end
-
-        local out = {}
-        for pid, n in pairs(byPid) do
-            local name = "P" .. tostring(pid)
-            local ok, nm = pcall(function() return GetPlayerName(Player(pid)) end)
-            if ok and nm and nm ~= "" then name = nm end
-            out[#out+1] = { pid = pid, name = name, dps = n.dps or 0, threat = n.threat or 0 }
-        end
-
-        table.sort(out, function(a,b)
-            local ta, tb = a.threat or 0, b.threat or 0
-            if ta ~= tb then return ta > tb end
-            return (a.dps or 0) > (b.dps or 0)
-        end)
-        return out
-    end
-
-    -- dev print
-    local function round2(x) local n=tonumber(x or 0) or 0; return math.floor(n*100+0.5)/100 end
-    local function devPrint(pid, target, list)
-        if not DEV_ON() then return end
-        if GetLocalPlayer() ~= Player(pid) then return end
-        local lines = {}
-        local tname = valid(target) and GetUnitName(target) or "No Target"
-        lines[#lines+1] = "[Threat] Target: " .. tname
-        if not list or #list == 0 then
-            lines[#lines+1] = "none"
-        else
-            for i=1,#list do
-                local e=list[i]
-                lines[#lines+1] = e.name .. "  DPS: " .. tostring(round2(e.dps or 0)) ..
-                                  "  Threat: " .. tostring(math.floor(e.threat or 0))
-            end
-        end
-        DisplayTextToPlayer(Player(pid),0,0,table.concat(lines,"|n"))
-    end
-
-    -- public API
-    function ThreatHUD.IsReady(pid) return ui[pid] ~= nil end
-
-    function ThreatHUD.Create(pid)
-        if ui[pid] ~= nil then return ui[pid] end
-        local b = builder()
-        if b and b.Create then
-            local ok,h=pcall(b.Create,pid); if ok then ui[pid]=h or true else ui[pid]=true end
-        else ui[pid]=true end
-        visible[pid]=false
-        return ui[pid]
-    end
-
-    function ThreatHUD.Ensure(pid) if not ThreatHUD.IsReady(pid) then ThreatHUD.Create(pid) end return true end
-
-    function ThreatHUD.Update(pid, target)
-        ThreatHUD.Ensure(pid)
-        local list = buildEntries(target)
-        local tgtName = valid(target) and GetUnitName(target) or ""
-        local b = builder()
-        if b and b.Update then pcall(b.Update, pid, list, tgtName) end
-        devPrint(pid, target, list)
-    end
-
-    local function setVisible(pid, on)
-        visible[pid] = on and true or false
-        local b = builder()
-        if b and b.SetVisible then pcall(b.SetVisible, pid, visible[pid]) end
-    end
-
-    function ThreatHUD.Show(pid, target) ThreatHUD.Ensure(pid); ThreatHUD.Update(pid, target); setVisible(pid, true) end
-    function ThreatHUD.Hide(pid) if not ThreatHUD.IsReady(pid) then return end setVisible(pid,false) end
-    function ThreatHUD.Toggle(pid) ThreatHUD.Ensure(pid); if visible[pid] then ThreatHUD.Hide(pid) else ThreatHUD.ShowPrimary(pid) end end
-    function ThreatHUD.ShowPrimary(pid) ThreatHUD.Ensure(pid); local t=primaryTargetFor(pid); ThreatHUD.Show(pid,t) end
-
-    -- refresh when data changes
-    local function refresh()
-        for pid=0,bj_MAX_PLAYERS-1 do if visible[pid] then ThreatHUD.ShowPrimary(pid) end end
-    end
-    OnInit.final(function()
-        local PB = rawget(_G, "ProcBus")
-        if PB and PB.On then
-            PB.On("AggroChanged", refresh); PB.On("ThreatChanged", refresh); PB.On("OnDealtDamage", refresh)
         end
     end)
 end

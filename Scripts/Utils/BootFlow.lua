@@ -1,3 +1,12 @@
+if Debug and Debug.beginFile then Debug.beginFile("Bootflow.lua") end
+--==================================================
+-- Bootflow.lua
+-- Simple intro bar + "Create Soul" button.
+-- • No auto hero creation
+-- • Local-only UI visibility
+-- • Emits OnBootflowStart / OnBootflowFinished
+--==================================================
+
 if not Bootflow then Bootflow = {} end
 _G.Bootflow = Bootflow
 
@@ -8,7 +17,7 @@ do
     local BTN_TEX = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller"
 
     local BAR_DURATION = (GB.STARTUI and GB.STARTUI.BAR_DURATION) or 3.50
-    local EXTRA_DELAY  = 2.00          -- wait 2 s after bar completes
+    local EXTRA_DELAY  = 2.00
     local TICK         = 0.03
     local PANEL_W, PANEL_H, PAD = 0.44, 0.11, 0.010
 
@@ -30,11 +39,15 @@ do
         return f
     end
 
-    local function enterCine() if CinematicModeBJ then CinematicModeBJ(true, bj_FORCE_ALL_PLAYERS) end end
-    local function exitCine()  if CinematicModeBJ then CinematicModeBJ(false, bj_FORCE_ALL_PLAYERS) end end
+    local function enterCine()
+        if CinematicModeBJ then CinematicModeBJ(true, bj_FORCE_ALL_PLAYERS) end
+    end
+    local function exitCine()
+        if CinematicModeBJ then CinematicModeBJ(false, bj_FORCE_ALL_PLAYERS) end
+    end
 
     --------------------------------------------------
-    -- Button creation (safe backdrop+text method)
+    -- Button creation (Create Soul)
     --------------------------------------------------
     local function ensureUI(pid)
         if btn[pid] then return end
@@ -61,23 +74,30 @@ do
         BlzTriggerRegisterFrameEvent(trig, b, FRAMEEVENT_CONTROL_CLICK)
         TriggerAddAction(trig, function()
             if not barDone[pid] then return end
-            BlzFrameSetVisible(b, false)
+            if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(b, false) end
 
-            if CharacterCreation and CharacterCreation.Begin then
+            -- Explicit creation only on click
+            if _G.CharacterCreation_Adapter and CharacterCreation_Adapter.CreateNewSoul then
+                pcall(CharacterCreation_Adapter.CreateNewSoul, pid)
+            elseif _G.CharacterCreation and CharacterCreation.Begin then
                 pcall(CharacterCreation.Begin, pid)
             end
 
             local pd = PD(pid)
-            if pd.yemmaIntroSeen ~= true then pd.yemmaIntroPending = true end
+            if pd.yemmaIntroSeen ~= true then
+                pd.yemmaIntroPending = true
+            end
 
-            DisplayTextToPlayer(Player(pid), 0, 0, "Maybe I should talk to the big man at the desk")
-
-            local u = pd.hero or (PlayerHero and PlayerHero[pid])
-            if ValidUnit(u) then SelectUnitAddForPlayer(u, Player(pid)) end
+            local u = pd.hero or (_G.PlayerHero and PlayerHero[pid]) or nil
+            if ValidUnit(u) and GetLocalPlayer() == Player(pid) then
+                ClearSelection()
+                SelectUnit(u, true)
+            end
 
             pd.bootflow_active = false
-            if ProcBus and ProcBus.Emit then
-                ProcBus.Emit("OnBootflowFinished", { pid = pid, created = true })
+            local PB = rawget(_G, "ProcBus")
+            if PB and PB.Emit then
+                PB.Emit("OnBootflowFinished", { pid = pid, created = true })
             end
         end)
     end
@@ -113,7 +133,9 @@ do
 
         local pd = PD(pid)
         pd.bootflow_active = true
-        if ProcBus and ProcBus.Emit then ProcBus.Emit("OnBootflowStart", { pid = pid }) end
+
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.Emit then PB.Emit("OnBootflowStart", { pid = pid }) end
 
         enterCine()
         timerBar[pid] = CreateTimer()
@@ -135,11 +157,8 @@ do
     -- Public
     --------------------------------------------------
     function Bootflow.Show(pid)
-        -- 1. Show loading bar
         mkBar(pid)
         startBar(pid)
-
-        -- 2. After bar + 2 s delay, create button
         TimerStart(CreateTimer(), BAR_DURATION + EXTRA_DELAY, false, function()
             ensureUI(pid)
             if GetLocalPlayer() == Player(pid) then
@@ -164,8 +183,10 @@ do
                 Bootflow.Show(pid)
             end
         end
-        if InitBroker and InitBroker.SystemReady then
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("Bootflow")
         end
     end)
 end
+
+if Debug and Debug.endFile then Debug.endFile() end

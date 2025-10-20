@@ -30,10 +30,21 @@ do
             soulLevel  = 1,
             soulXP     = 0,
             soulNextXP = 200,
-            spiritDrive= 0,
+            spiritDrive = 0,
 
-            -- read-only combat stats mirror (kept in sync by events)
+            -- read-only combat stats mirror
             stats = { power = 0, defense = 0, speed = 0, crit = 0 },
+
+            -- combat detail stats
+            combat = {
+                armor        = 0,
+                energyResist = 0,
+                dodge        = 0,
+                parry        = 0,
+                block        = 0,
+                critChance   = 0,
+                critMult     = 1.5,
+            },
 
             -- loot / shards
             fragments   = 0,
@@ -96,7 +107,7 @@ do
     end
 
     --------------------------------------------------
-    -- Power mirror refresh (example based on external stat arrays)
+    -- Power mirror refresh
     --------------------------------------------------
     function PlayerData.RefreshPower(pid)
         local pd = PlayerData.Get(pid)
@@ -108,7 +119,7 @@ do
     end
 
     --------------------------------------------------
-    -- Souls / shards small helpers
+    -- Souls / shards
     --------------------------------------------------
     function PlayerData.AddSoul(pid, amount)
         local pd = PlayerData.Get(pid)
@@ -137,7 +148,7 @@ do
     end
 
     --------------------------------------------------
-    -- Read-only stats mirror (from HeroStatSystem)
+    -- Basic stats mirror (from HeroStatSystem)
     --------------------------------------------------
     function PlayerData.SetStats(pid, tbl)
         local pd = PlayerData.Get(pid)
@@ -161,17 +172,53 @@ do
     end
 
     --------------------------------------------------
-    -- Init and event wiring
+    -- Combat stats (new)
+    --------------------------------------------------
+    function PlayerData.SetCombat(pid, tbl)
+        local pd = PlayerData.Get(pid)
+        local c = pd.combat or {}
+        c.armor        = (tbl and tbl.armor)        or c.armor        or 0
+        c.energyResist = (tbl and tbl.energyResist) or c.energyResist or 0
+        c.dodge        = (tbl and tbl.dodge)        or c.dodge        or 0
+        c.parry        = (tbl and tbl.parry)        or c.parry        or 0
+        c.block        = (tbl and tbl.block)        or c.block        or 0
+        c.critChance   = (tbl and tbl.critChance)   or c.critChance   or 0
+        c.critMult     = (tbl and tbl.critMult)     or c.critMult     or 1.5
+        pd.combat = c
+        return c
+    end
+
+    function PlayerData.GetCombat(pid)
+        local pd = PlayerData.Get(pid)
+        if not pd.combat then
+            pd.combat = { armor = 0, energyResist = 0, dodge = 0, parry = 0, block = 0, critChance = 0, critMult = 1.5 }
+        end
+        return pd.combat
+    end
+
+    --------------------------------------------------
+    -- Combat getters (for DamageResolver)
+    --------------------------------------------------
+    function PlayerData.GetArmor(pid)        return PlayerData.GetCombat(pid).armor end
+    function PlayerData.GetEnergyResist(pid) return PlayerData.GetCombat(pid).energyResist end
+    function PlayerData.GetDodge(pid)        return PlayerData.GetCombat(pid).dodge end
+    function PlayerData.GetParry(pid)        return PlayerData.GetCombat(pid).parry end
+    function PlayerData.GetBlock(pid)        return PlayerData.GetCombat(pid).block end
+    function PlayerData.GetCritChance(pid)   return PlayerData.GetCombat(pid).critChance end
+    function PlayerData.GetCritMult(pid)     return PlayerData.GetCombat(pid).critMult end
+
+    --------------------------------------------------
+    -- Init / events
     --------------------------------------------------
     OnInit.final(function()
-        -- ensure slots exist for human players
+        -- ensure slots for human players
         for pid = 0, bj_MAX_PLAYERS - 1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 PLAYER_DATA[pid] = PLAYER_DATA[pid] or defaultTable()
             end
         end
 
-        -- Mirror HeroStatSystem updates into PlayerData.stats
+        -- Mirror stat updates
         local function _PD_OnHeroStatsChanged(e)
             if not e or not e.unit then return end
             local p = GetPlayerId(GetOwningPlayer(e.unit))
@@ -187,9 +234,21 @@ do
             end
         end
 
+        -- Optional: mirror combat stats from StatSystem
+        local function _PD_OnCombatStatsChanged(e)
+            if not e or not e.unit then return end
+            local p = GetPlayerId(GetOwningPlayer(e.unit))
+            if p == nil then return end
+            if _G.StatSystem and StatSystem.GetCombat then
+                local all = StatSystem.GetCombat(e.unit)
+                PlayerData.SetCombat(p, all)
+            end
+        end
+
         local PB = rawget(_G, "ProcBus")
         if PB and PB.On then
             PB.On("HeroStatsChanged", _PD_OnHeroStatsChanged)
+            PB.On("CombatStatsChanged", _PD_OnCombatStatsChanged)
         end
 
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then

@@ -1,92 +1,247 @@
 if Debug and Debug.beginFile then Debug.beginFile("ThreatHUDData.lua") end
 --==================================================
 -- ThreatHUDData.lua
--- Rolling DPS tracker per target and per pid.
--- Uses its own game clock (timer-based), not os.clock().
--- Listens to ProcBus "OnDealtDamage".
--- API:
---   ThreatHUDData.GetSnapshot(target) -> { [pid] = { dps=, last=time } }
+-- Data backend for the on-screen threat HUD.
+--   • Tracks rolling DPS per pid → target
+--   • Reads live threat from AggroManager when available
+--   • Resets cleanly on kill
+-- Exposed helpers:
+--   ThreatHUDData.GetCurrentTarget(pid) -> unit|nil
+--   ThreatHUDData.GetDPS(pid, target)   -> number
+--   ThreatHUDData.GetThreat(pid, target)-> integer
+--   ThreatHUDData.BuildSnapshot(pid)    -> { targetName, rows = { {pid,name,dps,threat}, ... } }
 --==================================================
 
 if not ThreatHUDData then ThreatHUDData = {} end
 _G.ThreatHUDData = ThreatHUDData
 
 do
-    local WINDOW = 5.0         -- seconds of history
-    local TICK   = 0.25        -- game-clock tick
-    local CLOCK  = 0.0         -- monotonic game time (seconds)
+    --------------------------------------------------
+    -- Tunables
+    --------------------------------------------------
+    local WINDOW_SEC = 3.0         -- rolling DPS window
+    local MIN_GAP    = 0.05        -- ignore events tighter than this per pid+target
 
-    local logs   = {}          -- logs[targetH][pid] = { {t,amt}, ... }
+    --------------------------------------------------
+    -- State
+    --------------------------------------------------
+    -- damageLog[targetH][pid] = array of {t, amt}
+    local damageLog = {}
+    -- lastSeenTarget[pid] = unit
+    local lastSeenTarget = {}
+    -- event gate: last time recorded per pid+target
+    local lastRecord = {}          -- lastRecord[pid][targetH] = time
 
-    local function now() return CLOCK end
-    local function valid(u) return u and GetUnitTypeId(u) ~= 0 end
-    local function hid(u) return GetHandleId(u) end
+    --------------------------------------------------
+    -- Helpers
+    --------------------------------------------------
+    local function now()
+        if os and os.clock then return os.clock() end
+        return 0
+    end
+    local function ValidUnit(u) return u and GetUnitTypeId(u) ~= 0 end
+    local function handle(u) return GetHandleId(u) end
 
-    -- prune old entries; return sum of remaining
-    local function prune(list, tnow)
-        if not list then return 0 end
-        local sum, j = 0, 1
-        for i = 1, #list do
-            local e = list[i]
-            if (tnow - (e.t or 0)) <= WINDOW then
-                list[j] = e; j = j + 1
-                sum = sum + (e.amt or 0)
+    local function nameOfPid(pid)
+        local p = Player(pid)
+        if p then
+            local n = GetPlayerName(p)
+            if n and n ~= "" then return n end
+        end
+        return "Player " .. tostring(pid)
+    end
+
+    local function pruneOld(h, pid, tnow)
+        local tab = damageLog[h] and damageLog[h][pid]
+        if not tab then return end
+        local i = 1
+        while i <= #tab do
+            if (tnow - (tab[i].t or 0)) > WINDOW_SEC then
+                table.remove(tab, i)
+            else
+                i = i + 1
             end
         end
-        for k = j, #list do list[k] = nil end
-        return sum
     end
 
-    -- public: snapshot { pid -> { dps, last } }
-    function ThreatHUDData.GetSnapshot(target)
-        if not valid(target) then return {} end
-        local tH = hid(target)
-        local targetLogs = logs[tH]
-        if not targetLogs then return {} end
+    local function addDamage(pid, target, amt)
+        if pid == nil or not ValidUnit(target) then return end
         local tnow = now()
-        local snap = {}
-        for pid, lst in pairs(targetLogs) do
-            local sum = prune(lst, tnow)
-            local dps = sum / (WINDOW > 0 and WINDOW or 1)
-            snap[pid] = { dps = dps, last = (#lst > 0) and (lst[#lst].t or 0) or 0 }
+        -- gate to avoid spammy duplicate sub-hits
+        lastRecord[pid] = lastRecord[pid] or {}
+        local h = handle(target)
+        local last = lastRecord[pid][h] or -1000
+        if (tnow - last) < MIN_GAP then return end
+        lastRecord[pid][h] = tnow
+
+        damageLog[h] = damageLog[h] or {}
+        damageLog[h][pid] = damageLog[h][pid] or {}
+        local arr = damageLog[h][pid]
+
+        arr[#arr + 1] = { t = tnow, amt = tonumber(amt or 0) or 0 }
+        pruneOld(h, pid, tnow)
+
+        lastSeenTarget[pid] = target
+    end
+
+    local function clearTarget(u)
+        if not ValidUnit(u) then return end
+        local h = handle(u)
+        damageLog[h] = nil
+        -- clean lastSeen for any players pointing to this target
+        for pid = 0, bj_MAX_PLAYERS - 1 do
+            if lastSeenTarget[pid] and GetHandleId(lastSeenTarget[pid]) == h then
+                lastSeenTarget[pid] = nil
+            end
+            if lastRecord[pid] then lastRecord[pid][h] = nil end
         end
-        return snap
     end
 
-    -- events
-    local function onDealtDamage(e)
-        if not e or e.pid == nil or not valid(e.target) then return end
-        local amt = tonumber(e.amount or 0) or 0
-        if amt <= 0 then return end
+    local function dpsFor(pid, target)
+        if pid == nil or not ValidUnit(target) then return 0 end
+        local h = handle(target)
         local tnow = now()
-        local tH = hid(e.target)
-        logs[tH] = logs[tH] or {}
-        local L = logs[tH]
-        L[e.pid] = L[e.pid] or {}
-        local lst = L[e.pid]
-        lst[#lst + 1] = { t = tnow, amt = amt }
-        -- soft prune to cap growth
-        if #lst > 40 then prune(lst, tnow) end
+        pruneOld(h, pid, tnow)
+        local arr = damageLog[h] and damageLog[h][pid]
+        if not arr or #arr == 0 then return 0 end
+        local sum = 0
+        for i = 1, #arr do
+            sum = sum + (arr[i].amt or 0)
+        end
+        -- divide by fixed window for stability
+        return sum / WINDOW_SEC
+    end
+
+    local function threatFor(pid, target)
+        if pid == nil or not ValidUnit(target) then return 0 end
+        local AM = rawget(_G, "AggroManager")
+        if not AM or not AM.GetThreatList then return 0 end
+        local list = AM.GetThreatList(target)
+        if not list then return 0 end
+        for i = 1, #list do
+            local row = list[i]
+            if row and row.pid == pid then
+                return math.floor((row.value or 0) + 0.5)
+            end
+        end
+        return 0
+    end
+
+    local function pickTarget(pid)
+        -- Prefer AggroManager’s remembered primary
+        local AM = rawget(_G, "AggroManager")
+        if AM and AM.GetPlayerPrimaryTarget then
+            local u = AM.GetPlayerPrimaryTarget(pid)
+            if ValidUnit(u) then return u end
+        end
+        -- Fallback to any target with highest recent DPS
+        local best, bestDps = nil, 0
+        for h, byPid in pairs(damageLog) do
+            local u = nil
+            -- reconstruct unit by scanning lastSeen (safer than havehandle)
+            for p = 0, bj_MAX_PLAYERS - 1 do
+                if lastSeenTarget[p] and GetHandleId(lastSeenTarget[p]) == h then
+                    u = lastSeenTarget[p]; break
+                end
+            end
+            if ValidUnit(u) then
+                local d = dpsFor(pid, u)
+                if d > bestDps then bestDps, best = d, u
+                end
+            end
+        end
+        if best then return best end
+        -- Finally, remember last seen
+        local ls = lastSeenTarget[pid]
+        if ValidUnit(ls) then return ls end
+        return nil
+    end
+
+    --------------------------------------------------
+    -- Public
+    --------------------------------------------------
+    function ThreatHUDData.GetCurrentTarget(pid)
+        return pickTarget(pid)
+    end
+
+    function ThreatHUDData.GetDPS(pid, target)
+        return dpsFor(pid, target)
+    end
+
+    function ThreatHUDData.GetThreat(pid, target)
+        return threatFor(pid, target)
+    end
+
+    -- Builds a snapshot for HUD text
+    function ThreatHUDData.BuildSnapshot(pid)
+        local tgt = pickTarget(pid)
+        local tgtName = (tgt and GetUnitName(tgt)) or "No Target"
+        local rows = {}
+
+        if tgt then
+            -- Build from AggroManager list when available; otherwise include only self
+            local AM = rawget(_G, "AggroManager")
+            if AM and AM.GetThreatList then
+                local list = AM.GetThreatList(tgt)
+                if list then
+                    for i = 1, #list do
+                        local r = list[i]
+                        local p = r and r.pid
+                        if p ~= nil then
+                            rows[#rows + 1] = {
+                                pid = p,
+                                name = nameOfPid(p),
+                                dps = dpsFor(p, tgt),
+                                threat = math.floor(((r.value or 0)) + 0.5),
+                            }
+                        end
+                    end
+                end
+            else
+                -- self only
+                rows[#rows + 1] = {
+                    pid = pid,
+                    name = nameOfPid(pid),
+                    dps = dpsFor(pid, tgt),
+                    threat = 0,
+                }
+            end
+
+            -- Sort: self first, then threat desc
+            table.sort(rows, function(a, b)
+                if a.pid == pid and b.pid ~= pid then return true end
+                if b.pid == pid and a.pid ~= pid then return false end
+                if a.threat ~= b.threat then return a.threat > b.threat end
+                return a.dps > b.dps
+            end)
+        end
+
+        return { targetName = tgtName, rows = rows }
+    end
+
+    --------------------------------------------------
+    -- Wiring
+    --------------------------------------------------
+    local function onDealtDamage(e)
+        if not e then return end
+        local pid   = e.pid
+        local tgt   = e.target
+        local amt   = e.amount
+        if pid == nil or not ValidUnit(tgt) then return end
+        addDamage(pid, tgt, amt)
     end
 
     local function onKill(e)
         if not e or not e.target then return end
-        logs[hid(e.target)] = nil
+        clearTarget(e.target)
     end
 
     OnInit.final(function()
-        -- build our game clock
-        local tm = CreateTimer()
-        TimerStart(tm, TICK, true, function()
-            CLOCK = CLOCK + TICK
-        end)
-
         local PB = rawget(_G, "ProcBus")
         if PB and PB.On then
             PB.On("OnDealtDamage", onDealtDamage)
             PB.On("OnKill", onKill)
         end
-
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("ThreatHUDData")
         end

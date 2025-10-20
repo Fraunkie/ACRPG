@@ -1,4 +1,4 @@
-if Debug and Debug.beginFile then Debug.beginFile("ChatTriggerRegistry.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("ChatCommands.lua") end
 --==================================================
 -- ChatTriggerRegistry.lua
 -- Centralized, editor-safe chat command registry.

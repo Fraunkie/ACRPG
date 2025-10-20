@@ -1,4 +1,4 @@
-if Debug and Debug.beginFile then Debug.beginFile("CombatAI_Spells.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("CombatSpellAI.lua") end
 --==================================================
 -- CombatAI_Spells.lua
 -- Simple creep spell casting logic.

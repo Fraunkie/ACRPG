@@ -1,4 +1,4 @@
-if Debug and Debug.beginFile then Debug.beginFile("Bootflow.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("FX_YemmaStamp.lua") end
 --==================================================
 -- Bootflow.lua
 -- • Loading bar first

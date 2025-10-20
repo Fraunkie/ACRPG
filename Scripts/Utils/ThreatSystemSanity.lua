@@ -1,4 +1,4 @@
-if Debug and Debug.beginFile then Debug.beginFile("ThreatSystem_Sanity.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("ThreatSystemSanity.lua") end
 --==================================================
 -- ThreatSystem_Sanity.lua
 -- Safe wrappers and utilities layered on top of ThreatSystem.

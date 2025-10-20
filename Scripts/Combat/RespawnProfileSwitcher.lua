@@ -1,4 +1,4 @@
-if Debug and Debug.beginFile then Debug.beginFile("BagIgnore.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("RespawnProfileSwitcher.lua") end
 --==================================================
 -- BagIgnore.lua
 -- Tiny helper so other systems can skip the Bag unit.

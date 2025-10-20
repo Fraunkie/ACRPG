@@ -1,216 +1,140 @@
 if Debug and Debug.beginFile then Debug.beginFile("CharacterCreation_Adapter.lua") end
 --==================================================
--- CharacterCreation_Adapter.lua
--- • Bridge between CharacterCreation and Save/Load system
--- • Handles future save slot loading, new soul creation, and persistence
--- • Currently stubs out with dev-safe placeholders
+-- CharacterCreation_Adapter.lua (SAFE)
+-- • No automatic unit creation
+-- • Load only loads; failures do NOT create a hero
+-- • Create action is explicit via CharacterCreation.Begin(pid)
+-- • Slot-based save/load; chat helpers for testing
 --==================================================
 
 if not CharacterCreation_Adapter then CharacterCreation_Adapter = {} end
 _G.CharacterCreation_Adapter = CharacterCreation_Adapter
 
 do
-    local SAVE_DIR = "AnimecraftSaves" -- placeholder folder for future save integration
+    local DEFAULT_SLOT = 1
 
-    --------------------------------------------------
-    -- Internal references
-    --------------------------------------------------
     local function PD(pid)
+        if _G.PlayerData and PlayerData.Get then return PlayerData.Get(pid) end
         PLAYER_DATA = PLAYER_DATA or {}
         PLAYER_DATA[pid] = PLAYER_DATA[pid] or {}
         return PLAYER_DATA[pid]
     end
 
+    local function openSlotsUI(pid)
+        if CharacterCreation_UI and CharacterCreation_UI.ShowMenu then
+            pcall(CharacterCreation_UI.ShowMenu, pid)
+        end
+    end
+
     --------------------------------------------------
-    -- Future: Load Save Slot
+    -- Public API (explicit actions only)
     --------------------------------------------------
+
+    -- Try to load a slot. On failure, DO NOT create a hero.
+    -- Returns true on success, false on failure.
     function CharacterCreation_Adapter.LoadSoul(pid, slotName)
-        local p = Player(pid)
-        DisplayTextToPlayer(p, 0, 0, "Attempting to load soul slot: " .. tostring(slotName))
-
-        -- Prefer an external save system when present
-        if SaveLoadSystem and SaveLoadSystem.Load then
-            local ok, err = pcall(SaveLoadSystem.Load, pid, slotName)
-            if ok then return end
-            if err then
-                DisplayTextToPlayer(p, 0, 0, "SaveLoadSystem error; falling back: " .. tostring(err))
-            end
+        local slot = tonumber(slotName) or DEFAULT_SLOT
+        if not SaveLoadSystem or not SaveLoadSystem.Load then
+            DisplayTextToPlayer(Player(pid), 0, 0, "Save system not available.")
+            -- Do nothing else.
+            return false
         end
 
-        -- Minimal in-memory fallback: reconstruct hero from a cached snapshot if available
-        CharacterCreation_Adapter.__MEM_SAVES = CharacterCreation_Adapter.__MEM_SAVES or {}
-        local mem = CharacterCreation_Adapter.__MEM_SAVES
-        local slot = slotName or "slot1"
-        local snap = mem[pid] and mem[pid][slot] or nil
-
-        local function readSpawnXY()
-            if GameBalance then
-                if GameBalance.SPAWN then
-                    return GameBalance.SPAWN.x or 0, GameBalance.SPAWN.y or 0
-                end
-                if GameBalance.HUB_COORDS and GameBalance.HUB_COORDS.SPAWN then
-                    return GameBalance.HUB_COORDS.SPAWN.x or 0, GameBalance.HUB_COORDS.SPAWN.y or 0
-                end
-            end
-            return 0, 0
+        local ok, err = SaveLoadSystem.Load(pid, slot)
+        if ok then
+            DisplayTextToPlayer(Player(pid), 0, 0, "Loaded slot " .. tostring(slot) .. ".")
+            return true
         end
 
-        if snap then
-            local pd = PD(pid)
-            local spawnX, spawnY = readSpawnXY()
-            local unitId = snap.heroType or FourCC("H001")
-            local hero = CreateUnit(p, unitId, spawnX, spawnY, 270.0)
-            pd.hero = hero
-            if _G.PlayerHero then PlayerHero[pid] = hero end
-
-            pd.soulEnergy = snap.soulEnergy or pd.soulEnergy
-            pd.soulLevel  = snap.soulLevel  or pd.soulLevel
-            pd.soulXP     = snap.soulXP     or pd.soulXP
-            pd.zone       = snap.zone       or pd.zone
-
-            -- Restore hero stats (base first, then recalc)
-            local baseStr = snap.baseStr or (PlayerBaseStr and PlayerBaseStr[pid]) or 2
-            local baseAgi = snap.baseAgi or (PlayerBaseAgi and PlayerBaseAgi[pid]) or 2
-            local baseInt = snap.baseInt or (PlayerBaseInt and PlayerBaseInt[pid]) or 2
-
-            if HeroStatSystem and HeroStatSystem.InitializeHeroStats and HeroStatSystem.SetPlayerBaseStat then
-                pcall(HeroStatSystem.InitializeHeroStats, pid)
-                pcall(HeroStatSystem.SetPlayerBaseStat, pid, "str", baseStr)
-                pcall(HeroStatSystem.SetPlayerBaseStat, pid, "agi", baseAgi)
-                pcall(HeroStatSystem.SetPlayerBaseStat, pid, "int", baseInt)
-            else
-                -- Fallback: set attributes directly if system not present
-                SetHeroStr(hero, snap.mStr or baseStr, true)
-                SetHeroAgi(hero, snap.mAgi or baseAgi, true)
-                SetHeroInt(hero, snap.mInt or baseInt, true)
-                if _G.PlayerMStr then PlayerMStr[pid] = GetHeroStr(hero, true) end
-                if _G.PlayerMAgi then PlayerMAgi[pid] = GetHeroAgi(hero, true) end
-                if _G.PlayerMInt then PlayerMInt[pid] = GetHeroInt(hero, true) end
-            end
-
-            if snap.powerLevel then
-                pd.powerLevel = snap.powerLevel
-            end
-
-            -- EXTEND LOAD: apply additional saved fields to PlayerData here
-            -- Example:
-            -- pd.fragments = snap.fragments or pd.fragments
-
-            DisplayTextToPlayer(p, 0, 0, "Loaded soul from memory snapshot.")
-            if GetLocalPlayer() == p then
-                PanCameraToTimed(spawnX, spawnY, 0.30)
-                ClearSelection()
-                SelectUnit(hero, true)
-            end
-            return
+        if err == "epoch_mismatch" then
+            DisplayTextToPlayer(Player(pid), 0, 0, "Old save detected. Please create a new soul.")
+            -- Show slots UI so player can choose or save later
+            openSlotsUI(pid)
+            return false
         end
 
-        -- Fallback to creating a fresh soul
-        DisplayTextToPlayer(p, 0, 0, "No save detected; creating placeholder soul.")
+        if err == "not_found" then
+            DisplayTextToPlayer(Player(pid), 0, 0, "No save found in slot " .. tostring(slot) .. ".")
+            openSlotsUI(pid)
+            return false
+        end
+
+        DisplayTextToPlayer(Player(pid), 0, 0, "Load failed: " .. tostring(err))
+        return false
+    end
+
+    -- Save current state to slot (no unit creation)
+    function CharacterCreation_Adapter.SaveSoul(pid, slotName)
+        local slot = tonumber(slotName) or DEFAULT_SLOT
+        if not SaveLoadSystem or not SaveLoadSystem.Save then
+            DisplayTextToPlayer(Player(pid), 0, 0, "Save system not available.")
+            return false
+        end
+        local ok, err = SaveLoadSystem.Save(pid, PD(pid), slot)
+        if ok then
+            DisplayTextToPlayer(Player(pid), 0, 0, "Saved slot " .. tostring(slot) .. ".")
+            return true
+        else
+            DisplayTextToPlayer(Player(pid), 0, 0, "Save failed: " .. tostring(err))
+            return false
+        end
+    end
+
+    -- Explicit new soul creation (only call this from your UI Create button)
+    function CharacterCreation_Adapter.CreateNewSoul(pid)
         if CharacterCreation and CharacterCreation.Begin then
             pcall(CharacterCreation.Begin, pid)
-        end
-    end
-
-    --------------------------------------------------
-    -- Future: Save Soul Slot
-    --------------------------------------------------
-    function CharacterCreation_Adapter.SaveSoul(pid, slotName)
-        local p = Player(pid)
-        local pd = PD(pid)
-        DisplayTextToPlayer(p, 0, 0, "Saving soul data for " .. GetPlayerName(p) .. "...")
-
-        -- TODO: implement real save serialization
-        if SaveLoadSystem and SaveLoadSystem.Save then
-            -- Try with slot support first; fallback to legacy signature
-            local ok = pcall(SaveLoadSystem.Save, pid, pd, slotName)
-            if not ok then
-                pcall(SaveLoadSystem.Save, pid, pd)
-            end
         else
-            -- Lightweight in-memory snapshot for fast testing
-            CharacterCreation_Adapter.__MEM_SAVES = CharacterCreation_Adapter.__MEM_SAVES or {}
-            local mem = CharacterCreation_Adapter.__MEM_SAVES
-            mem[pid] = mem[pid] or {}
-            local slot = slotName or "slot1"
-
-            local heroType
-            if pd.hero and GetUnitTypeId(pd.hero) ~= 0 then
-                heroType = GetUnitTypeId(pd.hero)
-            end
-
-            mem[pid][slot] = {
-                heroType   = heroType,
-                soulEnergy = pd.soulEnergy or 0,
-                soulLevel  = pd.soulLevel or 1,
-                soulXP     = pd.soulXP or 0,
-                zone       = pd.zone or "YEMMA",
-                -- Stats snapshot (basics only)
-                baseStr    = (PlayerBaseStr and PlayerBaseStr[pid]) or 2,
-                baseAgi    = (PlayerBaseAgi and PlayerBaseAgi[pid]) or 2,
-                baseInt    = (PlayerBaseInt and PlayerBaseInt[pid]) or 2,
-                mStr       = (_G.PlayerMStr and PlayerMStr[pid]) or nil,
-                mAgi       = (_G.PlayerMAgi and PlayerMAgi[pid]) or nil,
-                mInt       = (_G.PlayerMInt and PlayerMInt[pid]) or nil,
-                powerLevel = pd.powerLevel or nil,
-                -- EXTEND SAVE: add more PlayerData fields here
-                -- Example:
-                -- fragments = pd.fragments,
-            }
-            DisplayTextToPlayer(p, 0, 0, "Saved to memory snapshot (" .. slot .. ").")
+            DisplayTextToPlayer(Player(pid), 0, 0, "CharacterCreation system not available.")
         end
     end
 
-    --------------------------------------------------
-    -- Hook from CharacterCreation Menu
-    --------------------------------------------------
-    function CharacterCreation_Adapter.Start(pid, onDone)
-        -- Simple entry used by boot flow: attempt load, otherwise create new
-        CharacterCreation_Adapter.LoadSoul(pid, "slot1")
-        if type(onDone) == "function" then
-            pcall(onDone)
+    -- Optional: an auto entry BootFlow can call.
+    -- Attempts to load; on failure, only opens slot UI (no hero creation).
+    function CharacterCreation_Adapter.TryAutoLoad(pid, slotName)
+        local ok = CharacterCreation_Adapter.LoadSoul(pid, slotName or DEFAULT_SLOT)
+        if not ok then
+            openSlotsUI(pid) -- let the player decide to Create or pick another slot
         end
-    end
-
-    function CharacterCreation_Adapter.OnMenuChoice(pid, choice)
-        -- choice can be: "new", "load", "cancel"
-        if choice == "new" then
-            DisplayTextToPlayer(Player(pid), 0, 0, "Creating new soul...")
-            if CharacterCreation and CharacterCreation.Begin then
-                pcall(CharacterCreation.Begin, pid)
-            end
-        elseif choice == "load" then
-            CharacterCreation_Adapter.LoadSoul(pid, "slot1")
-        else
-            DisplayTextToPlayer(Player(pid), 0, 0, "Cancelled soul creation.")
-        end
+        return ok
     end
 
     --------------------------------------------------
-    -- DevMode commands (for testing)
+    -- Dev chat helpers (non-intrusive)
     --------------------------------------------------
     OnInit.final(function()
-        local trigSave = CreateTrigger()
-        local trigLoad = CreateTrigger()
-
+        local tSave = CreateTrigger()
+        local tLoad = CreateTrigger()
+        local tNew  = CreateTrigger()
         for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
-            TriggerRegisterPlayerChatEvent(trigSave, Player(i), "-savesoul", true)
-            TriggerRegisterPlayerChatEvent(trigLoad, Player(i), "-loadsoul", true)
+            TriggerRegisterPlayerChatEvent(tSave, Player(i), "-save", false)
+            TriggerRegisterPlayerChatEvent(tLoad, Player(i), "-load", false)
+            TriggerRegisterPlayerChatEvent(tNew,  Player(i), "-new",  true)
         end
 
-        TriggerAddAction(trigSave, function()
-            local p = GetTriggerPlayer()
+        TriggerAddAction(tSave, function()
+            local p   = GetTriggerPlayer()
             local pid = GetPlayerId(p)
-            CharacterCreation_Adapter.SaveSoul(pid)
+            local msg = GetEventPlayerChatString()
+            local slot = tonumber(string.sub(msg, 6)) or 1
+            CharacterCreation_Adapter.SaveSoul(pid, slot)
         end)
 
-        TriggerAddAction(trigLoad, function()
-            local p = GetTriggerPlayer()
+        TriggerAddAction(tLoad, function()
+            local p   = GetTriggerPlayer()
             local pid = GetPlayerId(p)
-            CharacterCreation_Adapter.LoadSoul(pid, "slot1")
+            local msg = GetEventPlayerChatString()
+            local slot = tonumber(string.sub(msg, 6)) or 1
+            CharacterCreation_Adapter.LoadSoul(pid, slot)
         end)
 
-        if InitBroker and InitBroker.SystemReady then
+        TriggerAddAction(tNew, function()
+            local p   = GetTriggerPlayer()
+            local pid = GetPlayerId(p)
+            CharacterCreation_Adapter.CreateNewSoul(pid)
+        end)
+
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("CharacterCreation_Adapter")
         end
     end)

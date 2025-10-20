@@ -90,15 +90,6 @@ Shared rolls display winner to all and announce via UI toast.
 
 ---
 
-## 📚 Codex System
-The **Lore Codex** is the in-game encyclopedia that unlocks as you progress:
-- **Pages** are awarded from quests, zone entries, boss kills, and cinematics.  
-- **UI Panel Hotkey:** `L` (to open per-player Codex window).  
-- **Debug Commands:** `-lore give <id>`, `-lore reset`, `-lore all`.  
-- Each entry contains narrative text and art fragments for the Great Convergence.  
-
----
-
 ## 🧠 Sync & Snapshot System
 
 ### Snapshot Builder

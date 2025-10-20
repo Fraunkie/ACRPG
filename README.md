@@ -27,7 +27,7 @@ This folder is your one-stop portal for the game’s systems: combat events, XP/
   - [🧰 DevMode & Chat Commands](./DevMode_Guide.md)
 - **Contributing**
   - [Coding Conventions](#-coding-conventions)
-  ...existing code...
+  - [Scripts Index](./docs/scripts_index.md)
 
 - **Appendix**
   - [Troubleshooting](#-troubleshooting)

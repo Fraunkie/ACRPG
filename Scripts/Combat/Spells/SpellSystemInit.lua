@@ -1,12 +1,12 @@
 if Debug and Debug.beginFile then Debug.beginFile("SpellSystemInit.lua") end
 --==================================================
--- Spell System (Data Layer) with charge schema
+-- Spell System (Data Layer) with damage calculator
 --==================================================
 
 if not SpellSystemInit then SpellSystemInit = {} end
 _G.SpellSystemInit = SpellSystemInit
 
--- Optional visuals used by stages or launch
+-- Optional visuals used by charging/launch (kept for other spells)
 if FX and FX.def then
     FX.def("SPARK_SMALL", {
         sfx="Abilities\\Spells\\Human\\HolyBolt\\HolyBoltSpecialArt.mdl",
@@ -22,16 +22,16 @@ if FX and FX.def then
     })
 end
 
+----------------------------------------------------
+-- Core spell data table
+----------------------------------------------------
 local SpellData = {
-    --========================
-    -- NEW: Lost Soul kit
-    --========================
+    --============== Lost Soul kit (examples) ==============
 
-    -- A000: passive attack speed (used by ModifierSystem)
+    -- A000: passive attack speed (ModifierSystem reads this)
     [FourCC('A000')] = {
         name  = "Soul Acceleration",
         type  = "passive",
-        -- 120% total AS = 2.20 multiplier (1.0 base + 1.2 extra)
         attackSpeedMult = 2.20,
         auraModel       = "war3mapImported\\BJT_Shio_SYR_FX_QL.mdx"
     },
@@ -40,26 +40,24 @@ local SpellData = {
     [FourCC('A002')] = {
         name = "Soul Burst",
         type = "instant_aoe",
-        damageBase = 60.0,         -- flat base
-        intScale   = 1.50,         -- + INT * 1.5 (the executor uses this)
+        damageBase = 60.0,
+        intScale   = 1.50,
         aoe        = 250.0,
         fxModel    = "war3mapImported\\blue spark by deckai2.mdl",
         mana       = 0,
         cooldown   = 0
     },
 
-    -- A003: on-hit magic damage passive (your melee proc)
+    -- A003: on-hit magic damage passive (melee proc)
     [FourCC('A003')] = {
         name = "Planar Echo",
         type = "passive_onhit",
-        bonusBase = 25.0,          -- flat on-hit magic
-        intScale  = 0.40,          -- + INT * 0.40
-        fxModel   = nil            -- visual handled by proc if you add one
+        bonusBase = 25.0,
+        intScale  = 0.40,
+        fxModel   = nil
     },
 
-    --========================
-    -- Existing beam/ball examples
-    --========================
+    --================== Beams/Balls (examples) ==================
     [FourCC('A006')] = {
         name = "Kamehameha",
         type = "beam",
@@ -140,28 +138,58 @@ local SpellData = {
     }
 }
 
-function SpellSystemInit.GetSpellConfig(spellKey)
-    return SpellData[spellKey]
+----------------------------------------------------
+-- Damage Calculator
+-- INT * K  ->  multiplied by (1 + spellBonusPct + externalBonusPct)
+----------------------------------------------------
+local INT_FACTOR = 1.00  -- tweak this global scalar to retune overall spell power
+
+local function getInt(pid)
+    return (rawget(_G, "PlayerMInt") and PlayerMInt[pid]) or 0
 end
 
-function SpellSystemInit.GetScaledDamage(playerId, spellKey, spellLevel)
+local function getSpellBonusPct(pid)
+    -- primary source: PLAYER_DATA.combat.spellBonusPct
+    local v = (PLAYER_DATA and PLAYER_DATA[pid]
+        and PLAYER_DATA[pid].combat and PLAYER_DATA[pid].combat.spellBonusPct) or 0.0
+    -- secondary source (optional): StatSystem if you have one
+    if _G.StatSystem and StatSystem.GetSpellBonusPct then
+        local ext = StatSystem.GetSpellBonusPct(pid)
+        if type(ext) == "number" then
+            v = v + ext
+        end
+    end
+    return v
+end
+
+-- Public: compute damage for a configured spell
+function SpellSystemInit.GetDamageForSpell(pid, spellKey, spellLevel, ctx)
     local cfg = SpellData[spellKey]
     if not cfg then return 0 end
 
-    local damage = (cfg.damageBase or 0)
-        + ((cfg.damagePerLevel or 0) * math.max((spellLevel or 1) - 1, 0))
+    -- If a spell provides its own calc, use that
+    if type(cfg.calc) == "function" then
+        local ok, v = pcall(cfg.calc, pid, spellLevel or 1, ctx or {})
+        if ok and type(v) == "number" then return math.max(0, v) end
+    end
 
-    if PLAYER_DATA and PLAYER_DATA[playerId] then
-        local power = PLAYER_DATA[playerId].powerLevel or 0
-        damage = damage + (power * 0.2)
-    end
-    if StatSystem and StatSystem.GetDamageBonus then
-        local mult = StatSystem.GetDamageBonus(playerId)
-        if mult and mult > 0 then
-            damage = damage * mult
-        end
-    end
-    return damage
+    -- Generic fallback: base + per level, then apply INT scaling & spell bonus
+    local base = (cfg.damageBase or 0) + math.max(0, (spellLevel or 1) - 1) * (cfg.damagePerLevel or 0)
+    local int  = getInt(pid)
+    local bonusPct = getSpellBonusPct(pid)
+
+    local raw = (base + int * INT_FACTOR)
+    return math.max(0, raw * (1.0 + bonusPct))
+end
+
+-- Back-compat shim (older code calls this)
+function SpellSystemInit.GetScaledDamage(playerId, spellKey, spellLevel)
+    return SpellSystemInit.GetDamageForSpell(playerId, spellKey, spellLevel, nil)
+end
+
+-- Expose config lookups
+function SpellSystemInit.GetSpellConfig(spellKey)
+    return SpellData[spellKey]
 end
 
 local function tablelength(tbl)

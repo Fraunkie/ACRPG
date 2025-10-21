@@ -37,13 +37,16 @@ do
 
             -- combat detail stats
             combat = {
-                armor        = 0,
-                energyResist = 0,
-                dodge        = 0,
-                parry        = 0,
-                block        = 0,
-                critChance   = 0,
-                critMult     = 1.5,
+                armor         = 0,
+                energyResist  = 0,
+                dodge         = 0,
+                parry         = 0,
+                block         = 0,
+                critChance    = 0,
+                critMult      = 1.5,
+                -- NEW: % spell power bonus (e.g., from items, talents)
+                -- expressed as 0.10 = +10% spell damage
+                spellBonusPct = 0.0,
             },
 
             -- loot / shards
@@ -51,24 +54,24 @@ do
             ownedShards = {},
 
             -- UX flags
-            lootChatEnabled = true,
-            yemmaPromptShown = false,
+            lootChatEnabled   = true,
+            yemmaPromptShown  = false,
             yemmaPromptMinimized = false,
 
             -- intro/meta
-            introChoice = nil,
+            introChoice    = nil,
             introCompleted = false,
-            introStyle = nil,
+            introStyle     = nil,
 
             -- tasks / teleports
-            hfilTask = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" },
+            hfilTask   = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" },
             activeTask = nil,
-            teleports = {},
+            teleports  = {},
 
             -- optional misc bonuses
-            xpBonusPercent = 0,
-            statChanceBonusPermil = 0,
-            dropLuckBonusPermil = 0,
+            xpBonusPercent       = 0,
+            statChanceBonusPermil= 0,
+            dropLuckBonusPermil  = 0,
         }
     end
 
@@ -172,18 +175,19 @@ do
     end
 
     --------------------------------------------------
-    -- Combat stats (new)
+    -- Combat stats (includes spellBonusPct)
     --------------------------------------------------
     function PlayerData.SetCombat(pid, tbl)
         local pd = PlayerData.Get(pid)
         local c = pd.combat or {}
-        c.armor        = (tbl and tbl.armor)        or c.armor        or 0
-        c.energyResist = (tbl and tbl.energyResist) or c.energyResist or 0
-        c.dodge        = (tbl and tbl.dodge)        or c.dodge        or 0
-        c.parry        = (tbl and tbl.parry)        or c.parry        or 0
-        c.block        = (tbl and tbl.block)        or c.block        or 0
-        c.critChance   = (tbl and tbl.critChance)   or c.critChance   or 0
-        c.critMult     = (tbl and tbl.critMult)     or c.critMult     or 1.5
+        c.armor         = (tbl and tbl.armor)        or c.armor        or 0
+        c.energyResist  = (tbl and tbl.energyResist) or c.energyResist or 0
+        c.dodge         = (tbl and tbl.dodge)        or c.dodge        or 0
+        c.parry         = (tbl and tbl.parry)        or c.parry        or 0
+        c.block         = (tbl and tbl.block)        or c.block        or 0
+        c.critChance    = (tbl and tbl.critChance)   or c.critChance   or 0
+        c.critMult      = (tbl and tbl.critMult)     or c.critMult     or 1.5
+        c.spellBonusPct = (tbl and tbl.spellBonusPct) or c.spellBonusPct or 0.0
         pd.combat = c
         return c
     end
@@ -191,13 +195,22 @@ do
     function PlayerData.GetCombat(pid)
         local pd = PlayerData.Get(pid)
         if not pd.combat then
-            pd.combat = { armor = 0, energyResist = 0, dodge = 0, parry = 0, block = 0, critChance = 0, critMult = 1.5 }
+            pd.combat = {
+                armor         = 0,
+                energyResist  = 0,
+                dodge         = 0,
+                parry         = 0,
+                block         = 0,
+                critChance    = 0,
+                critMult      = 1.5,
+                spellBonusPct = 0.0,
+            }
         end
         return pd.combat
     end
 
     --------------------------------------------------
-    -- Combat getters (for DamageResolver)
+    -- Combat getters (for Damage/Spell systems)
     --------------------------------------------------
     function PlayerData.GetArmor(pid)        return PlayerData.GetCombat(pid).armor end
     function PlayerData.GetEnergyResist(pid) return PlayerData.GetCombat(pid).energyResist end
@@ -206,6 +219,21 @@ do
     function PlayerData.GetBlock(pid)        return PlayerData.GetCombat(pid).block end
     function PlayerData.GetCritChance(pid)   return PlayerData.GetCombat(pid).critChance end
     function PlayerData.GetCritMult(pid)     return PlayerData.GetCombat(pid).critMult end
+
+    -- NEW: spell power % helpers
+    function PlayerData.GetSpellBonusPct(pid)
+        return PlayerData.GetCombat(pid).spellBonusPct or 0.0
+    end
+    function PlayerData.SetSpellBonusPct(pid, pct)
+        local c = PlayerData.GetCombat(pid)
+        c.spellBonusPct = tonumber(pct) or 0.0
+        return c.spellBonusPct
+    end
+    function PlayerData.AddSpellBonusPct(pid, delta)
+        local c = PlayerData.GetCombat(pid)
+        c.spellBonusPct = (c.spellBonusPct or 0.0) + (tonumber(delta) or 0.0)
+        return c.spellBonusPct
+    end
 
     --------------------------------------------------
     -- Init / events
@@ -234,7 +262,7 @@ do
             end
         end
 
-        -- Optional: mirror combat stats from StatSystem
+        -- Optional: mirror combat stats from StatSystem (now includes spellBonusPct if provided)
         local function _PD_OnCombatStatsChanged(e)
             if not e or not e.unit then return end
             local p = GetPlayerId(GetOwningPlayer(e.unit))

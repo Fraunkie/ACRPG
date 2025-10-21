@@ -1,6 +1,7 @@
 if Debug and Debug.beginFile then Debug.beginFile("SpellEngine.lua") end
 --==================================================
--- Spell Engine (Unified) with head-growth charging
+-- Spell Engine (Unified) with charge/beam/ball
+-- Uses SpellSystemInit.GetDamageForSpell
 --==================================================
 
 if not SpellEngine then SpellEngine = {} end
@@ -21,7 +22,7 @@ local function dprint(msg)
     end
 end
 
--- utilities
+-- utils
 local function unitAlive(u)
     return u and GetUnitTypeId(u) ~= 0 and GetWidgetLife(u) > 0.405
 end
@@ -42,13 +43,14 @@ local function safeNumber(x, fallback)
     return x
 end
 
--- easing and helper visuals
+-- easing for charge visuals
 local CHARGE_EASE_POW = 1.30
 local function easePow01(x, pow)
     if x <= 0 then return 0 end
     if x >= 1 then return 1 end
     return x ^ (pow or 1.0)
 end
+
 local function ownerFloatText(u, txt, r, g, b)
     local p = GetOwningPlayer(u)
     if GetLocalPlayer() ~= p then return end
@@ -61,12 +63,12 @@ local function ownerFloatText(u, txt, r, g, b)
     SetTextTagFadepoint(t, 0.55)
 end
 
--- ACTIVE PROJECTILES
+-- active projectiles
 -- entry: {head, owner, allyId, mana, maxMana, dirX, dirY, speed, collide,
 --         type, range, travel, trailId, lastTrailT, hitFx, dead, spellKey, lvl}
 local heads = {}
 
--- CHARGE STATE pre launch
+-- charge state (pre-launch)
 local charges = {}
 local function key(u) return GetHandleId(u) end
 
@@ -192,6 +194,7 @@ local function consumeUnitsInContact(e)
         if IsUnitEnemy(u, Player(e.allyId)) and unitAlive(u) then
             local lifeBefore = GetWidgetLife(u)
             if lifeBefore > 0.405 then
+                -- Damage equals "mana traded" per contact tick
                 local planned = math.min(e.mana, lifeBefore)
                 dealSpellDamage(e.owner, u, planned)
                 local lifeAfter = GetWidgetLife(u)
@@ -207,7 +210,7 @@ local function consumeUnitsInContact(e)
     DestroyGroup(g)
 end
 
--- explosion
+-- explosion (on range end or mana zero)
 local function explodeEntry(e, reason)
     local x, y = GetUnitX(e.head), GetUnitY(e.head)
     explodeAt(x, y, e.hitFx)
@@ -215,8 +218,8 @@ local function explodeEntry(e, reason)
     local cfg     = SpellSystemInit and SpellSystemInit.GetSpellConfig(e.spellKey)
     local aoe     = (cfg and cfg.aoeRange) or (e.collide * 1.5)
     local base    = 0
-    if SpellSystemInit and SpellSystemInit.GetScaledDamage then
-        base = SpellSystemInit.GetScaledDamage(e.allyId, e.spellKey, e.lvl) or 0
+    if SpellSystemInit and SpellSystemInit.GetDamageForSpell then
+        base = SpellSystemInit.GetDamageForSpell(e.allyId, e.spellKey, e.lvl, nil) or 0
     end
 
     local mult = 1.0
@@ -277,10 +280,7 @@ local function tick()
             c.lastUi = c.lastUi + TICK_INTERVAL
             if c.lastUi >= 0.25 then
                 c.lastUi = 0.0
-                ownerFloatText(
-                    c.caster,
-            "|cffffdd55" .. tostring(math.floor(fRaw * 100 + 0.5)) .. "%|r"
-                )
+                ownerFloatText(c.caster, "|cffffdd55" .. tostring(math.floor(fRaw * 100 + 0.5)) .. "%|r")
             end
 
             c.rawF = fRaw
@@ -476,17 +476,21 @@ local function hookCasts()
                 SpellEngine.StartBallCharge(u, id, GetSpellTargetX(), GetSpellTargetY())
                 dprint("CHANNEL start for ball charge " .. (cfg.name or "spell"))
             end
+
         elseif ev == EVENT_PLAYER_UNIT_SPELL_FINISH then
             if cfg.type == "ball" and cfg.charge and cfg.charge.enabled and cfg.charge.headGrow then
                 SpellEngine.ReleaseBallCharge(u)
                 dprint("FINISH release for ball charge " .. (cfg.name or "spell"))
                 return
             end
+
         elseif ev == EVENT_PLAYER_UNIT_SPELL_ENDCAST then
             if cfg.type == "ball" and cfg.charge and cfg.charge.enabled and cfg.charge.headGrow then
                 SpellEngine.CancelBallCharge(u, "endcast")
             end
+
         elseif ev == EVENT_PLAYER_UNIT_SPELL_EFFECT then
+            -- Beams/balls handled here (non-charging)
             if not (cfg.type == "ball" and cfg.charge and cfg.charge.enabled and cfg.charge.headGrow) then
                 local lvl = GetUnitAbilityLevel(u, id)
                 local tx, ty = GetSpellTargetX(), GetSpellTargetY()

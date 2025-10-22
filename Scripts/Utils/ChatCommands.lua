@@ -131,88 +131,77 @@ do
     end)
 
     --------------------------------------------------
-    -- Lives System
+    -- Save System Commands
     --------------------------------------------------
-    registerChat("-life", function(p, pid, msg)
-        local n = parseNum(msg, "-life")
-        if _G.LivesSystem and LivesSystem.Set then
-            LivesSystem.Set(pid, n)
-            local v, m = LivesSystem.Get(pid)
-            DisplayTextToPlayer(p, 0, 0, "Lives " .. tostring(v) .. "/" .. tostring(m))
+    registerChat("-save", function(p, pid)
+        if _G.SaveLoadSystem and SaveLoadSystem.Save then
+            SaveLoadSystem.Save(pid)
         end
     end)
 
-    registerChat("-lifeadd", function(p, pid, msg)
-        local n = parseNum(msg, "-lifeadd")
-        if _G.LivesSystem and LivesSystem.Add then
-            LivesSystem.Add(pid, n)
-            local v, m = LivesSystem.Get(pid)
-            DisplayTextToPlayer(p, 0, 0, "Lives " .. tostring(v) .. "/" .. tostring(m))
+    registerChat("-load", function(p, pid)
+        if _G.SaveLoadSystem and SaveLoadSystem.Load then
+            SaveLoadSystem.Load(pid)
         end
     end)
 
     --------------------------------------------------
-    -- Teleport + Hero utility
+    -- Combat Debug Commands
     --------------------------------------------------
-    registerChat("-tpui", function(p, pid)
-        if _G.TeleportShop and TeleportShop.Show then
-            TeleportShop.Show(pid)
+    registerChat("-dmg", function(p, pid, msg)
+        local n = parseNum(msg, "-dmg")
+        local target = getSelectedUnitSafe(p)
+        if target and _G.DamageEngine then
+            DamageEngine.UnitDamageTarget(PlayerHero[pid], target, n, true)
         end
     end)
 
-    registerChat("-tp ", function(p, pid, msg)
-        local node = string.sub(msg, string.len("-tp ") + 1)
-        if node and node ~= "" and _G.TeleportSystem then
-            TeleportSystem.Unlock(pid, node)
-            TeleportSystem.TeleportToNode(pid, node, { reason = "dev_tp" })
-        else
-            DisplayTextToPlayer(p, 0, 0, "Usage: -tp NODE_ID")
-        end
-    end)
-
-    -- Moved from legacy Dev_commands: bind selected unit as hero
-    registerChat("-sethero", function(p, pid)
-        local u = getSelectedUnitSafe(p)
-        if u and GetUnitTypeId(u) ~= 0 then
-            if _G.PlayerData and PlayerData.SetHero then
-                PlayerData.SetHero(pid, u)
-            else
-                PLAYER_DATA = PLAYER_DATA or {}
-                PLAYER_DATA[pid] = PLAYER_DATA[pid] or {}
-                PLAYER_DATA[pid].hero = u
-                _G.PlayerHero = _G.PlayerHero or {}
-                _G.PlayerHero[pid] = u
+    --------------------------------------------------
+    -- Threat System Debug
+    --------------------------------------------------
+    registerChat("-threat", function(p, pid)
+        if _G.ThreatSystem and ThreatSystem.DebugThreat then
+            local target = getSelectedUnitSafe(p)
+            if target then
+                ThreatSystem.DebugThreat(target)
             end
-            DisplayTextToPlayer(p, 0, 0, "Hero bound")
-        else
-            DisplayTextToPlayer(p, 0, 0, "Select a unit first, then use -sethero")
-        end
-    end)
-
-    -- Moved from legacy Dev_commands: where am I
-    registerChat("-where", function(p, pid)
-        local u = (_G.PlayerData and PlayerData.GetHero and PlayerData.GetHero(pid))
-                  or (PLAYER_DATA and PLAYER_DATA[pid] and PLAYER_DATA[pid].hero)
-        if u and GetUnitTypeId(u) ~= 0 then
-            local x, y = GetUnitX(u), GetUnitY(u)
-            DisplayTextToPlayer(p, 0, 0, "X " .. string.format("%.1f", x) .. " Y " .. string.format("%.1f", y))
-        else
-            DisplayTextToPlayer(p, 0, 0, "No hero bound. Use -sethero")
         end
     end)
 
     --------------------------------------------------
-    -- Threat HUD
+    -- Spirit System Debug
     --------------------------------------------------
-    registerChat("-thud", function(p)
-        local pid = GetPlayerId(p)
-        if _G.CombatThreatHUD and CombatThreatHUD.Toggle then
-            CombatThreatHUD.Toggle(pid)
-            local shown = CombatThreatHUD.visible and CombatThreatHUD.visible[pid]
-            if shown then
-                DisplayTextToPlayer(p, 0, 0, "Threat HUD on")
-            else
-                DisplayTextToPlayer(p, 0, 0, "Threat HUD off")
+    registerChat("-sp", function(p, pid, msg)
+        if _G.SpiritDrive then
+            local n = parseNum(msg, "-sp")
+            -- Spirit power debug command
+            DisplayTextToPlayer(p, 0, 0, "Spirit Power: " .. n)
+        end
+    end)
+
+    --------------------------------------------------
+    -- Console Debug Commands
+    --------------------------------------------------
+    registerChat(".", function(p, pid, msg)
+        if _G.IngameConsole and IngameConsole.HandleCommand then
+            IngameConsole.HandleCommand(pid, msg)
+        end
+    end)
+
+    registerChat("-debug", function(p, pid)
+        if _G.DebugUtils and DebugUtils.ToggleDebug then
+            DebugUtils.ToggleDebug(pid)
+        end
+    end)
+
+    --------------------------------------------------
+    -- Stats System Debug
+    --------------------------------------------------
+    registerChat("-stats", function(p, pid)
+        if _G.HeroStatSystem and HeroStatSystem.DebugStats then
+            local hero = PlayerData.GetHero(pid)
+            if hero then
+                HeroStatSystem.DebugStats(hero)
             end
         end
     end)

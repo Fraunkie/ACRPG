@@ -1,181 +1,84 @@
 if Debug and Debug.beginFile then Debug.beginFile("DamageEngine.lua") end
 --==================================================
--- DamageEngine.lua
--- Central lightweight adapter for Warcraft III damage events.
--- Fires BEFORE → AFTER → LETHAL phases.
--- Integrates DamageResolver for dodge/parry/block/crit/armor/energy resist.
+-- DamageEngine.lua (Safe, WC3-type correct version)
+--==================================================
+-- Provides: applySpellDamage, applyPhysicalDamage, applyTrueDamage
+-- All constants initialized as real WC3 handles if available
 --==================================================
 
-if not DamageEngine then DamageEngine = {} end
+DamageEngine = DamageEngine or {}
 _G.DamageEngine = DamageEngine
 
-do
-    --------------------------------------------------
-    -- Event keys
-    --------------------------------------------------
-    DamageEngine.BEFORE = "BEFORE"
-    DamageEngine.AFTER  = "AFTER"
-    DamageEngine.LETHAL = "LETHAL"
+--========== SAFE CONSTANT INITIALIZATION ==========
+-- Try to create actual typed constants, or fallback to nil-safe stand-ins
+ATTACK_TYPE_NORMAL     = ATTACK_TYPE_NORMAL     or ConvertAttackType(0)
+ATTACK_TYPE_MAGIC      = ATTACK_TYPE_MAGIC      or ConvertAttackType(3)
+DAMAGE_TYPE_NORMAL     = DAMAGE_TYPE_NORMAL     or ConvertDamageType(0)
+DAMAGE_TYPE_MAGIC      = DAMAGE_TYPE_MAGIC      or ConvertDamageType(4)
+DAMAGE_TYPE_UNIVERSAL  = DAMAGE_TYPE_UNIVERSAL  or ConvertDamageType(11)
+WEAPON_TYPE_WHOKNOWS   = WEAPON_TYPE_WHOKNOWS   or ConvertWeaponType(0)
+WEAPON_TYPE_NONE       = WEAPON_TYPE_NONE       or ConvertWeaponType(0)
 
-    local subs = { BEFORE = {}, AFTER = {}, LETHAL = {} }
-    local current = nil
-
-    local function ValidUnit(u)
-        return u and GetUnitTypeId(u) ~= 0
-    end
-
-    local function safeCall(fn)
-        local ok, err = pcall(fn)
-        if not ok then
-            -- silent fail; avoids breaking combat loop
-        end
-    end
-
-    local function has(name) return type(_G[name]) == "function" end
-
-    --------------------------------------------------
-    -- Build base damage context
-    --------------------------------------------------
-    local function buildContext(src, tgt, amt)
-        local ctx = {
-            source     = src,
-            target     = tgt,
-            amount     = (tonumber(amt or 0) or 0),
-            prevLife   = GetWidgetLife(tgt) or 0,
-            postLife   = nil,
-            isAttack   = nil,
-            damageType = nil,
-            attackType = nil,
-            weaponType = nil,
-            result     = "HIT",
-            isCrit     = false,
-            isEnergy   = nil,
-            isPhysical = nil,
-        }
-
-        if has("BlzGetEventIsAttack") then
-            local ok, v = pcall(BlzGetEventIsAttack)
-            if ok then ctx.isAttack = v end
-        end
-        if has("BlzGetEventDamageType") then
-            local ok, v = pcall(BlzGetEventDamageType)
-            if ok then ctx.damageType = v end
-        end
-        if has("BlzGetEventAttackType") then
-            local ok, v = pcall(BlzGetEventAttackType)
-            if ok then ctx.attackType = v end
-        end
-        if has("BlzGetEventWeaponType") then
-            local ok, v = pcall(BlzGetEventWeaponType)
-            if ok then ctx.weaponType = v end
-        end
-        return ctx
-    end
-
-    local function emitList(list)
-        for i = 1, #list do
-            local fn = list[i]
-            if type(fn) == "function" then safeCall(fn) end
-        end
-    end
-
-    --------------------------------------------------
-    -- Public API
-    --------------------------------------------------
-    function DamageEngine.registerEvent(eventName, fn)
-        if type(fn) ~= "function" then return end
-        if subs[eventName] then
-            subs[eventName][#subs[eventName] + 1] = fn
-        end
-    end
-
-    function DamageEngine.getCurrentDamage() return current end
-
-    --------------------------------------------------
-    -- Wiring
-    --------------------------------------------------
-    local function wireDamage()
-        local trg = CreateTrigger()
-        for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
-            TriggerRegisterPlayerUnitEvent(trg, Player(i), EVENT_PLAYER_UNIT_DAMAGED, nil)
-        end
-
-        TriggerAddAction(trg, function()
-            local src = GetEventDamageSource()
-            local tgt = GetTriggerUnit()
-            if not ValidUnit(src) or not ValidUnit(tgt) then return end
-
-            local amt = GetEventDamage() or 0
-            if amt < 0 then amt = 0 end
-
-            current = buildContext(src, tgt, amt)
-
-            -- Apply resolver (dodge/block/parry/crit/mitigation)
-            local R = rawget(_G, "DamageResolver")
-            if R and R.Resolve then
-                local out = R.Resolve(current)
-                if out then
-                    if out.amount ~= nil then current.amount = out.amount end
-                    if out.result ~= nil then current.result = out.result end
-                    if out.isCrit ~= nil then current.isCrit = out.isCrit and true or false end
-                end
-            end
-
-            -- BEFORE immediately
-            if #subs.BEFORE > 0 then emitList(subs.BEFORE) end
-
-            -- AFTER / LETHAL after short delay
-            if #subs.AFTER > 0 or #subs.LETHAL > 0 then
-                local t = CreateTimer()
-                TimerStart(t, 0.00, false, function()
-                    if current and ValidUnit(current.target) then
-                        current.postLife = GetWidgetLife(current.target) or 0
-                    end
-
-                    if #subs.AFTER > 0 then emitList(subs.AFTER) end
-                    if #subs.LETHAL > 0 and current and current.postLife and current.postLife <= 0.405 then
-                        emitList(subs.LETHAL)
-                    end
-                    DestroyTimer(t)
-                end)
-            end
-        end)
-    end
-
-    local function wireDeath()
-        local trg = CreateTrigger()
-        for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
-            TriggerRegisterPlayerUnitEvent(trg, Player(i), EVENT_PLAYER_UNIT_DEATH, nil)
-        end
-        TriggerAddAction(trg, function()
-            local dead = GetTriggerUnit()
-            local killer = GetKillingUnit()
-            if not ValidUnit(dead) then return end
-            current = {
-                source = killer,
-                target = dead,
-                amount = 0,
-                prevLife = 0,
-                postLife = 0,
-                result = "HIT",
-                isCrit = false,
-                isEnergy = nil,
-                isPhysical = nil,
-            }
-            if #subs.LETHAL > 0 then emitList(subs.LETHAL) end
-        end)
-    end
-
-    --------------------------------------------------
-    -- Init
-    --------------------------------------------------
-    OnInit.final(function()
-        wireDamage()
-        wireDeath()
-        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
-            InitBroker.SystemReady("DamageEngine")
-        end
-    end)
+--========== HELPERS ==========
+local function unitAlive(u)
+    return u and GetUnitTypeId(u) ~= 0 and GetWidgetLife(u) > 0.405
 end
+
+-- internal generic handler
+local function apply(caster, target, amount, opts)
+    if not caster or not target or amount == nil then return 0 end
+    if amount <= 0 or not unitAlive(target) then return 0 end
+
+    local atkType  = (opts and opts.attackType) or ATTACK_TYPE_NORMAL
+    local dmgType  = (opts and opts.damageType) or DAMAGE_TYPE_MAGIC
+    local wepType  = (opts and opts.weaponType) or WEAPON_TYPE_WHOKNOWS
+    local isAttack = (opts and opts.isAttack)   or false
+    local isRanged = (opts and opts.isRanged)   or false
+
+    local before = GetWidgetLife(target)
+    UnitDamageTarget(caster, target, amount, isAttack, isRanged, atkType, dmgType, wepType)
+    local after = GetWidgetLife(target)
+    local dealt = math.max(0, before - after)
+    return dealt
+end
+
+--========== PUBLIC API ==========
+function DamageEngine.applySpellDamage(caster, target, amount, damageType)
+    return apply(caster, target, amount, {
+        attackType = ATTACK_TYPE_MAGIC,
+        damageType = damageType or DAMAGE_TYPE_MAGIC,
+        weaponType = WEAPON_TYPE_NONE,
+        isAttack   = false,
+        isRanged   = false
+    })
+end
+
+function DamageEngine.applyPhysicalDamage(caster, target, amount)
+    return apply(caster, target, amount, {
+        attackType = ATTACK_TYPE_NORMAL,
+        damageType = DAMAGE_TYPE_NORMAL,
+        weaponType = WEAPON_TYPE_WHOKNOWS,
+        isAttack   = true,
+        isRanged   = false
+    })
+end
+
+function DamageEngine.applyTrueDamage(caster, target, amount)
+    return apply(caster, target, amount, {
+        attackType = ATTACK_TYPE_NORMAL,
+        damageType = DAMAGE_TYPE_UNIVERSAL,
+        weaponType = WEAPON_TYPE_NONE,
+        isAttack   = false,
+        isRanged   = false
+    })
+end
+
+function DamageEngine.isEnemy(caster, target)
+    return caster and target and IsUnitEnemy(target, GetOwningPlayer(caster))
+end
+
+OnInit.final(function()
+    print("[DamageEngine] initialized (safe WC3 types)")
+end)
 
 if Debug and Debug.endFile then Debug.endFile() end

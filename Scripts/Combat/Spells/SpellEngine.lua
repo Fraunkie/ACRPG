@@ -1,11 +1,33 @@
 if Debug and Debug.beginFile then Debug.beginFile("SpellEngine.lua") end
 --==================================================
 -- Spell Engine (Unified) with charge/beam/ball
+-- + Scripted-spell registry (for bespoke spells)
 -- Uses SpellSystemInit.GetDamageForSpell
 --==================================================
 
 if not SpellEngine then SpellEngine = {} end
 _G.SpellEngine = SpellEngine
+
+----------------------------------------------------
+-- Scripted spell registry
+----------------------------------------------------
+do
+    local REG = {}  -- [abilityId:number] = function(ctx)
+
+    -- ctx = {
+    --   caster, abilityId, level, targetX, targetY,
+    --   playerId, player, event (EVENT_* id)
+    -- }
+    function SpellEngine.RegisterScripted(abilityId, fn)
+        if type(abilityId) == "number" and type(fn) == "function" then
+            REG[abilityId] = fn
+        end
+    end
+
+    function SpellEngine._GetScripted(abilityId)
+        return REG[abilityId]
+    end
+end
 
 -- CONFIG
 local TICK_INTERVAL       = 0.03
@@ -157,6 +179,14 @@ local function createHead(caster, spellKey, lvl, tx, ty, powerMult, preHead, col
     table.insert(heads, entry)
     dprint("Head launched typ=" .. typ .. " mana=" .. tostring(manaInit) .. " collide=" .. tostring(collide))
 end
+
+-- expose for scripted spells that want engine projectile helpers
+SpellEngine._CreateHead = createHead
+SpellEngine._DealSpellDamage = dealSpellDamage
+SpellEngine._UnitAlive = unitAlive
+SpellEngine._Clamp = clamp
+SpellEngine._DEFAULT_COLLIDE = DEFAULT_COLLIDE
+SpellEngine._DEFAULT_SPEED = DEFAULT_SPEED
 
 -- head vs head trading
 local function headsCollide(a, b)
@@ -469,6 +499,27 @@ local function hookCasts()
         local u   = GetTriggerUnit()
         local id  = GetSpellAbilityId()
         local cfg = SpellSystemInit and SpellSystemInit.GetSpellConfig(id)
+
+        -- If a scripted spell is registered for this ability, hand it control
+        local scripted = SpellEngine._GetScripted(id)
+        if scripted and ev == EVENT_PLAYER_UNIT_SPELL_EFFECT then
+            local ctx = {
+                caster   = u,
+                abilityId= id,
+                level    = GetUnitAbilityLevel(u, id),
+                targetX  = GetSpellTargetX(),
+                targetY  = GetSpellTargetY(),
+                playerId = GetPlayerId(GetOwningPlayer(u)),
+                player   = GetOwningPlayer(u),
+                event    = ev,
+            }
+            local ok, err = pcall(scripted, ctx)
+            if not ok then
+                print("|cffff5555[SpellEngine]|r scripted spell error: " .. tostring(err))
+            end
+            return
+        end
+
         if not cfg then return end
 
         if ev == EVENT_PLAYER_UNIT_SPELL_CHANNEL then

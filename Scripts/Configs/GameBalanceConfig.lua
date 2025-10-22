@@ -170,11 +170,11 @@ do
 
         -- PICCOLO (H008)
         H008 = {
+            { name="Stretch Limb",      abil="A2PS", need={ pl_min=2,  sl_min=1 } }, -- NEW
             { name="Demon Wave",        abil="A022", need={ pl_min=3,  sl_min=1 } },
             { name="Hellzone Grenade",  abil="A026", need={ pl_min=7,  sl_min=2 } },
             { name="Lightzone Grenade", abil="A024", need={ pl_min=5,  sl_min=2 } },
             { name="Multi-Form",        abil="A025", need={ pl_min=6,  sl_min=2 } },
-            -- If A023 is SPC Beam Cannon for Piccolo:
             -- { name="Special Beam Cannon", abil="A023", need={ pl_min=4, sl_min=1 } },
             { name="Training Focus",    abil="A01J", need={ pl_min=1 } },
         },

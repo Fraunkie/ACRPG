@@ -5,6 +5,7 @@ if Debug and Debug.beginFile then Debug.beginFile("PlayerData.lua") end
 --  - Long-lived, cross-system data lives here
 --  - System-specific logic stays in its own module
 --  - Mirrors read-only combat stats from HeroStatSystem
+--  - NEW: spell/physical % bonus hooks for damage calcs
 --==================================================
 
 if not PlayerData then PlayerData = {} end
@@ -37,16 +38,18 @@ do
 
             -- combat detail stats
             combat = {
-                armor         = 0,
-                energyResist  = 0,
-                dodge         = 0,
-                parry         = 0,
-                block         = 0,
-                critChance    = 0,
-                critMult      = 1.5,
-                -- NEW: % spell power bonus (e.g., from items, talents)
-                -- expressed as 0.10 = +10% spell damage
-                spellBonusPct = 0.0,
+                armor        = 0,
+                energyResist = 0,
+                dodge        = 0,
+                parry        = 0,
+                block        = 0,
+                critChance   = 0,
+                critMult     = 1.5,
+
+                -- NEW: percent multipliers used by damage systems
+                -- e.g., 0.20 = +20% bonus, -0.15 = -15% penalty
+                spellBonusPct    = 0.0,
+                physicalBonusPct = 0.0,
             },
 
             -- loot / shards
@@ -54,24 +57,24 @@ do
             ownedShards = {},
 
             -- UX flags
-            lootChatEnabled   = true,
-            yemmaPromptShown  = false,
+            lootChatEnabled = true,
+            yemmaPromptShown = false,
             yemmaPromptMinimized = false,
 
             -- intro/meta
-            introChoice    = nil,
+            introChoice = nil,
             introCompleted = false,
-            introStyle     = nil,
+            introStyle = nil,
 
             -- tasks / teleports
-            hfilTask   = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" },
+            hfilTask = { active=false, id=nil, name="", desc="", goalType="", need=0, have=0, rarity="Common" },
             activeTask = nil,
-            teleports  = {},
+            teleports = {},
 
             -- optional misc bonuses
-            xpBonusPercent       = 0,
-            statChanceBonusPermil= 0,
-            dropLuckBonusPermil  = 0,
+            xpBonusPercent = 0,
+            statChanceBonusPermil = 0,
+            dropLuckBonusPermil = 0,
         }
     end
 
@@ -175,19 +178,23 @@ do
     end
 
     --------------------------------------------------
-    -- Combat stats (includes spellBonusPct)
+    -- Combat stats (mirrors + bonuses)
     --------------------------------------------------
     function PlayerData.SetCombat(pid, tbl)
         local pd = PlayerData.Get(pid)
         local c = pd.combat or {}
-        c.armor         = (tbl and tbl.armor)        or c.armor        or 0
-        c.energyResist  = (tbl and tbl.energyResist) or c.energyResist or 0
-        c.dodge         = (tbl and tbl.dodge)        or c.dodge        or 0
-        c.parry         = (tbl and tbl.parry)        or c.parry        or 0
-        c.block         = (tbl and tbl.block)        or c.block        or 0
-        c.critChance    = (tbl and tbl.critChance)   or c.critChance   or 0
-        c.critMult      = (tbl and tbl.critMult)     or c.critMult     or 1.5
-        c.spellBonusPct = (tbl and tbl.spellBonusPct) or c.spellBonusPct or 0.0
+        c.armor        = (tbl and tbl.armor)        or c.armor        or 0
+        c.energyResist = (tbl and tbl.energyResist) or c.energyResist or 0
+        c.dodge        = (tbl and tbl.dodge)        or c.dodge        or 0
+        c.parry        = (tbl and tbl.parry)        or c.parry        or 0
+        c.block        = (tbl and tbl.block)        or c.block        or 0
+        c.critChance   = (tbl and tbl.critChance)   or c.critChance   or 0
+        c.critMult     = (tbl and tbl.critMult)     or c.critMult     or 1.5
+
+        -- keep current bonus values unless provided
+        if tbl and tbl.spellBonusPct ~= nil then c.spellBonusPct = tbl.spellBonusPct end
+        if tbl and tbl.physicalBonusPct ~= nil then c.physicalBonusPct = tbl.physicalBonusPct end
+
         pd.combat = c
         return c
     end
@@ -196,22 +203,15 @@ do
         local pd = PlayerData.Get(pid)
         if not pd.combat then
             pd.combat = {
-                armor         = 0,
-                energyResist  = 0,
-                dodge         = 0,
-                parry         = 0,
-                block         = 0,
-                critChance    = 0,
-                critMult      = 1.5,
-                spellBonusPct = 0.0,
+                armor = 0, energyResist = 0, dodge = 0, parry = 0, block = 0,
+                critChance = 0, critMult = 1.5,
+                spellBonusPct = 0.0, physicalBonusPct = 0.0
             }
         end
         return pd.combat
     end
 
-    --------------------------------------------------
-    -- Combat getters (for Damage/Spell systems)
-    --------------------------------------------------
+    -- Convenience getters (used by DamageResolver/SpellSystem)
     function PlayerData.GetArmor(pid)        return PlayerData.GetCombat(pid).armor end
     function PlayerData.GetEnergyResist(pid) return PlayerData.GetCombat(pid).energyResist end
     function PlayerData.GetDodge(pid)        return PlayerData.GetCombat(pid).dodge end
@@ -220,19 +220,30 @@ do
     function PlayerData.GetCritChance(pid)   return PlayerData.GetCombat(pid).critChance end
     function PlayerData.GetCritMult(pid)     return PlayerData.GetCombat(pid).critMult end
 
-    -- NEW: spell power % helpers
-    function PlayerData.GetSpellBonusPct(pid)
-        return PlayerData.GetCombat(pid).spellBonusPct or 0.0
-    end
+    -- NEW: Spell/Physical bonus % helpers
+    function PlayerData.GetSpellBonusPct(pid)    return PlayerData.GetCombat(pid).spellBonusPct or 0.0 end
+    function PlayerData.GetPhysicalBonusPct(pid) return PlayerData.GetCombat(pid).physicalBonusPct or 0.0 end
+
     function PlayerData.SetSpellBonusPct(pid, pct)
         local c = PlayerData.GetCombat(pid)
-        c.spellBonusPct = tonumber(pct) or 0.0
+        c.spellBonusPct = pct or 0.0
         return c.spellBonusPct
     end
+    function PlayerData.SetPhysicalBonusPct(pid, pct)
+        local c = PlayerData.GetCombat(pid)
+        c.physicalBonusPct = pct or 0.0
+        return c.physicalBonusPct
+    end
+
     function PlayerData.AddSpellBonusPct(pid, delta)
         local c = PlayerData.GetCombat(pid)
-        c.spellBonusPct = (c.spellBonusPct or 0.0) + (tonumber(delta) or 0.0)
+        c.spellBonusPct = (c.spellBonusPct or 0.0) + (delta or 0.0)
         return c.spellBonusPct
+    end
+    function PlayerData.AddPhysicalBonusPct(pid, delta)
+        local c = PlayerData.GetCombat(pid)
+        c.physicalBonusPct = (c.physicalBonusPct or 0.0) + (delta or 0.0)
+        return c.physicalBonusPct
     end
 
     --------------------------------------------------
@@ -262,7 +273,7 @@ do
             end
         end
 
-        -- Optional: mirror combat stats from StatSystem (now includes spellBonusPct if provided)
+        -- Optional: mirror combat stats from StatSystem
         local function _PD_OnCombatStatsChanged(e)
             if not e or not e.unit then return end
             local p = GetPlayerId(GetOwningPlayer(e.unit))

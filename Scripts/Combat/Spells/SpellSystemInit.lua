@@ -6,7 +6,9 @@ if Debug and Debug.beginFile then Debug.beginFile("SpellSystemInit.lua") end
 if not SpellSystemInit then SpellSystemInit = {} end
 _G.SpellSystemInit = SpellSystemInit
 
--- Optional visuals used by charging/launch (kept for other spells)
+----------------------------------------------------
+-- Optional shared FX presets
+----------------------------------------------------
 if FX and FX.def then
     FX.def("SPARK_SMALL", {
         sfx="Abilities\\Spells\\Human\\HolyBolt\\HolyBoltSpecialArt.mdl",
@@ -26,9 +28,86 @@ end
 -- Core spell data table
 ----------------------------------------------------
 local SpellData = {
-    --============== Lost Soul kit (examples) ==============
+    --------------------------------------------------
+    -- GOKU: Energy Bounce (Scripted)
+    --------------------------------------------------
+    [FourCC('A0EB')] = {
+        name         = "Energy Bounce",
+        type         = "scripted",
+        damageBase   = 100.0,         -- Base damage like Kamehameha
+        damagePerLevel = 25.0,        -- Per level scaling
+        intScale     = 0.9,           -- INT scaling factor
+        projectileUnit = FourCC('e001'),
+        range        = 800.0,
+        maxBounces   = 3,
+        searchRadius = 600.0,
+        falloffPct   = 0.15,
+        fxHit        = "Abilities\\Spells\\Human\\DispelMagic\\DispelMagicTarget.mdl",
+        hitSound     = "Abilities\\Spells\\Other\\Monsoon\\MonsoonLightningHit1.wav"
+    },
 
-    -- A000: passive attack speed (ModifierSystem reads this)
+    --------------------------------------------------
+    -- PICCOLO: Stretch Limb (Scripted)
+    -- Hand leads, arm segments trail. Prioritize enemies; if none, ally jump.
+    -- Low damage; primary CC = short stun, plus small self-pull on enemy hit.
+    --------------------------------------------------
+    [FourCC('A2PS')] = {
+        name           = "Stretch Limb",
+        type           = "scripted",
+
+        -- Core tuning
+        range          = 700.0,
+        collision      = 70.0,           -- hand hit radius
+        stunDur        = 0.75,           -- base stun vs enemies (Modifier system)
+        pullSelf       = 120.0,          -- Piccolo pulls toward enemy on hit
+        allowAllyJump  = true,           -- ally dash allowed only if no enemy is hit
+        allyStop       = 100.0,          -- stop short of ally on jump
+
+        -- Visual models (hand leads, arm trails)
+        models = {
+            hand = "war3mapImported\\SlappyHand.mdx",
+            arm  = "war3mapImported\\SlappyArm.mdx"
+        },
+
+        -- Damage: unified + low (chip only)
+        damageBase     = 35.0,
+        damagePerLevel = 10.0,
+
+        -- Custom calc to use a unified "main stat" scale (0.30)
+        calc = function(pid, lvl, ctx)
+            local level = lvl or 1
+            local base  = 35 + math.max(0, level - 1) * 10
+            local main  = 0
+
+            if _G.StatSystem and StatSystem.GetMainStat then
+                local ok, v = pcall(StatSystem.GetMainStat, pid)
+                if ok and type(v) == "number" then main = v end
+            else
+                local str = (rawget(_G, "PlayerMStr") and PlayerMStr[pid]) or 0
+                local int = (rawget(_G, "PlayerMInt") and PlayerMInt[pid]) or 0
+                if str > int then main = str else main = int end
+            end
+
+            local scaled = base + main * 0.30
+
+            local bonusPct = 0.0
+            if _G.StatSystem and StatSystem.GetSpellBonusPct then
+                local ok2, b = pcall(StatSystem.GetSpellBonusPct, pid)
+                if ok2 and type(b) == "number" then
+                    bonusPct = bonusPct + b
+                end
+            end
+            return math.max(0, scaled * (1.0 + bonusPct))
+        end,
+
+        -- UI knobs (kept here for reference; your UI may read these)
+        cooldown = 7.0,
+        mana     = 20.0,
+    },
+
+    --------------------------------------------------
+    -- Existing examples (Kept)
+    --------------------------------------------------
     [FourCC('A000')] = {
         name  = "Soul Acceleration",
         type  = "passive",
@@ -36,7 +115,6 @@ local SpellData = {
         auraModel       = "war3mapImported\\BJT_Shio_SYR_FX_QL.mdx"
     },
 
-    -- A002: instant AoE burst around the caster
     [FourCC('A002')] = {
         name = "Soul Burst",
         type = "instant_aoe",
@@ -48,7 +126,6 @@ local SpellData = {
         cooldown   = 0
     },
 
-    -- A003: on-hit magic damage passive (melee proc)
     [FourCC('A003')] = {
         name = "Planar Echo",
         type = "passive_onhit",
@@ -57,7 +134,6 @@ local SpellData = {
         fxModel   = nil
     },
 
-    --================== Beams/Balls (examples) ==================
     [FourCC('A006')] = {
         name = "Kamehameha",
         type = "beam",
@@ -132,27 +208,22 @@ local SpellData = {
             }
         },
 
-        ball = {
-            holdOffset = { x = 50.0, y = 0.0 }
-        }
+        ball = { holdOffset = { x = 50.0, y = 0.0 } }
     }
 }
 
 ----------------------------------------------------
 -- Damage Calculator
--- INT * K  ->  multiplied by (1 + spellBonusPct + externalBonusPct)
 ----------------------------------------------------
-local INT_FACTOR = 1.00  -- tweak this global scalar to retune overall spell power
+local INT_FACTOR = 1.00
 
 local function getInt(pid)
     return (rawget(_G, "PlayerMInt") and PlayerMInt[pid]) or 0
 end
 
 local function getSpellBonusPct(pid)
-    -- primary source: PLAYER_DATA.combat.spellBonusPct
     local v = (PLAYER_DATA and PLAYER_DATA[pid]
         and PLAYER_DATA[pid].combat and PLAYER_DATA[pid].combat.spellBonusPct) or 0.0
-    -- secondary source (optional): StatSystem if you have one
     if _G.StatSystem and StatSystem.GetSpellBonusPct then
         local ext = StatSystem.GetSpellBonusPct(pid)
         if type(ext) == "number" then
@@ -162,32 +233,27 @@ local function getSpellBonusPct(pid)
     return v
 end
 
--- Public: compute damage for a configured spell
 function SpellSystemInit.GetDamageForSpell(pid, spellKey, spellLevel, ctx)
     local cfg = SpellData[spellKey]
     if not cfg then return 0 end
 
-    -- If a spell provides its own calc, use that
     if type(cfg.calc) == "function" then
         local ok, v = pcall(cfg.calc, pid, spellLevel or 1, ctx or {})
         if ok and type(v) == "number" then return math.max(0, v) end
     end
 
-    -- Generic fallback: base + per level, then apply INT scaling & spell bonus
-    local base = (cfg.damageBase or 0) + math.max(0, (spellLevel or 1) - 1) * (cfg.damagePerLevel or 0)
-    local int  = getInt(pid)
+    local base = (cfg.damageBase or 0)
+        + math.max(0, (spellLevel or 1) - 1) * (cfg.damagePerLevel or 0)
+    local int = getInt(pid)
     local bonusPct = getSpellBonusPct(pid)
-
     local raw = (base + int * INT_FACTOR)
     return math.max(0, raw * (1.0 + bonusPct))
 end
 
--- Back-compat shim (older code calls this)
 function SpellSystemInit.GetScaledDamage(playerId, spellKey, spellLevel)
     return SpellSystemInit.GetDamageForSpell(playerId, spellKey, spellLevel, nil)
 end
 
--- Expose config lookups
 function SpellSystemInit.GetSpellConfig(spellKey)
     return SpellData[spellKey]
 end

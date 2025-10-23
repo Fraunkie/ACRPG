@@ -1,4 +1,4 @@
--- StatSystem.lua (refactored, PLAYER_DATA safe)
+-- StatSystem.lua (merged: abilities + source aggregation + combat emit) [BJ-free percent math]
 if Debug and Debug.beginFile then Debug.beginFile('StatSystem') end
 
 StatSystem = {}
@@ -6,40 +6,39 @@ _G.StatSystem = StatSystem
 
 do
     --------------------------------------------------
-    -- CONFIG
+    -- CONFIG / CONSTANTS
     --------------------------------------------------
-    local RECURSION_LIMIT = 8
     local DEBUG_ENABLED = false
 
-    -- Stat identifiers (exported)
-    StatSystem.STAT_DAMAGE = 1
-    StatSystem.STAT_ARMOR = 2
-    StatSystem.STAT_AGILITY = 3
-    StatSystem.STAT_STRENGTH = 4
-    StatSystem.STAT_INTELLIGENCE = 5
-    StatSystem.STAT_HEALTH = 6
-    StatSystem.STAT_MANA = 7
-    StatSystem.STAT_MOVEMENT_SPEED = 8
-    StatSystem.STAT_ATTACK_SPEED = 9
-    StatSystem.STAT_HEALTH_REGEN = 10
-    StatSystem.STAT_MANA_REGEN = 11
+    -- Public stat ids
+    StatSystem.STAT_DAMAGE           = 1
+    StatSystem.STAT_ARMOR            = 2
+    StatSystem.STAT_AGILITY          = 3
+    StatSystem.STAT_STRENGTH         = 4
+    StatSystem.STAT_INTELLIGENCE     = 5
+    StatSystem.STAT_HEALTH           = 6
+    StatSystem.STAT_MANA             = 7
+    StatSystem.STAT_MOVEMENT_SPEED   = 8
+    StatSystem.STAT_ATTACK_SPEED     = 9
+    StatSystem.STAT_HEALTH_REGEN     = 10
+    StatSystem.STAT_MANA_REGEN       = 11
     StatSystem.STAT_MAGIC_RESISTANCE = 12
-    StatSystem.STAT_SIGHT_RANGE = 13
+    StatSystem.STAT_SIGHT_RANGE      = 13
 
-    -- Hidden ability ids used to apply bonuses (ensure these exist in your object editor)
-    local DAMAGE_ABILITY        = FourCC('A00R') -- Damage
-    local ARMOR_ABILITY         = FourCC('A00O') -- Armor
-    local STATS_ABILITY         = FourCC('A00N') -- Str/Agi/Int
-    local HEALTH_ABILITY        = FourCC('A00T') -- Max Life
-    local MANA_ABILITY          = FourCC('A00W') -- Max Mana
-    local MOVEMENT_ABILITY      = FourCC('A00X') -- Move Speed
-    local ATTACK_SPEED_ABILITY  = FourCC('A00P') -- Attack Speed
+    -- Hidden abilities (must exist in the object editor)
+    local DAMAGE_ABILITY        = FourCC('A00R')
+    local ARMOR_ABILITY         = FourCC('A00O')
+    local STATS_ABILITY         = FourCC('A00N')
+    local HEALTH_ABILITY        = FourCC('A00T')
+    local MANA_ABILITY          = FourCC('A00W')
+    local MOVEMENT_ABILITY      = FourCC('A00X')
+    local ATTACK_SPEED_ABILITY  = FourCC('A00P')
     local HEALTH_REGEN_ABILITY  = FourCC('A015')
     local MANA_REGEN_ABILITY    = FourCC('A016')
     local MAGIC_RESIST_ABILITY  = FourCC('A00B')
     local SIGHT_ABILITY         = FourCC('A00Y')
 
-    -- Ability ILF/RLF fields
+    -- Ability fields
     local DAMAGE_FIELD        = ABILITY_ILF_ATTACK_BONUS
     local ARMOR_FIELD         = ABILITY_ILF_DEFENSE_BONUS_IDEF
     local AGILITY_FIELD       = ABILITY_ILF_AGILITY_BONUS
@@ -55,18 +54,11 @@ do
     local SIGHT_FIELD         = ABILITY_ILF_SIGHT_RANGE_BONUS
 
     --------------------------------------------------
-    -- INTERNAL STATE
+    -- DEBUG
     --------------------------------------------------
-    local eventTriggers = {}
-    local currentUnit, currentStat, currentAmount = nil, nil, nil
-
-    -- Helper debug print
     local function debugPrint(msg)
-        if DEBUG_ENABLED then
-            print("[StatSystem] " .. tostring(msg))
-        end
+        if DEBUG_ENABLED then print("[StatSystem] " .. tostring(msg)) end
     end
-
     function StatSystem.ToggleDebug()
         DEBUG_ENABLED = not DEBUG_ENABLED
         print("StatSystem debug: " .. (DEBUG_ENABLED and "ON" or "OFF"))
@@ -74,24 +66,18 @@ do
     end
 
     --------------------------------------------------
-    -- Safe ability add + make permanent helper
+    -- SAFE ABILITY + WRITERS
     --------------------------------------------------
     local function SafeAddAbility(unit, abilId)
         if not unit then return false end
+        if GetUnitAbilityLevel(unit, abilId) > 0 then return true end
 
-        -- already has it?
-        if GetUnitAbilityLevel(unit, abilId) > 0 then
-            return true
-        end
-
-        -- Try simple add first
         UnitAddAbility(unit, abilId)
         if GetUnitAbilityLevel(unit, abilId) > 0 then
             UnitMakeAbilityPermanent(unit, true, abilId)
             return true
         end
 
-        -- Try to temporarily enable for player's tech (some maps lock abilities)
         local owner = GetOwningPlayer(unit)
         if owner then
             SetPlayerAbilityAvailable(owner, abilId, true)
@@ -102,65 +88,29 @@ do
             end
         end
 
-        -- Last ditch attempt
-        UnitAddAbility(unit, abilId)
-        if GetUnitAbilityLevel(unit, abilId) > 0 then
-            UnitMakeAbilityPermanent(unit, true, abilId)
-            return true
-        end
-
-        debugPrint("SafeAddAbility failed for ability id " .. tostring(abilId))
+        debugPrint("SafeAddAbility failed for " .. tostring(abilId))
         return false
     end
 
-    --------------------------------------------------
-    -- Core: set ability field (int or real)
-    -- returns boolean success
-    --------------------------------------------------
     local function SetAbilityField(unit, abilityId, field, value, isInteger)
-        if not unit then
-            debugPrint("SetAbilityField: unit is nil")
+        if not unit then return false end
+        if GetUnitAbilityLevel(unit, abilityId) == 0 and not SafeAddAbility(unit, abilityId) then
             return false
         end
-
-        -- Ensure ability exists on unit
-        if GetUnitAbilityLevel(unit, abilityId) == 0 then
-            if not SafeAddAbility(unit, abilityId) then
-                return false
-            end
-        end
-
-        local ua = BlzGetUnitAbility(unit, abilityId)
-        if not ua then
-            debugPrint("SetAbilityField: BlzGetUnitAbility failed")
-            return false
-        end
-
-        local ok
-        if isInteger then
-            ok = BlzSetAbilityIntegerLevelField(ua, field, 0, value)
-        else
-            ok = BlzSetAbilityRealLevelField(ua, field, 0, value)
-        end
-
-        if not ok then
-            debugPrint("SetAbilityField: BlzSet... returned false for field ".. tostring(field))
-            return false
-        end
-
-        -- Refresh ability to apply changes
-        IncUnitAbilityLevel(unit, abilityId)
-        DecUnitAbilityLevel(unit, abilityId)
-
+        local ua = BlzGetUnitAbility(unit, abilityId); if not ua then return false end
+        local ok = isInteger
+            and BlzSetAbilityIntegerLevelField(ua, field, 0, value)
+            or  BlzSetAbilityRealLevelField(ua, field, 0, value)
+        if not ok then return false end
+        IncUnitAbilityLevel(unit, abilityId); DecUnitAbilityLevel(unit, abilityId)
         return true
     end
 
     --------------------------------------------------
-    -- Public: GetUnitStat
+    -- READ CURRENT APPLIED BONUSES
     --------------------------------------------------
     function StatSystem.GetUnitStat(unit, statType)
         if not unit then return 0 end
-
         if statType == StatSystem.STAT_DAMAGE then
             if GetUnitAbilityLevel(unit, DAMAGE_ABILITY) > 0 then
                 return BlzGetAbilityIntegerLevelField(BlzGetUnitAbility(unit, DAMAGE_ABILITY), DAMAGE_FIELD, 0)
@@ -214,198 +164,246 @@ do
                 return BlzGetAbilityIntegerLevelField(BlzGetUnitAbility(unit, SIGHT_ABILITY), SIGHT_FIELD, 0)
             end
         end
-
         return 0
     end
 
     --------------------------------------------------
-    -- Public: SetUnitStat
-    -- Maintains percent for health/mana changes
+    -- EVENT REGISTRY (optional)
+    --------------------------------------------------
+    local eventTriggers = {}
+    local currentUnit, currentStat, currentAmount = nil, nil, nil
+    function StatSystem.RegisterStatEvent(handler)
+        if type(handler) == 'function' then table.insert(eventTriggers, handler); return true end
+        return false
+    end
+    function StatSystem.GetStatEventUnit() return currentUnit end
+    function StatSystem.GetStatEventType() return currentStat end
+    function StatSystem.GetStatEventAmount() return currentAmount end
+
+    --------------------------------------------------
+    -- WRITE APPLIED BONUSES (BJ-free HP/MP preservation)
     --------------------------------------------------
     function StatSystem.SetUnitStat(unit, statType, value)
         if not unit then return false end
 
         currentUnit, currentStat, currentAmount = unit, statType, value
         for i = 1, #eventTriggers do
-            local ok, err = pcall(eventTriggers[i])
-            if not ok then debugPrint("Stat event handler error: " .. tostring(err)) end
+            local ok, err = pcall(eventTriggers[i]); if not ok then debugPrint(err) end
         end
 
         if statType == StatSystem.STAT_DAMAGE then
             return SetAbilityField(unit, DAMAGE_ABILITY, DAMAGE_FIELD, value, true)
+
         elseif statType == StatSystem.STAT_ARMOR then
             return SetAbilityField(unit, ARMOR_ABILITY, ARMOR_FIELD, value, true)
+
         elseif statType == StatSystem.STAT_AGILITY then
             return SetAbilityField(unit, STATS_ABILITY, AGILITY_FIELD, value, true)
+
         elseif statType == StatSystem.STAT_STRENGTH then
             return SetAbilityField(unit, STATS_ABILITY, STRENGTH_FIELD, value, true)
+
         elseif statType == StatSystem.STAT_INTELLIGENCE then
             return SetAbilityField(unit, STATS_ABILITY, INTELLIGENCE_FIELD, value, true)
+
         elseif statType == StatSystem.STAT_HEALTH then
             local prevBonus = StatSystem.GetUnitStat(unit, StatSystem.STAT_HEALTH)
-            local healthPercent = GetUnitLifePercentBJ(unit)  -- FIXED: BJ wrapper
-            local success = SetAbilityField(unit, HEALTH_ABILITY, HEALTH_FIELD, value, true)
-            if success then
-                local currentMax = BlzGetUnitMaxHP(unit)
-                local delta = value - prevBonus
-                BlzSetUnitMaxHP(unit, currentMax + delta)
-                SetUnitLifePercentBJ(unit, healthPercent)
+            local maxHP     = BlzGetUnitMaxHP(unit)
+            local curHP     = GetWidgetLife(unit)
+            local hpPct     = (maxHP > 0) and (curHP / maxHP) or 1.0
+
+            local ok = SetAbilityField(unit, HEALTH_ABILITY, HEALTH_FIELD, value, true)
+            if ok then
+                local newMax = maxHP + (value - prevBonus)
+                if newMax < 1 then newMax = 1 end
+                BlzSetUnitMaxHP(unit, newMax)
+                SetWidgetLife(unit, newMax * hpPct)
             end
-            return success
+            return ok
+
         elseif statType == StatSystem.STAT_MANA then
             local prevBonus = StatSystem.GetUnitStat(unit, StatSystem.STAT_MANA)
-            local manaPercent = GetUnitManaPercentBJ(unit)  -- FIXED: BJ wrapper
-            local success = SetAbilityField(unit, MANA_ABILITY, MANA_FIELD, value, true)
-            if success then
-                local currentMax = BlzGetUnitMaxMana(unit)
-                local delta = value - prevBonus
-                BlzSetUnitMaxMana(unit, currentMax + delta)
-                SetUnitManaPercentBJ(unit, manaPercent)
+            local maxMP     = BlzGetUnitMaxMana(unit)
+            local curMP     = GetUnitState(unit, UNIT_STATE_MANA)
+            local mpPct     = (maxMP > 0) and (curMP / maxMP) or 1.0
+
+            local ok = SetAbilityField(unit, MANA_ABILITY, MANA_FIELD, value, true)
+            if ok then
+                local newMax = maxMP + (value - prevBonus)
+                if newMax < 0 then newMax = 0 end
+                BlzSetUnitMaxMana(unit, newMax)
+                SetUnitState(unit, UNIT_STATE_MANA, newMax * mpPct)
             end
-            return success
+            return ok
+
         elseif statType == StatSystem.STAT_MOVEMENT_SPEED then
             return SetAbilityField(unit, MOVEMENT_ABILITY, MOVEMENT_FIELD, value, true)
+
         elseif statType == StatSystem.STAT_ATTACK_SPEED then
             return SetAbilityField(unit, ATTACK_SPEED_ABILITY, ATTACK_SPEED_FIELD, value, false)
+
         elseif statType == StatSystem.STAT_HEALTH_REGEN then
             return SetAbilityField(unit, HEALTH_REGEN_ABILITY, HEALTH_REGEN_FIELD, value, false)
+
         elseif statType == StatSystem.STAT_MANA_REGEN then
             return SetAbilityField(unit, MANA_REGEN_ABILITY, MANA_REGEN_FIELD, value, false)
+
         elseif statType == StatSystem.STAT_MAGIC_RESISTANCE then
             return SetAbilityField(unit, MAGIC_RESIST_ABILITY, MAGIC_RESIST_FIELD, value, false)
+
         elseif statType == StatSystem.STAT_SIGHT_RANGE then
             local prev = StatSystem.GetUnitStat(unit, StatSystem.STAT_SIGHT_RANGE)
-            local success = SetAbilityField(unit, SIGHT_ABILITY, SIGHT_FIELD, value, true)
-            if success then
+            local ok = SetAbilityField(unit, SIGHT_ABILITY, SIGHT_FIELD, value, true)
+            if ok then
                 local delta = value - prev
                 BlzSetUnitRealField(unit, UNIT_RF_SIGHT_RADIUS, BlzGetUnitRealField(unit, UNIT_RF_SIGHT_RADIUS) + delta)
             end
-            return success
+            return ok
         end
 
-        debugPrint("SetUnitStat: invalid stat type " .. tostring(statType))
+        debugPrint("SetUnitStat: invalid type " .. tostring(statType))
         return false
     end
 
-    --------------------------------------------------
-    -- Public: AddUnitStat (relative)
-    --------------------------------------------------
     function StatSystem.AddUnitStat(unit, statType, delta)
         local cur = StatSystem.GetUnitStat(unit, statType) or 0
         return StatSystem.SetUnitStat(unit, statType, cur + (delta or 0))
     end
-
-    --------------------------------------------------
-    -- Public: RemoveUnitStat (reset)
-    --------------------------------------------------
     function StatSystem.RemoveUnitStat(unit, statType)
         return StatSystem.SetUnitStat(unit, statType, 0)
     end
 
     --------------------------------------------------
-    -- Events registration and getters
+    -- SOURCE AGGREGATION (items, buffs, etc.)
     --------------------------------------------------
-    function StatSystem.RegisterStatEvent(handler)
-        if type(handler) == 'function' then
-            table.insert(eventTriggers, handler)
-            debugPrint("Registered stat event")
-            return true
+    local SRC, LAST = {}, {}
+
+    local function getHeroByPid(pid)
+        local PD = rawget(_G, "PlayerData")
+        if PD and PD.GetHero then
+            local u = PD.GetHero(pid)
+            if u then return u end
         end
-        return false
+        if _G.PLAYER_DATA and _G.PLAYER_DATA[pid] and _G.PLAYER_DATA[pid].hero then
+            return _G.PLAYER_DATA[pid].hero
+        end
+        return nil
     end
 
-    function StatSystem.GetStatEventUnit() return currentUnit end
-    function StatSystem.GetStatEventType() return currentStat end
-    function StatSystem.GetStatEventAmount() return currentAmount end
+    local function add(t, k, v) if type(v)=="number" then t[k]=(t[k] or 0)+v end end
+    local function foldKey(k)
+        if k=="strength" then return "str" end
+        if k=="agility" then return "agi" end
+        if k=="intelligence" then return "int" end
+        if k=="damage" then return "attack" end
+        if k=="armor" then return "defense" end
+        if k=="moveSpeed" then return "speed" end
+        return k
+    end
+    local MAP = {
+        str="STR", agi="AGI", int="INT", hp="HP", mp="MP",
+        defense="ARMOR", attack="DMG", speed="MS", attackSpeedPct="AS",
+        spellPowerPct="SPB", physPowerPct="PWB",
+    }
 
-    --------------------------------------------------
-    -- Chat commands (for testing)
-    --------------------------------------------------
-    local function SetupStatCommands()
-        local trig = CreateTrigger()
-        for i = 0, bj_MAX_PLAYERS - 1 do
-            TriggerRegisterPlayerChatEvent(trig, Player(i), "-addstr", false)
-            TriggerRegisterPlayerChatEvent(trig, Player(i), "-addagi", false)
-            TriggerRegisterPlayerChatEvent(trig, Player(i), "-addint", false)
-            TriggerRegisterPlayerChatEvent(trig, Player(i), "-adddmg", false)
-            TriggerRegisterPlayerChatEvent(trig, Player(i), "-addarmor", false)
-            TriggerRegisterPlayerChatEvent(trig, Player(i), "-debugstats", false)
-            TriggerRegisterPlayerChatEvent(trig, Player(i), "-mystats", false)
+    local function pushTotals(pid, u, totals)
+        local prev = LAST[pid] or {}
+        local keys = {"STR","AGI","INT","HP","MP","ARMOR","DMG","MS","AS"}
+        for i=1,#keys do
+            local k=keys[i]; local new=totals[k] or 0; local old=prev[k] or 0
+            if new ~= old then
+                if     k=="STR"   then StatSystem.SetUnitStat(u, StatSystem.STAT_STRENGTH,       new)
+                elseif k=="AGI"   then StatSystem.SetUnitStat(u, StatSystem.STAT_AGILITY,        new)
+                elseif k=="INT"   then StatSystem.SetUnitStat(u, StatSystem.STAT_INTELLIGENCE,   new)
+                elseif k=="HP"    then StatSystem.SetUnitStat(u, StatSystem.STAT_HEALTH,         new)
+                elseif k=="MP"    then StatSystem.SetUnitStat(u, StatSystem.STAT_MANA,           new)
+                elseif k=="ARMOR" then StatSystem.SetUnitStat(u, StatSystem.STAT_ARMOR,          new)
+                elseif k=="DMG"   then StatSystem.SetUnitStat(u, StatSystem.STAT_DAMAGE,         new)
+                elseif k=="MS"    then StatSystem.SetUnitStat(u, StatSystem.STAT_MOVEMENT_SPEED, new)
+                elseif k=="AS"    then StatSystem.SetUnitStat(u, StatSystem.STAT_ATTACK_SPEED,   new)
+                end
+            end
         end
+        LAST[pid] = totals
 
-        TriggerAddAction(trig, function()
-            local p = GetTriggerPlayer()
-            local txt = GetEventPlayerChatString()
-            local pid = GetPlayerId(p)
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.Emit then
+            PB.Emit("CombatStatsChanged", {
+                pid = pid, unit = u, totals = totals,
+                combat = {
+                    armor = totals.ARMOR or 0,
+                    spellBonusPct    = totals.SPB or 0.0,
+                    physicalBonusPct = totals.PWB or 0.0,
+                }
+            })
+        end
+    end
 
-            local hero = (PLAYER_DATA and PLAYER_DATA[pid] and PLAYER_DATA[pid].hero) or nil
-            if not hero then
-                DisplayTextToPlayer(p, 0, 0, "|cFFFF4444No hero found. Create one with the UI or -newsoul.|r")
-                return
+    local function recompute(pid)
+        local u = getHeroByPid(pid); if not u then return end
+        local totals, book = {}, SRC[pid]
+        if book then
+            for _, mods in pairs(book) do
+                if type(mods)=="table" then
+                    for k,v in pairs(mods) do
+                        if type(k)=="string" and type(v)=="number" then
+                            k = foldKey(k); local tag = MAP[k]; if tag then add(totals, tag, v) end
+                        end
+                    end
+                end
             end
+        end
+        pushTotals(pid, u, totals)
+    end
 
-            if string.find(txt, "-addstr") then
-                StatSystem.AddUnitStat(hero, StatSystem.STAT_STRENGTH, 5)
-                DisplayTextToPlayer(p, 0, 0, "|cFF88FF88Added +5 Strength to your hero|r")
-            elseif string.find(txt, "-addagi") then
-                StatSystem.AddUnitStat(hero, StatSystem.STAT_AGILITY, 5)
-                DisplayTextToPlayer(p, 0, 0, "|cFF88FF88Added +5 Agility to your hero|r")
-            elseif string.find(txt, "-addint") then
-                StatSystem.AddUnitStat(hero, StatSystem.STAT_INTELLIGENCE, 5)
-                DisplayTextToPlayer(p, 0, 0, "|cFF88FF88Added +5 Intelligence to your hero|r")
-            elseif string.find(txt, "-adddmg") then
-                StatSystem.AddUnitStat(hero, StatSystem.STAT_DAMAGE, 10)
-                DisplayTextToPlayer(p, 0, 0, "|cFF88FF88Added +10 Damage to your hero|r")
-            elseif string.find(txt, "-addarmor") then
-                StatSystem.AddUnitStat(hero, StatSystem.STAT_ARMOR, 2)
-                DisplayTextToPlayer(p, 0, 0, "|cFF88FF88Added +2 Armor to your hero|r")
-            elseif string.find(txt, "-mystats") then
-                local s = StatSystem.GetUnitStat(hero, StatSystem.STAT_STRENGTH)
-                local a = StatSystem.GetUnitStat(hero, StatSystem.STAT_AGILITY)
-                local i = StatSystem.GetUnitStat(hero, StatSystem.STAT_INTELLIGENCE)
-                local dmg = StatSystem.GetUnitStat(hero, StatSystem.STAT_DAMAGE)
-                local arm = StatSystem.GetUnitStat(hero, StatSystem.STAT_ARMOR)
-                print("=== YOUR BONUS STATS ===")
-                print("Strength: +" .. tostring(s))
-                print("Agility: +" .. tostring(a))
-                print("Intelligence: +" .. tostring(i))
-                print("Damage: +" .. tostring(dmg))
-                print("Armor: +" .. tostring(arm))
-                print("======================")
-            elseif string.find(txt, "-debugstats") then
-                StatSystem.ToggleDebug()
-            end
-        end)
+    function StatSystem.ApplySource(pid, key, mods)
+        if type(pid)~="number" or type(key)~="string" or type(mods)~="table" then return false end
+        SRC[pid] = SRC[pid] or {}
+        local copy = {}; for k,v in pairs(mods) do copy[k]=v end
+        SRC[pid][key] = copy
+        recompute(pid)
+        return true
+    end
+
+    function StatSystem.RemoveSource(pid, key)
+        local book = SRC[pid]; if not book then return false end
+        book[key] = nil; recompute(pid); return true
+    end
+
+    function StatSystem.Recompute(pid) if type(pid)=="number" then recompute(pid) end end
+
+    --------------------------------------------------
+    -- COMBAT SNAPSHOT
+    --------------------------------------------------
+    local function pidOf(u) if not u then return nil end return GetPlayerId(GetOwningPlayer(u)) end
+    function StatSystem.GetCombat(unit)
+        local out = {
+            armor = StatSystem.GetUnitStat(unit, StatSystem.STAT_ARMOR) or 0,
+            spellBonusPct = 0.0, physicalBonusPct = 0.0,
+        }
+        local pid = pidOf(unit)
+        if pid and LAST[pid] then
+            out.spellBonusPct    = LAST[pid].SPB or 0.0
+            out.physicalBonusPct = LAST[pid].PWB or 0.0
+        end
+        return out
     end
 
     --------------------------------------------------
-    -- Initialization
+    -- INIT
     --------------------------------------------------
     local function InitializeStatSystem()
-        SetupStatCommands()
-        debugPrint("StatSystem ready")
+        debugPrint("StatSystem ready (merged, BJ-free)")
     end
 
-    StatSystem.GetUnitStat         = StatSystem.GetUnitStat or StatSystem.GetUnitStat
-    StatSystem.SetUnitStat         = StatSystem.SetUnitStat
-    StatSystem.AddUnitStat         = StatSystem.AddUnitStat
-    StatSystem.RemoveUnitStat      = StatSystem.RemoveUnitStat
-    StatSystem.RegisterStatEvent   = StatSystem.RegisterStatEvent
-    StatSystem.GetStatEventUnit    = StatSystem.GetStatEventUnit
-    StatSystem.GetStatEventType    = StatSystem.GetStatEventType
-    StatSystem.GetStatEventAmount  = StatSystem.GetStatEventAmount
-    StatSystem.InitializeStatSystem= InitializeStatSystem
-
-    -- Auto-init on map load (deferred so other systems can register)
     if OnInit and OnInit.final then
         OnInit.final(function()
-            TimerStart(CreateTimer(), 1.5, false, function()
+            TimerStart(CreateTimer(), 1.0, false, function()
                 InitializeStatSystem()
                 DestroyTimer(GetExpiredTimer())
             end)
         end)
     else
-        -- Fallback immediate init if OnInit not present
         InitializeStatSystem()
     end
 end

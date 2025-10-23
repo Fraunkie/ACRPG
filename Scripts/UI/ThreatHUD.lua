@@ -12,6 +12,7 @@ do
     -- Top-right corner position
     local POS_X, POS_Y = 0.79, 0.56
     local FONT_SIZE = 0.018
+    local BG = "war3mapImported\\DpsBoard.blp"
 
     local frames   = {}
     local enabled  = {}
@@ -27,7 +28,7 @@ do
         -- Top-right corner placement
         BlzFrameSetAbsPoint(root, FRAMEPOINT_TOPRIGHT, POS_X, POS_Y)
         BlzFrameSetVisible(root, false)
-        BlzFrameSetTexture(root, "", 0, true)
+        BlzFrameSetTexture(root, BG, 0, true)
 
         local text = BlzCreateFrameByType("TEXT", "th_text_" .. pid, root, "", 0)
         BlzFrameSetPoint(text, FRAMEPOINT_CENTER, root, FRAMEPOINT_CENTER, 0.0, -0.010)

@@ -2,10 +2,9 @@ if Debug and Debug.beginFile then Debug.beginFile("PlayerData.lua") end
 --==================================================
 -- PlayerData.lua
 -- Single source of truth for per-player runtime state.
---  - Long-lived, cross-system data lives here
---  - System-specific logic stays in its own module
---  - Mirrors read-only combat stats from HeroStatSystem
---  - NEW: spell/physical % bonus hooks for damage calcs
+--  - Mirrors basic stats from HeroStatSystem
+--  - Carries combat multipliers & mirrors armor from StatSystem
+--  - UPDATED: heroType helpers + better CombatStatsChanged mirror
 --==================================================
 
 if not PlayerData then PlayerData = {} end
@@ -21,6 +20,7 @@ do
         return {
             -- identity / session
             hero = nil,
+            heroType = nil,    -- optional (e.g. "SAIYAN")
             zone = "YEMMA",
             role = "NONE",
             hasStarted = false,
@@ -33,21 +33,20 @@ do
             soulNextXP = 200,
             spiritDrive = 0,
 
-            -- read-only combat stats mirror
+            -- read-only basics (from HeroStatSystem)
             stats = { power = 0, defense = 0, speed = 0, crit = 0 },
 
-            -- combat detail stats
+            -- combat detail stats (partly mirrored from StatSystem)
             combat = {
-                armor        = 0,
+                armor = 0,
                 energyResist = 0,
-                dodge        = 0,
-                parry        = 0,
-                block        = 0,
-                critChance   = 0,
-                critMult     = 1.5,
+                dodge = 0,
+                parry = 0,
+                block = 0,
+                critChance = 0,
+                critMult = 1.5,
 
-                -- NEW: percent multipliers used by damage systems
-                -- e.g., 0.20 = +20% bonus, -0.15 = -15% penalty
+                -- multipliers used by damage systems
                 spellBonusPct    = 0.0,
                 physicalBonusPct = 0.0,
             },
@@ -108,12 +107,25 @@ do
     end
 
     function PlayerData.GetHero(pid)
+        return PlayerData.Get(pid).hero
+    end
+
+    -- Optional hero type helpers (used by InventoryService gating)
+    function PlayerData.SetHeroType(pid, tpe)
         local pd = PlayerData.Get(pid)
-        return pd.hero
+        if type(tpe) == "string" and tpe ~= "" then
+            pd.heroType = tpe
+        else
+            pd.heroType = nil
+        end
+        return pd.heroType
+    end
+    function PlayerData.GetHeroType(pid)
+        return PlayerData.Get(pid).heroType
     end
 
     --------------------------------------------------
-    -- Power mirror refresh
+    -- Power mirrors
     --------------------------------------------------
     function PlayerData.RefreshPower(pid)
         local pd = PlayerData.Get(pid)
@@ -123,6 +135,8 @@ do
         pd.powerLevel = math.max(0, math.floor((str + agi + int) / 3))
         return pd.powerLevel
     end
+    function PlayerData.GetPowerLevel(pid) return (PlayerData.Get(pid).powerLevel or 0) end
+    function PlayerData.GetSoulEnergy(pid) return (PlayerData.Get(pid).soulEnergy or 0) end
 
     --------------------------------------------------
     -- Souls / shards
@@ -132,7 +146,6 @@ do
         pd.soulEnergy = math.max(0, (pd.soulEnergy or 0) + (amount or 0))
         return pd.soulEnergy
     end
-
     function PlayerData.AddFragments(pid, amount)
         local pd = PlayerData.Get(pid)
         pd.fragments = math.max(0, (pd.fragments or 0) + (amount or 0))
@@ -147,10 +160,8 @@ do
         pd.zone = zone or pd.zone
         return pd.zone
     end
-
     function PlayerData.GetZone(pid)
-        local pd = PlayerData.Get(pid)
-        return pd.zone
+        return PlayerData.Get(pid).zone
     end
 
     --------------------------------------------------
@@ -178,7 +189,7 @@ do
     end
 
     --------------------------------------------------
-    -- Combat stats (mirrors + bonuses)
+    -- Combat stats (mirrors + multipliers)
     --------------------------------------------------
     function PlayerData.SetCombat(pid, tbl)
         local pd = PlayerData.Get(pid)
@@ -191,7 +202,6 @@ do
         c.critChance   = (tbl and tbl.critChance)   or c.critChance   or 0
         c.critMult     = (tbl and tbl.critMult)     or c.critMult     or 1.5
 
-        -- keep current bonus values unless provided
         if tbl and tbl.spellBonusPct ~= nil then c.spellBonusPct = tbl.spellBonusPct end
         if tbl and tbl.physicalBonusPct ~= nil then c.physicalBonusPct = tbl.physicalBonusPct end
 
@@ -211,7 +221,7 @@ do
         return pd.combat
     end
 
-    -- Convenience getters (used by DamageResolver/SpellSystem)
+    -- Convenience getters
     function PlayerData.GetArmor(pid)        return PlayerData.GetCombat(pid).armor end
     function PlayerData.GetEnergyResist(pid) return PlayerData.GetCombat(pid).energyResist end
     function PlayerData.GetDodge(pid)        return PlayerData.GetCombat(pid).dodge end
@@ -220,10 +230,8 @@ do
     function PlayerData.GetCritChance(pid)   return PlayerData.GetCombat(pid).critChance end
     function PlayerData.GetCritMult(pid)     return PlayerData.GetCombat(pid).critMult end
 
-    -- NEW: Spell/Physical bonus % helpers
     function PlayerData.GetSpellBonusPct(pid)    return PlayerData.GetCombat(pid).spellBonusPct or 0.0 end
     function PlayerData.GetPhysicalBonusPct(pid) return PlayerData.GetCombat(pid).physicalBonusPct or 0.0 end
-
     function PlayerData.SetSpellBonusPct(pid, pct)
         local c = PlayerData.GetCombat(pid)
         c.spellBonusPct = pct or 0.0
@@ -234,7 +242,6 @@ do
         c.physicalBonusPct = pct or 0.0
         return c.physicalBonusPct
     end
-
     function PlayerData.AddSpellBonusPct(pid, delta)
         local c = PlayerData.GetCombat(pid)
         c.spellBonusPct = (c.spellBonusPct or 0.0) + (delta or 0.0)
@@ -251,13 +258,12 @@ do
     --------------------------------------------------
     OnInit.final(function()
         -- ensure slots for human players
-        for pid = 0, bj_MAX_PLAYERS - 1 do
+        for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 PLAYER_DATA[pid] = PLAYER_DATA[pid] or defaultTable()
             end
         end
 
-        -- Mirror stat updates
         local function _PD_OnHeroStatsChanged(e)
             if not e or not e.unit then return end
             local p = GetPlayerId(GetOwningPlayer(e.unit))
@@ -273,14 +279,20 @@ do
             end
         end
 
-        -- Optional: mirror combat stats from StatSystem
+        -- Mirror from StatSystem (prefer payload, fall back to StatSystem.GetCombat)
         local function _PD_OnCombatStatsChanged(e)
-            if not e or not e.unit then return end
-            local p = GetPlayerId(GetOwningPlayer(e.unit))
-            if p == nil then return end
-            if _G.StatSystem and StatSystem.GetCombat then
-                local all = StatSystem.GetCombat(e.unit)
-                PlayerData.SetCombat(p, all)
+            if not e then return end
+            local u = e.unit
+            if not u then return end
+            local p = GetPlayerId(GetOwningPlayer(u)); if p == nil then return end
+
+            local src = e.combat
+            if not src and _G.StatSystem and StatSystem.GetCombat then
+                src = StatSystem.GetCombat(u)
+            end
+
+            if src then
+                PlayerData.SetCombat(p, src)
             end
         end
 

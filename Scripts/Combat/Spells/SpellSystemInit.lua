@@ -134,6 +134,25 @@ local SpellData = {
         fxModel   = nil
     },
 
+        --------------------------------------------------
+    -- PICCOLO: Light Pulse
+    --------------------------------------------------
+    [FourCC('A0LG')] = {
+        name           = "Light Pulse",
+        type           = "scripted",
+        damageBase     = 100.00,          -- handled dynamically (INT-based)
+        intScale       = 0.70,       -- matches DMG_INT_MULT
+        healScale      = 0.40,       -- initial heal scale (INT * 0.4)
+        hotScale       = 0.10,       -- lingering heal per tick (INT * 0.1)
+        radius         = 300.0,
+        lingerTime     = 1.50,
+        fxBurst        = "Abilities\\Spells\\Human\\HolyBolt\\HolyBoltSpecialArt.mdl",
+        fxLinger       = "Abilities\\Spells\\Other\\ImmolationRed\\ImmolationRedTarget.mdl",
+        cooldown       = 12.0,
+        description    = "Emits a burst of Namekian light that heals allies and damages enemies within 300 range, leaving a brief healing aura.",
+    },
+
+
     [FourCC('A006')] = {
         name = "Kamehameha",
         type = "beam",

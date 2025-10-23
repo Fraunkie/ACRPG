@@ -1,72 +1,49 @@
-if Debug and Debug.beginFile then Debug.beginFile("TeleportItemsPickup.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("InventoryPickupBridge.lua") end
 --==================================================
--- TeleportItemsPickup.lua
--- Handles teleport key item pickups.
--- • Ignores bag units completely.
--- • Works with TeleportSystem and ItemDatabase.
+-- InventoryPickupBridge.lua
+-- Sends picked up items to the custom Inventory (no shards, no fragments).
+-- Works whether the Inventory UI is open or not.
 --==================================================
-
-if not TeleportItemsPickup then TeleportItemsPickup = {} end
-_G.TeleportItemsPickup = TeleportItemsPickup
 
 do
-    --------------------------------------------------
-    -- Helpers
-    --------------------------------------------------
-    local function validUnit(u) return u and GetUnitTypeId(u) ~= 0 end
-    local function isBag(u)
-        return u and GetUnitTypeId(u) == FourCC("hBAG") -- your bag rawcode
+  local function dprint(msg)
+    if Debug and Debug.printf then Debug.printf("[InvPickup] " .. tostring(msg)) end
+  end
+
+  local function addToInventory(pid, typeId)
+    local INV = _G.PlayerMenu_InventoryModule
+    if not INV or not INV.AddItem then
+      dprint("Inventory module not ready; queued add failed for pid=" .. tostring(pid))
+      return
     end
-    local function pidOf(u)
-        local p = GetOwningPlayer(u)
-        return p and GetPlayerId(p) or nil
-    end
+    INV.AddItem(pid, typeId)
+  end
 
-    --------------------------------------------------
-    -- Core
-    --------------------------------------------------
-    local function onPickup()
-        local u = GetTriggerUnit()
-        local i = GetManipulatedItem()
-        if not validUnit(u) or not validItem(i) then return end
-        if isBag(u) then
-            RemoveItem(i)
-            return
-        end
-        local pid = pidOf(u)
-        if not pid then return end
+  local function onPickup(player, item)
+    if not item then return end
+    local pid   = GetPlayerId(player)
+    local typeId = GetItemTypeId(item)
+    if typeId == 0 then return end
 
-        local id = GetItemTypeId(i)
-        local node = ItemDatabase.TeleportNodeByItem(id)
-        if node and _G.TeleportSystem and TeleportSystem.Unlock then
-            TeleportSystem.Unlock(pid, node)
-            DisplayTextToPlayer(Player(pid), 0, 0, "|cff88ff88Unlocked teleport:|r " .. tostring(node))
-        end
+    -- prevent WC3 inventory: we immediately remove the item object from the map
+    removeitem(item)
 
-        RemoveItem(i)
-    end
+    dprint("picked typeId " .. tostring(typeId))
+    addToInventory(pid, typeId)
+  end
 
-    --------------------------------------------------
-    -- Hook
-    --------------------------------------------------
-    local function hook()
-        local t = CreateTrigger()
-        for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
-            TriggerRegisterPlayerUnitEvent(t, Player(i), EVENT_PLAYER_UNIT_PICKUP_ITEM, nil)
-        end
-        TriggerAddAction(t, onPickup)
-    end
+  -- Native trigger for all players
+  local t = CreateTrigger()
+  for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
+    TriggerRegisterPlayerUnitEvent(t, Player(i), EVENT_PLAYER_UNIT_PICKUP_ITEM, nil)
+  end
+  TriggerAddAction(t, function()
+    onPickup(GetTriggerPlayer(), GetManipulatedItem())
+  end)
 
-    --------------------------------------------------
-    -- Init
-    --------------------------------------------------
-    OnInit.final(function()
-        hook()
-        print("[TeleportItemsPickup] ready")
-        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
-            InitBroker.SystemReady("TeleportItemsPickup")
-        end
-    end)
+  if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+    InitBroker.SystemReady("InventoryPickupBridge")
+  end
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

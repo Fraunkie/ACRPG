@@ -10,8 +10,8 @@ if Debug and Debug.beginFile then Debug.beginFile("HeroStatSystem.lua") end
 -- Emits ProcBus:
 --   - HeroStatsChanged { unit=hero, key=key, value=value, delta=delta or 0 }
 -- Notes:
---   - No top-level natives; WC3 editor safe
---   - Cleans on unit death
+--   - WC3 editor safe; no top-level natives
+--   - UPDATED: integrates with StatSystem + InventoryService on bind/death
 --==================================================
 
 if not HeroStatSystem then HeroStatSystem = {} end
@@ -21,10 +21,8 @@ do
     --------------------------------------------------
     -- State
     --------------------------------------------------
-    -- STATS[hid] = { key = number, ... }
-    local STATS = {}
-    -- OWNER[hid] = pid
-    local OWNER = {}
+    local STATS = {}   -- STATS[hid] = { key = number, ... }
+    local OWNER = {}   -- OWNER[hid] = pid
 
     local function hid(u) return GetHandleId(u) end
     local function valid(u) return u ~= nil and GetUnitTypeId(u) ~= 0 end
@@ -40,13 +38,8 @@ do
         local h = hid(u)
         if not STATS[h] then
             STATS[h] = {
-                -- seed defaults here if desired
-                power = 0,
-                defense = 0,
-                speed = 0,
-                crit = 0,
-                hpRegen = 0,
-                mpRegen = 0,
+                power = 0, defense = 0, speed = 0, crit = 0,
+                hpRegen = 0, mpRegen = 0,
             }
         end
         return STATS[h]
@@ -59,8 +52,20 @@ do
         if not valid(hero) then return end
         OWNER[hid(hero)] = pid
         ensure(hero)
+
+        -- Keep PlayerData in sync
         if _G.PlayerData and PlayerData.SetHero then
             PlayerData.SetHero(pid, hero)
+        end
+
+        -- Push any already-queued item sources now that we have a concrete unit
+        if _G.StatSystem and StatSystem.Recompute then
+            StatSystem.Recompute(pid)
+        end
+
+        -- Reapply equip effects in case hero instance changed/swapped
+        if _G.InventoryService and InventoryService.ReapplyAll then
+            InventoryService.ReapplyAll(pid)
         end
     end
 
@@ -100,17 +105,13 @@ do
         return out
     end
 
-    -- Optional: convenience to add multiple at once
     function HeroStatSystem.AddMany(u, tbl)
         if not valid(u) or type(tbl) ~= "table" then return end
         for k, v in pairs(tbl) do
-            if type(v) == "number" then
-                HeroStatSystem.Add(u, k, v)
-            end
+            if type(v) == "number" then HeroStatSystem.Add(u, k, v) end
         end
     end
 
-    -- Optional: remove a key entirely (rarely needed)
     function HeroStatSystem.ClearKey(u, key)
         if not valid(u) or type(key) ~= "string" then return end
         local t = STATS[hid(u)]; if not t then return end
@@ -128,8 +129,15 @@ do
         local u = GetTriggerUnit()
         if not valid(u) then return end
         local h = hid(u)
+        local pid = OWNER[h]
+
         STATS[h] = nil
         OWNER[h] = nil
+
+        -- Zero out applied item totals for that pid
+        if _G.StatSystem and StatSystem.Recompute and type(pid) == "number" then
+            StatSystem.Recompute(pid)
+        end
     end
 
     OnInit.final(function()

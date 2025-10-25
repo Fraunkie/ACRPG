@@ -13,7 +13,7 @@ do
     -- Tunables
     local RESPAWN_DELAY     = 10.0
     local SCAN_DELAY_START  = 3.0
-    local DEBUG_ENABLED     = true
+    local DEBUG_ENABLED     = false
 
     -- Hard filters
     local DUMY_ID           = FourCC("DUMY")
@@ -62,7 +62,7 @@ do
             owner  = GetOwningPlayer(u),
             placed = true,
         }
-        DebugMsg("Registered placed unit")
+       -- DebugMsg("Registered placed unit")
     end
 
     -- Optional: explicit opt-in for spawned NA (call from other systems if desired)
@@ -78,7 +78,7 @@ do
             owner  = GetOwningPlayer(u),
             placed = false, -- explicitly opted-in
         }
-        DebugMsg("Registered spawned NA (opt-in)")
+      --  DebugMsg("Registered spawned NA (opt-in)")
     end
 
     local function Respawn(saved)
@@ -98,7 +98,7 @@ do
                     placed = true
                 }
             end
-            DebugMsg("Respawned unit")
+           -- DebugMsg("Respawned unit")
             DestroyTimer(GetExpiredTimer())
         end)
     end
@@ -152,7 +152,7 @@ do
         end
         DestroyGroup(g2)
 
-        DebugMsg("Initial scan complete")
+      --  DebugMsg("Initial scan complete")
     end
 
     OnInit.final(function()

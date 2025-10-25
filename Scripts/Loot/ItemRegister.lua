@@ -21,35 +21,33 @@ OnInit.final(function()
   -- Bulk register (replace or create)
   ItemDatabase.BulkRegister({
     [FourCC("I00G")] = {
-      name        = "Goz's Gloves",
-      description = "Gloves worn by Goz.",
-      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNGloves.blp",
+      name        = "HFIL Shackles",
+      description = "Chains that weigh heavy but focus your resolve.",
+      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNHFILShackles.blp",
       category    = "HANDS",
       slot        = "Bracers",           -- UI slot that matches your equip board
-      stats       = { defense = 4, hp = 40 },
+      stats       = { defense = 2, attackspeed = 0.05 },
       -- allowedHeroTypes / required fields can be added later if needed
     },
 
     [FourCC("I00D")] = {
-      name        = "Mez's Hammer",
-      description = "A hammer wielded by Mez.",
-      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNStone.blp",
+      name        = "Soul-Scarred Club",
+      description = "A crude weapon formed from a tormented soul's remnants",
+      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNSoulScarredClub.blp",
       category    = "WEAPON",
       slot        = "Weapon",
       stats       = { attack = 8, physPowerPct = 0.05 },
     },
 
     [FourCC("I004")] = {
-      name        = "Old Armor",
-      description = "A weathered suit of armor.",
-      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNArmor.blp",
+      name        = "Tattered Soul Cloth",
+      description = "Fragments of robes worn by punished souls.",
+      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNTatteredSoulcloth.blp",
       category    = "CHEST",
       slot        = "Chest",
       stats       = { hp = 120, defense = 6 },
     },
   })
-
-  print("[items_register] Registered core items: I00G, I00D, I004")
 end)
 
 if Debug and Debug.endFile then Debug.endFile() end

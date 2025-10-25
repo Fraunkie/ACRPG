@@ -1,12 +1,3 @@
-if Debug and Debug.beginFile then Debug.beginFile("Bootflow.lua") end
---==================================================
--- Bootflow.lua
--- Simple intro bar + "Create Soul" button.
--- • No auto hero creation
--- • Local-only UI visibility
--- • Emits OnBootflowStart / OnBootflowFinished
---==================================================
-
 if not Bootflow then Bootflow = {} end
 _G.Bootflow = Bootflow
 
@@ -17,13 +8,16 @@ do
     local BTN_TEX = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller"
 
     local BAR_DURATION = (GB.STARTUI and GB.STARTUI.BAR_DURATION) or 3.50
-    local EXTRA_DELAY  = 2.00
+    local EXTRA_DELAY  = 2.00          -- wait 2 s after bar completes
     local TICK         = 0.03
     local PANEL_W, PANEL_H, PAD = 0.44, 0.11, 0.010
 
     local root, barFill, btn = {}, {}, {}
     local tAccum, barDone = {}, {}
     local timerBar = {}
+
+    -- keep a handle so fog modifiers don't get GC'd
+    local fogMod = {}
 
     local function PD(pid)
         PLAYER_DATA = PLAYER_DATA or {}
@@ -39,15 +33,34 @@ do
         return f
     end
 
-    local function enterCine()
-        if CinematicModeBJ then CinematicModeBJ(true, bj_FORCE_ALL_PLAYERS) end
-    end
-    local function exitCine()
-        if CinematicModeBJ then CinematicModeBJ(false, bj_FORCE_ALL_PLAYERS) end
+    local function enterCine() if CinematicModeBJ then CinematicModeBJ(true, bj_FORCE_ALL_PLAYERS) end end
+    local function exitCine()  if CinematicModeBJ then CinematicModeBJ(false, bj_FORCE_ALL_PLAYERS) end end
+
+    ----------------------------------------------------------------
+    -- Robust hide for the inventory cover (multi-context safe)
+    ----------------------------------------------------------------
+    local function HideInventoryCoverSafely(pid)
+        if GetLocalPlayer() ~= Player(pid) then return end
+        local names = { "SimpleInventoryCover", "InventoryCover", "Inventory Cover" }
+        for _, n in ipairs(names) do
+            for ctx = 0, 7 do
+                local c = BlzGetFrameByName(n, ctx)
+                if c then
+                    local dummy = BlzCreateFrameByType("FRAME", "", BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI,0), "", 0)
+                    BlzFrameSetParent(c, dummy)
+                    BlzFrameClearAllPoints(c)
+                    BlzFrameSetAbsPoint(c, FRAMEPOINT_CENTER, 1.5, -1.5)
+                    BlzFrameSetSize(c, 0.0001, 0.0001)
+                    BlzFrameSetAlpha(c, 0)
+                    BlzFrameSetVisible(c, false)
+                end
+            end
+        end
+        BlzEnableUIAutoPosition(false)
     end
 
     --------------------------------------------------
-    -- Button creation (Create Soul)
+    -- Button creation (safe backdrop+text method)
     --------------------------------------------------
     local function ensureUI(pid)
         if btn[pid] then return end
@@ -74,30 +87,33 @@ do
         BlzTriggerRegisterFrameEvent(trig, b, FRAMEEVENT_CONTROL_CLICK)
         TriggerAddAction(trig, function()
             if not barDone[pid] then return end
-            if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(b, false) end
+            BlzFrameSetVisible(b, false)
 
-            -- Explicit creation only on click
-            if _G.CharacterCreation_Adapter and CharacterCreation_Adapter.CreateNewSoul then
-                pcall(CharacterCreation_Adapter.CreateNewSoul, pid)
-            elseif _G.CharacterCreation and CharacterCreation.Begin then
+            if CharacterCreation and CharacterCreation.Begin then
                 pcall(CharacterCreation.Begin, pid)
             end
 
             local pd = PD(pid)
-            if pd.yemmaIntroSeen ~= true then
-                pd.yemmaIntroPending = true
+            if pd.yemmaIntroSeen ~= true then pd.yemmaIntroPending = true end
+
+            if GetLocalPlayer() == Player(pid) then
+                ClearTextMessages()
             end
 
-            local u = pd.hero or (_G.PlayerHero and PlayerHero[pid]) or nil
-            if ValidUnit(u) and GetLocalPlayer() == Player(pid) then
-                ClearSelection()
-                SelectUnit(u, true)
-            end
+            DisplayTextToPlayer(Player(pid), 0, 0,
+            "Welcome to the Spirit Realm!\n\n" ..
+            "• Speak with *King Yemma* at the desk to begin your first task.\n" ..
+            "• Press **F** near a Hub Crystal to open the Travel Menu.\n" ..
+            "• Press **L** to open your Player Menu (Stats, Inventory, Save).\n" ..
+            "• Press **P** to toggle your DPS / Threat meter.\n\n" ..
+            "Your journey starts here — prove your spirit’s strength and earn your way back to the living world!")
+
+            local u = pd.hero or (PlayerHero and PlayerHero[pid])
+            if ValidUnit(u) then SelectUnitAddForPlayer(u, Player(pid)) end
 
             pd.bootflow_active = false
-            local PB = rawget(_G, "ProcBus")
-            if PB and PB.Emit then
-                PB.Emit("OnBootflowFinished", { pid = pid, created = true })
+            if ProcBus and ProcBus.Emit then
+                ProcBus.Emit("OnBootflowFinished", { pid = pid, created = true })
             end
         end)
     end
@@ -133,9 +149,7 @@ do
 
         local pd = PD(pid)
         pd.bootflow_active = true
-
-        local PB = rawget(_G, "ProcBus")
-        if PB and PB.Emit then PB.Emit("OnBootflowStart", { pid = pid }) end
+        if ProcBus and ProcBus.Emit then ProcBus.Emit("OnBootflowStart", { pid = pid }) end
 
         enterCine()
         timerBar[pid] = CreateTimer()
@@ -157,13 +171,40 @@ do
     -- Public
     --------------------------------------------------
     function Bootflow.Show(pid)
+        -- 1. Show loading bar
         mkBar(pid)
         startBar(pid)
+
+        -- 2. After bar + 2 s delay, create button
         TimerStart(CreateTimer(), BAR_DURATION + EXTRA_DELAY, false, function()
             ensureUI(pid)
             if GetLocalPlayer() == Player(pid) then
                 BlzFrameSetVisible(btn[pid], true)
             end
+
+            -- Load the sky (per player), then convert black → gray fog, and add atmospheric fog
+            if GetLocalPlayer() == Player(pid) then
+                if SetSkyModel then
+                    SetSkyModel("Environment\\Sky\\LordaeronSummerSky\\LordaeronSummerSky.mdx")
+                end
+
+                -- keep FoW systems enabled
+                if FogMaskEnable then FogMaskEnable(true) end
+                if FogEnable then FogEnable(true) end
+
+                -- mark entire map as explored (gray fog instead of black)
+                local r = GetPlayableMapRect()
+                fogMod[pid] = CreateFogModifierRect(Player(pid), FOG_OF_WAR_FOGGED, r, true, false)
+                FogModifierStart(fogMod[pid])
+
+                -- gentle blue atmospheric fog from 1000 to 4000
+                if SetTerrainFogColor then SetTerrainFogColor(140, 165, 205, 255) end
+                if SetTerrainFogEx then SetTerrainFogEx(0, 1000.0, 4000.0, 0.0, 140, 165, 205) end
+            end
+
+            -- Remove the inventory cover reliably
+            HideInventoryCoverSafely(pid)
+
             DestroyTimer(GetExpiredTimer())
         end)
     end
@@ -180,13 +221,86 @@ do
     OnInit.final(function()
         for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
+                if GetLocalPlayer() == Player(pid) then
+                    BlzHideOriginFrames(true) 
+                    BlzFrameSetSize(BlzGetFrameByName("ConsoleUIBackdrop",0), 0, 0.0001)
+                    BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_HERO_BAR,0), false)
+                    BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_MINIMAP,0), false)
+                    BlzFrameSetVisible(BlzGetFrameByName("ResourceBarFrame",0), false)
+                    BlzFrameSetVisible(BlzGetFrameByName("UpperButtonBarFrame",0), false)
+                    BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_PORTRAIT, 0), false)
+                    BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_CHAT_MSG, 0), false)
+                    BlzFrameSetVisible(BlzGetFrameByName("SimpleInfoPanelIconHeroText", 6), false)
+                    BlzFrameSetSize(BlzGetFrameByName("InfoPanelIconHeroIcon", 6), 0.00001, 0.00001)
+                    BlzFrameSetSize(BlzGetFrameByName("SimpleInfoPanelIconHero", 6), 0.00001, 0.00001)
+                    BlzFrameSetSize(BlzGetFrameByName("InfoPanelIconBackdrop", 6), 0.00001, 0.00001)
+                    -- Shrink leftover info panel elements safely
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleHeroLevelBar", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleNameValue", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelIconDamage", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelIconDamageValue", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelIconArmor", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelIconArmorValue", 0), 0.0001)
+                    -- Hide Armor icon/value
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelIconArmor", 2), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelIconArmorValue", 2), 0.0001)
+
+                    -- Hide Hero Level bar text (XP / name)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleHeroLevelBar", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleNameValue", 0), 0.0001)
+                    -- hide the inventory title ("Inventory")
+                    BlzFrameSetScale(BlzGetFrameByName("InventoryText", 0), 0.0001)
+
+                    -- hide the hero name + the grey class line that appears beside it
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleNameValue", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleClassValue", 0), 0.0001)
+
+                    -- hide the XP/level bar under the name
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleHeroLevelBar", 0), 0.0001)
+
+                    -- HIDE ARMOR block (icon, value, label)
+                    -- note: “armor” is index 2 of the generic InfoPanel icon rows
+                    --BlzFrameSetScale(BlzGetFrameByName("InfoPanelIconBackdrop", 2), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("InfoPanelIconValue",    2), 0.0001)
+                   BlzFrameSetScale(BlzGetFrameByName("InfoPanelIconLabel",    2), 0.0001)
+
+
+
+                    -- Hide native WC3 inventory (covers all 6 slots)
+                    BlzFrameSetScale(BlzGetFrameByName("InventoryButton_0", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("InventoryButton_1", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("InventoryButton_2", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("InventoryButton_3", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("InventoryButton_4", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("InventoryButton_5", 0), 0.0001)
+
+                    -- Portrait (top-left corner, keep current size)
+                    local ui     = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
+                    local handle = BlzGetOriginFrame(ORIGIN_FRAME_PORTRAIT, 0)
+
+                    BlzEnableUIAutoPosition(false)
+                    BlzFrameSetVisible(handle, true)
+
+                    -- keep its current size
+                    local w = BlzFrameGetWidth(handle)
+                    local h = BlzFrameGetHeight(handle)
+
+                    BlzFrameClearAllPoints(handle)
+                    BlzFrameSetPoint(handle, FRAMEPOINT_TOPLEFT, ui, FRAMEPOINT_TOPLEFT, 0.012, -0.012) -- tweak padding as desired
+                    BlzFrameSetSize(handle, w, h)
+
+                    handle = nil
+
+
+                    BlzFrameSetAlpha( BlzGetFrameByName("SimpleInventoryCover", 0), 0)
+                    BlzFrameSetVisible(BlzFrameGetChild(BlzGetFrameByName("ConsoleUI", 0), 5), false)
+                    BlzEnableUIAutoPosition(false)
+                end
                 Bootflow.Show(pid)
             end
         end
-        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+        if InitBroker and InitBroker.SystemReady then
             InitBroker.SystemReady("Bootflow")
         end
     end)
 end
-
-if Debug and Debug.endFile then Debug.endFile() end

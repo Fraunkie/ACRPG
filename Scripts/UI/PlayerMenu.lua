@@ -29,7 +29,7 @@ do
   local TEX_PANEL_DARK = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background.blp"
   local TEX_BTN        = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller.blp"
 
-  local W_OUT, H_OUT   = 0.74, 0.40
+  local W_OUT, H_OUT   = 0.58, 0.40
   local RAIL_W         = 0.18
   local PAD            = 0.012
   local BTN_H          = 0.050

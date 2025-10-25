@@ -22,6 +22,8 @@ do
         SPAWN = GameBalance.START_NODES.SPAWN,
         -- King Yemma's Desk (hub)
         YEMMA = { x = 28853.2, y = 28777.6, facing = 180.0 },
+
+        HFIL = { x = 20991.0, y = -29402.3, facing = 294.0 },
         -- Optional placeholders; fill when ready:
         -- KAMI_LOOKOUT = { x = 0.0, y = 0.0, facing = 0.0 },
     }
@@ -37,6 +39,13 @@ do
         KAMI_LOOKOUT = "KAMI_LOOKOUT",
         SPIRIT_REALM = "SPIRIT_REALM",
         HFIL         = "HFIL",
+        RADITZ        = "RADITZ",
+        VIRIDIAN      = "VIRIDIAN",
+        FILE_ISLAND   = "FILE_ISLAND",
+        LAND_OF_FIRE  = "LAND_OF_FIRE",
+        VIRIDIAN_BOSS = "VIRIDIAN_BOSS",
+        DARK_DIGI     = "DARK_DIGI",
+        NINE_TAILS    = "NINE_TAILS",
     }
 
     GameBalance.NODE_PRETTY = GameBalance.NODE_PRETTY or {
@@ -44,6 +53,14 @@ do
         KAMI_LOOKOUT = "Kami's Lookout",
         SPIRIT_REALM = "Spirit Realm",
         HFIL         = "HFIL",
+
+        RADITZ        = "Raditz Landing",
+        VIRIDIAN      = "Viridian Forest",
+        FILE_ISLAND   = "File Island",
+        LAND_OF_FIRE  = "Land of Fire",
+        VIRIDIAN_BOSS = "Viridian Guardian",
+        DARK_DIGI     = "Dark Digivolution",
+        NINE_TAILS    = "Nine Tails Rampage",
     }
 
     -- Optional world coords for nodes (used by proximity/openers)
@@ -51,6 +68,28 @@ do
     GameBalance.NODE_COORDS.YEMMA = GameBalance.HUB_COORDS.YEMMA
     -- GameBalance.NODE_COORDS.KAMI_LOOKOUT = { x=..., y=..., z=0.0 }
     -- GameBalance.NODE_COORDS.SPIRIT_REALM = { x=..., y=..., z=0.0 }
+
+    --------------------------------------------------
+    -- Travel node requirements (gates)
+    -- pl_min = minimum Power Level required
+    -- se_min = minimum Soul Energy required
+    -- Only HFIL is auto-unlocked by default; others use these gates.
+    --------------------------------------------------
+    GameBalance.NODE_REQS = GameBalance.NODE_REQS or {
+        KAMI_LOOKOUT = { pl_min = 250 },
+        VIRIDIAN     = { pl_min = 600 },
+        FILE_ISLAND  = { pl_min = 950 },
+        LAND_OF_FIRE = { pl_min = 1300 },
+
+        -- Raids / bosses
+        RADITZ        = { pl_min = 500 },
+        VIRIDIAN_BOSS = { pl_min = 900 },
+        DARK_DIGI     = { pl_min = 1200 },
+        NINE_TAILS    = { pl_min = 1600 },
+
+        -- Example of a Soul Energy gate (uncomment to use)
+        -- SOME_NODE = { se_min = 300 },
+    }
 
     --------------------------------------------------
     -- Starting hero id (legacy fallback friendly)
@@ -122,7 +161,7 @@ do
 
         KILL = {
             base = 2,            -- soul per kill at low power
-            alpha = 0.8,         -- power scaling factor [0..1+]
+            alpha = 0.8,         -- power scaling factor
             fragsOnComplete = 1, -- fragments granted when task completes
         },
 
@@ -130,7 +169,7 @@ do
             base = 3,            -- soul per collected fragment at low power
             alpha = 1.0,         -- power scaling factor
             fragsOnComplete = 2, -- fragments granted when task completes
-            dropChance = 0.35,   -- 35% chance n001 yields a virtual Spirit Fragment
+            dropChance = 0.35,   -- 35 chance n001 yields a virtual Spirit Fragment
         },
 
         MULTS = {

@@ -1,56 +1,86 @@
 if Debug and Debug.beginFile then Debug.beginFile("DirectControlMotor.lua") end
 --==================================================
 -- DirectControlMotor.lua
--- Version: v1.50 (auto-direct & disable command card on start)
--- WASD movement, RMB strafe, shoulder camera
+-- Version: v1.62 (WC3-safe, no percent symbols)
 --==================================================
 
 do
+    --------------------------------------------------
+    -- Config
+    --------------------------------------------------
     local DT = 0.03
-    local SPEED_MULT_FWD, SPEED_MULT_BACK, SPEED_MULT_STRAFE = 1.00, 0.62, 0.90
-    local TURN_DEG_PER_SEC = 300.0
+    local SPEED_MULT_FWD    = 1.00
+    local SPEED_MULT_BACK   = 0.62
+    local SPEED_MULT_STRAFE = 0.90
+    local TURN_DEG_PER_SEC  = 300.0
 
-    local CAM_DIST_DEFAULT, MIN_CAM_DIST, MAX_CAM_DIST = 460.0, 360.0, 600.0
-    local CAM_AOA_DEFAULT, CAM_ZOFFSET, CAM_LERP_TIME = 352.0, 140.0, 0.10
-
-    -- Long draw distance so sky/horizon render
-    local FARZ = 10000.0
-
+    local CAM_DIST_DEFAULT  = 460.0
+    local MIN_CAM_DIST      = 360.0
+    local MAX_CAM_DIST      = 600.0
+    local CAM_AOA_DEFAULT   = 352.0
+    local CAM_ZOFFSET       = 140.0
+    local CAM_LERP_TIME     = 0.10
+    local FARZ              = 10000.0
     local ORDER_GRACE_TICKS = 8
+    local DEBUG = false
 
-    local function clamp(v, lo, hi) if v<lo then return lo elseif v>hi then return hi else return v end end
-    local function validUnit(u) return u and GetUnitTypeId(u)~=0 and not IsUnitType(u, UNIT_TYPE_DEAD) end
-    local function ensureControl(pid)
-        local pd = _G.PLAYER_DATA and PLAYER_DATA[pid]; if not pd then return end
-        pd.control = pd.control or {
-            direct=false, holdW=false, holdA=false, holdS=false, holdD=false,
-            rmb=false, lmb=false, yaw=nil, pitch=nil, dist=nil,
-            orderGrace=0, isMoving=false, idleDelay=0
-        }
-        return pd.control, pd
+    --------------------------------------------------
+    local function dbg(pid, msg)
+        if not DEBUG then return end
+        if GetLocalPlayer() ~= Player(pid) then return end
+        DisplayTextToPlayer(Player(pid), 0, 0, "[Motor] " .. tostring(msg))
     end
 
-    -- Per-player enable/disable of the stock command buttons (safe + local)
+    local function clamp(v, lo, hi)
+        if v < lo then return lo elseif v > hi then return hi else return v end
+    end
+
+    local function validUnit(u)
+        return u and GetUnitTypeId(u) ~= 0 and not IsUnitType(u, UNIT_TYPE_DEAD)
+    end
+
+    local function heroOf(pid)
+        if _G.PLAYER_DATA and PLAYER_DATA[pid] and validUnit(PLAYER_DATA[pid].hero) then
+            return PLAYER_DATA[pid].hero
+        end
+        if _G.PlayerHero and validUnit(PlayerHero[pid]) then
+            return PlayerHero[pid]
+        end
+        return nil
+    end
+
+    local function ensureControl(pid)
+        local pd = _G.PLAYER_DATA and PLAYER_DATA[pid]; if not pd then return nil end
+        pd.control = pd.control or {}
+        local c = pd.control
+        c.direct = c.direct or false
+        c.holdW, c.holdA, c.holdS, c.holdD = c.holdW or false, c.holdA or false, c.holdS or false, c.holdD or false
+        c.rmb, c.lmb = c.rmb or false, c.lmb or false
+        c.camYawOffset = c.camYawOffset or 0.0
+        c.camPitchOffset = c.camPitchOffset or 0.0
+        c.camDist = c.camDist or CAM_DIST_DEFAULT
+        c.orderGrace = c.orderGrace or 0
+        c.isMoving = c.isMoving or false
+        c.idleDelay = c.idleDelay or 0
+        return c, pd
+    end
+
     local function setCommandCardEnabled(pid, enabled)
         if GetLocalPlayer() ~= Player(pid) then return end
-        -- Buttons 0..11 (grid), plus basic (move/stop/etc.) occupy the same range.
         for i = 0, 11 do
-            local h = BlzGetFrameByName("CommandButton_"..i, 0)
+            local h = BlzGetFrameByName("CommandButton_" .. i, 0)
             if h then
                 BlzFrameSetEnable(h, enabled)
                 BlzFrameSetVisible(h, enabled)
             end
         end
-        -- If you also want to neuter inventory clicks (kept visible elsewhere), guard here:
-        -- for i=0,5 do local inv = BlzGetFrameByName("InventoryButton_"..i,0); if inv then BlzFrameSetEnable(inv, enabled) end end
     end
 
-    -- Centralized toggle so O-key and auto-start use the same path
     local function setDirectMode(pid, enabled)
         local c = ensureControl(pid); if not c then return end
         c.direct = enabled and true or false
-        -- Disable command card when entering direct mode; re-enable when leaving
         setCommandCardEnabled(pid, not c.direct)
+        dbg(pid, c.direct and "Direct ON" or "Direct OFF")
     end
 
     local function clearTags(u)
@@ -58,15 +88,17 @@ do
             AnimRegistry.ClearCommonTags(u)
         end
     end
+
     local function playWalk(u)
         clearTags(u)
         if _G.AnimRegistry and AnimRegistry.PlayWalk then AnimRegistry.PlayWalk(u)
-        else SetUnitAnimation(u, "Walk"); SetUnitTimeScale(u, 1.0); SetUnitAnimation(u, "walk") end
+        else SetUnitAnimation(u, "Walk") end
     end
+
     local function playIdle(u)
         clearTags(u)
         if _G.AnimRegistry and AnimRegistry.PlayIdle then AnimRegistry.PlayIdle(u)
-        else SetUnitAnimation(u, "Stand"); SetUnitTimeScale(u, 1.0); SetUnitAnimation(u, "stand") end
+        else SetUnitAnimation(u, "Stand") end
     end
 
     local function setMoving(u, pid, c, moving)
@@ -76,9 +108,7 @@ do
                 c.idleDelay = 6
                 if (c.orderGrace or 0) <= 0 then IssueImmediateOrder(u, "stop") end
                 ResetUnitAnimation(u)
-                if not (AnimControl and AnimControl.IsMuted and AnimControl.IsMuted(pid)) then
-                    playWalk(u)
-                end
+                playWalk(u)
             else
                 c.idleDelay = 6
             end
@@ -87,90 +117,118 @@ do
                 c.isMoving = false
                 ResetUnitAnimation(u)
             end
-            if c.idleDelay and c.idleDelay > 0 then
+            if c.idleDelay > 0 then
                 c.idleDelay = c.idleDelay - 1
             else
-                if not (AnimControl and AnimControl.IsMuted and AnimControl.IsMuted(pid)) then
-                    playIdle(u)
-                end
+                playIdle(u)
             end
         end
     end
 
+    --------------------------------------------------
+    -- Tick
+    --------------------------------------------------
     local function tick(pid)
         local c, pd = ensureControl(pid); if not c or not c.direct then return end
         local u = pd.hero; if not validUnit(u) then return end
 
+        local rmb = c.rmb
+        local lmb = c.lmb
         local facing = GetUnitFacing(u)
         local yawRad = facing * bj_DEGTORAD
-        local base = GetUnitMoveSpeed(u); if base<=0 then base=300.0 end
+        local base = GetUnitMoveSpeed(u); if base <= 0 then base = 300.0 end
 
         local dx, dy, moved = 0.0, 0.0, false
 
         if c.holdW then
-            dx, dy, moved = dx + base*SPEED_MULT_FWD*math.cos(yawRad), dy + base*SPEED_MULT_FWD*math.sin(yawRad), true
+            dx = dx + base * SPEED_MULT_FWD * math.cos(yawRad)
+            dy = dy + base * SPEED_MULT_FWD * math.sin(yawRad)
+            moved = true
         elseif c.holdS then
-            dx, dy, moved = dx - base*SPEED_MULT_BACK*math.cos(yawRad), dy - base*SPEED_MULT_BACK*math.sin(yawRad), true
+            dx = dx - base * SPEED_MULT_BACK * math.cos(yawRad)
+            dy = dy - base * SPEED_MULT_BACK * math.sin(yawRad)
+            moved = true
         end
 
-        if c.rmb then
-            local side = (facing - 90.0)*bj_DEGTORAD
-            if c.holdA then dx, dy, moved = dx - base*SPEED_MULT_STRAFE*math.cos(side), dy - base*SPEED_MULT_STRAFE*math.sin(side), true
-            elseif c.holdD then dx, dy, moved = dx + base*SPEED_MULT_STRAFE*math.cos(side), dy + base*SPEED_MULT_STRAFE*math.sin(side), true end
+        if rmb then
+            local side = (facing - 90.0) * bj_DEGTORAD
+            if c.holdA then
+                dx = dx - base * SPEED_MULT_STRAFE * math.cos(side)
+                dy = dy - base * SPEED_MULT_STRAFE * math.sin(side)
+                moved = true
+            elseif c.holdD then
+                dx = dx + base * SPEED_MULT_STRAFE * math.cos(side)
+                dy = dy + base * SPEED_MULT_STRAFE * math.sin(side)
+                moved = true
+            end
         else
-            local step = TURN_DEG_PER_SEC*DT
+            local step = TURN_DEG_PER_SEC * DT
             if c.holdA then SetUnitFacing(u, facing + step) end
             if c.holdD then SetUnitFacing(u, facing - step) end
         end
 
         if moved then
-            SetUnitPosition(u, GetUnitX(u)+dx*DT, GetUnitY(u)+dy*DT)
+            SetUnitPosition(u, GetUnitX(u) + dx * DT, GetUnitY(u) + dy * DT)
             setMoving(u, pid, c, true)
         else
             setMoving(u, pid, c, false)
         end
 
-        if c.orderGrace and c.orderGrace>0 then c.orderGrace = c.orderGrace-1 end
+        if c.orderGrace and c.orderGrace > 0 then c.orderGrace = c.orderGrace - 1 end
 
-        if GetLocalPlayer()==Player(pid) then
+        local dist = clamp(c.camDist, MIN_CAM_DIST, MAX_CAM_DIST)
+        local yawOffset = c.camYawOffset
+        local aoa = CAM_AOA_DEFAULT
+        local zoff = CAM_ZOFFSET
+
+        if GetLocalPlayer() == Player(pid) then
             SetCameraTargetController(u, 0.0, 0.0, false)
             SetCameraField(CAMERA_FIELD_FARZ, FARZ, CAM_LERP_TIME)
-            SetCameraField(CAMERA_FIELD_ROTATION,        GetUnitFacing(u), CAM_LERP_TIME)
-            SetCameraField(CAMERA_FIELD_TARGET_DISTANCE, clamp(CAM_DIST_DEFAULT, MIN_CAM_DIST, MAX_CAM_DIST), CAM_LERP_TIME)
-            SetCameraField(CAMERA_FIELD_ANGLE_OF_ATTACK, CAM_AOA_DEFAULT,  CAM_LERP_TIME)
-            SetCameraField(CAMERA_FIELD_ZOFFSET,         CAM_ZOFFSET,      CAM_LERP_TIME)
+            SetCameraField(CAMERA_FIELD_ROTATION, GetUnitFacing(u) + yawOffset, CAM_LERP_TIME)
+            SetCameraField(CAMERA_FIELD_TARGET_DISTANCE, dist, CAM_LERP_TIME)
+            SetCameraField(CAMERA_FIELD_ANGLE_OF_ATTACK, aoa, CAM_LERP_TIME)
+            SetCameraField(CAMERA_FIELD_ZOFFSET, zoff, CAM_LERP_TIME)
+        end
+
+        if DEBUG and math.random(1, 60) == 1 then
+            dbg(pid, "WASD=" .. tostring(c.holdW) .. tostring(c.holdA) .. tostring(c.holdS) .. tostring(c.holdD) ..
+                " RMB=" .. tostring(rmb) .. " LMB=" .. tostring(lmb))
         end
     end
 
+    --------------------------------------------------
+    -- Init
+    --------------------------------------------------
     OnInit.final(function()
-        -- Start ticking logic
         local t = CreateTimer()
         TimerStart(t, DT, true, function()
-            for pid=0, bj_MAX_PLAYER_SLOTS-1 do tick(pid) end
+            for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do tick(pid) end
         end)
 
-        -- When RMB is released, give a brief grace period before issuing native orders
         if _G.ProcBus and ProcBus.On then
-            ProcBus.On("RightMouseReleased", function(p)
-                if type(p)=="table" and type(p.pid)=="number" then
-                    local c = ensureControl(p.pid); if c then c.orderGrace = ORDER_GRACE_TICKS end
+            ProcBus.On("RightMouseReleased", function(e)
+                if e and type(e.pid) == "number" then
+                    local c = ensureControl(e.pid)
+                    if c then c.orderGrace = ORDER_GRACE_TICKS end
+                    dbg(e.pid, "RMB released")
                 end
             end)
-            -- Let the O-key toggle reuse our unified setter
             ProcBus.On("DirectControlToggled", function(e)
-                if not e or type(e.pid)~="number" then return end
-                setDirectMode(e.pid, e.enabled and true or false)
+                if e and type(e.pid) == "number" then
+                    setDirectMode(e.pid, e.enabled)
+                end
             end)
         end
 
-        -- Auto-enter direct mode on game start for all user-controlled players
-        for pid=0, bj_MAX_PLAYER_SLOTS-1 do
+        for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 setDirectMode(pid, true)
             end
         end
 
-        if rawget(_G,"InitBroker") and InitBroker.SystemReady then InitBroker.SystemReady("DirectControlMotor") end
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+            InitBroker.SystemReady("DirectControlMotor")
+        end
     end)
 end
 

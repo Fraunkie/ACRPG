@@ -30,6 +30,13 @@ OnInit.final(function()
       -- allowedHeroTypes / required fields can be added later if needed
     },
 
+    [FourCC("I00H")] = {
+      name        = "Companions License",
+      description = "A license granting permission to summon companions.",
+      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNGozsGloves.blp",
+      category    = "MISC",
+    },
+
     [FourCC("I00D")] = {
       name        = "Soul-Scarred Club",
       description = "A crude weapon formed from a tormented soul's remnants",

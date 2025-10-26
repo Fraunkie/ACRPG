@@ -26,10 +26,14 @@ do
   local SLOT_W,   SLOT_H     = 0.028, 0.028
   local GAP                  = 0.006
 
-  local EQUIP_W, EQUIP_H = 0.036, 0.036
-  local EQUIP_GAP        = 0.008
-  local PAPER_W, PAPER_H = 0.22,  0.22
+  local EQUIP_W, EQUIP_H     = 0.036, 0.036
+  local EQUIP_GAP            = 0.010   -- ↑ was 0.008 (more breathing room)
+  local EQUIP_START_Y        = 0.105   -- ↑ was 0.08  (raises the strip)
+
+  local PAPER_W, PAPER_H     = 0.22,  0.22
   local PAPER_OFF_X, PAPER_OFF_Y = 0.00, -0.02
+
+  local GRID_BOTTOM_OFFSET   = 0.010   -- ↓ was 0.019 (moves grid down)
 
   -- UI visible slots (added Belt on the left)
   local EQUIP_SLOTS_LEFT  = { "Weapon", "Belt", "Offhand", "Head", "Necklace" }
@@ -100,13 +104,64 @@ do
     return samples[idxWrap(#samples, math.abs(pick or id or 1))]
   end
 
+  local function round2(x) return math.floor((x or 0) * 100 + 0.5) / 100 end
+
+  --------------------------------------------------
+  -- Colored stat formatting (shared by tooltip + overlay)
+  --------------------------------------------------
+  local ORDERED_COLORS = {
+    { key="hp",      label="HP",           color="|cffff5555" },
+    { key="attack",  label="Attack",       color="|cffffaa00" },
+    { key="defense", label="Defense",      color="|cff00ffaa" },
+    { key="str",     label="Strength",     color="|cffcc33ff" },
+    { key="agi",     label="Agility",      color="|cff33ff66" },
+    { key="int",     label="Intelligence", color="|cff3399ff" },
+    { key="armor",   label="Armor",        color="|cff88ccff" },
+  }
+
+  local function buildColoredStatLines(totals, mults)
+    local lines, seen = {}, {}
+    local function add(label, val, color) lines[#lines+1] = color..label.."|r: |cffffffff"..tostring(val).."|r" end
+    for i=1,#ORDERED_COLORS do
+      local o = ORDERED_COLORS[i]; if totals[o.key] then add(o.label, totals[o.key], o.color); seen[o.key]=true end
+    end
+    for k,v in pairs(totals) do if not seen[k] then add(k, v, "|cff88ccff") end end
+    if mults and mults.physPowerPct and mults.physPowerPct ~= 0 then
+      add("Physical Power", "x"..tostring(round2(1 + mults.physPowerPct)), "|cffffcc00")
+    end
+    if mults and mults.spellPowerPct and mults.spellPowerPct ~= 0 then
+      add("Spell Power", "x"..tostring(round2(1 + mults.spellPowerPct)), "|cffffcc00")
+    end
+    return lines
+  end
+
+  --------------------------------------------------
+  -- Tooltip text
+  --------------------------------------------------
   local function makeItemTooltip(id)
     if not id then return "|cffaaaaaaEmpty|r\nNo details." end
-    if _G.ItemDatabase and ItemDatabase.GetTooltip then
-      local ok, tip = pcall(ItemDatabase.GetTooltip, id)
-      if ok and type(tip) == "string" and tip ~= "" then return tip end
+
+    -- Prefer building a colored tooltip from DB data (so it matches overlay)
+    if _G.ItemDatabase and ItemDatabase.GetData then
+      local d = ItemDatabase.GetData(id)
+      if d then
+        local title = d.name and ("|cffffee88"..d.name.."|r") or "|cffffee88Item|r"
+        local totals, mults = {}, { spellPowerPct=0.0, physPowerPct=0.0 }
+        if type(d.stats) == "table" then
+          for k,v in pairs(d.stats) do
+            if k == "spellPowerPct" then mults.spellPowerPct = (mults.spellPowerPct or 0.0) + (v or 0)
+            elseif k == "physPowerPct" then mults.physPowerPct = (mults.physPowerPct or 0.0) + (v or 0)
+            elseif type(v) == "number" then totals[k] = (totals[k] or 0) + v end
+          end
+        end
+        local lines = buildColoredStatLines(totals, mults)
+        local desc  = d.description and ("\n|cffbbbbbb"..d.description.."|r") or ""
+        return title..desc..(#lines>0 and ("\n"..table.concat(lines, "\n")) or "\n|cffaaaaaaNo stats|r")
+      end
     end
-    return "|cffffee88Item|r " .. tostring(id)
+
+    -- Fallback
+    return "|cffffee88Item|r "..tostring(id)
   end
 
   --------------------------------------------------
@@ -116,7 +171,7 @@ do
     local ui = UI[pid]; if not ui then return end
     if ui.tip then return ui.tip end
     local box = BlzCreateFrameByType("BACKDROP", "PM_TooltipBox", parent, "", 0)
-    BlzFrameSetSize(box, 0.24, 0.12)
+    BlzFrameSetSize(box, 0.26, 0.14)
     BlzFrameSetTexture(box, TEX_PANEL_DARK, 0, true)
     BlzFrameSetAlpha(box, 230)
     BlzFrameSetLevel(box, 50)
@@ -167,7 +222,7 @@ do
     local function makeSlot(name, point, relPoint, dx, rowIndex)
       local btn = BlzCreateFrameByType("BUTTON", "PM_Equip_" .. name, parent, "", 0)
       BlzFrameSetSize(btn, EQUIP_W, EQUIP_H)
-      local yoff = 0.08 - (rowIndex - 1) * (EQUIP_H + EQUIP_GAP)
+      local yoff = EQUIP_START_Y - (rowIndex - 1) * (EQUIP_H + EQUIP_GAP)
       BlzFrameSetPoint(btn, point, paper, relPoint, dx, yoff)
 
       local bg = BlzCreateFrameByType("BACKDROP", "", btn, "", 0)
@@ -242,8 +297,6 @@ do
     return txt
   end
 
-  local function round2(x) return math.floor((x or 0) * 100 + 0.5) / 100 end
-
   local function computeEquippedStats(pid)
     local totals = {}
     local mults  = { spellPowerPct = 0.0, physPowerPct = 0.0 }
@@ -273,38 +326,7 @@ do
   local function renderStatsPanel(pid)
     local txt = ensureStatsText(pid); if not txt then return end
     local totals, mults = computeEquippedStats(pid)
-
-    local lines = {}
-    local function add(label, val, color) table.insert(lines, color .. label .. "|r: |cffffffff" .. tostring(val) .. "|r") end
-
-    local ordered = {
-      { key="hp",      label="HP",          color="|cffff5555" },
-      { key="attack",  label="Attack",      color="|cffffaa00" },
-      { key="defense", label="Defense",     color="|cff00ffaa" },
-      { key="str",     label="Strength",    color="|cffcc33ff" },
-      { key="agi",     label="Agility",     color="|cff33ff66" },
-      { key="int",     label="Intelligence",color="|cff3399ff" },
-      { key="armor",   label="Armor",       color="|cff88ccff" },
-    }
-
-    local seen = {}
-    for i=1,#ordered do
-      local o = ordered[i]
-      if totals[o.key] then
-        add(o.label, totals[o.key], o.color); seen[o.key] = true
-      end
-    end
-    for k, v in pairs(totals) do
-      if not seen[k] then add(k, v, "|cff88ccff") end
-    end
-
-    if mults.physPowerPct and mults.physPowerPct ~= 0 then
-      add("Physical Power", "x" .. tostring(round2(1 + mults.physPowerPct)), "|cffffcc00")
-    end
-    if mults.spellPowerPct and mults.spellPowerPct ~= 0 then
-      add("Spell Power", "x" .. tostring(round2(1 + mults.spellPowerPct)), "|cffffcc00")
-    end
-
+    local lines = buildColoredStatLines(totals, mults)
     if #lines == 0 then
       BlzFrameSetText(txt, "|cffaaaaaaNo item stats equipped|r")
     else
@@ -376,7 +398,7 @@ do
     local totalW = GRID_COLS * SLOT_W + (GRID_COLS - 1) * GAP
     local totalH = GRID_ROWS * SLOT_H + (GRID_ROWS - 1) * GAP
     BlzFrameSetSize(holder, totalW, totalH)
-    BlzFrameSetPoint(holder, FRAMEPOINT_BOTTOM, parent, FRAMEPOINT_BOTTOM, 0.0, 0.019)
+    BlzFrameSetPoint(holder, FRAMEPOINT_BOTTOM, parent, FRAMEPOINT_BOTTOM, 0.0, GRID_BOTTOM_OFFSET)
     BlzFrameSetTexture(holder, TEX_PANEL_DARK, 0, true)
     BlzFrameSetAlpha(holder, 160)
     BlzFrameSetEnable(holder, false) -- let buttons take mouse
@@ -394,10 +416,12 @@ do
 
         local btn = BlzCreateFrameByType("BUTTON", "", cell, "", 0)
         BlzFrameSetAllPoints(btn, cell)
+
         local icon = BlzCreateFrameByType("BACKDROP", "", btn, "", 0)
         BlzFrameSetAllPoints(icon, btn)
         BlzFrameSetTexture(icon, TEX_EMPTY_INV, 0, true)
         BlzFrameSetEnable(icon, false)
+
         grid[idx] = { btn = btn, icon = icon }
 
         local idxCap = idx

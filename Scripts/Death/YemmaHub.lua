@@ -3,7 +3,7 @@ if Debug and Debug.beginFile then Debug.beginFile("YemmaHub.lua") end
 -- YemmaHub.lua
 -- Hub panel (nav @ left, content @ right).
 -- Safe: panes are created once and toggled (no destroy).
--- Tasks page embeds YemmaTaskMenu into its pane.
+-- Home page is neutral landing; Tasks/Travel/Shop embed modules.
 --==================================================
 
 if not YemmaHub then YemmaHub = {} end
@@ -29,7 +29,7 @@ do
     --------------------------------------------------
     local root   = {}   -- pid -> root frame
     local slot   = {}   -- pid -> persistent content slot container (right side)
-    local panes  = {}   -- pid -> { tasks=frame, travel=frame, services=frame, intro=frame }
+    local panes  = {}   -- pid -> { home=, tasks=, travel=, services=, intro=, shop= }
     local wired  = {}   -- pid -> true when nav wired
 
     --------------------------------------------------
@@ -40,6 +40,8 @@ do
         BlzFrameSetSize(f, w, h)
         BlzFrameSetTexture(f, tex or BG_TEX, 0, true)
         if a then BlzFrameSetAlpha(f, a) end
+        -- never capture mouse on container backdrops
+        BlzFrameSetEnable(f, false)
         return f
     end
 
@@ -49,11 +51,15 @@ do
         local plate = BlzCreateFrameByType("BACKDROP", "", btn, "", 0)
         BlzFrameSetAllPoints(plate, btn)
         BlzFrameSetTexture(plate, BTN_TEX, 0, true)
+        BlzFrameSetEnable(plate, false)
         local txt = BlzCreateFrameByType("TEXT", "", btn, "", 0)
         BlzFrameSetPoint(txt, FRAMEPOINT_CENTER, btn, FRAMEPOINT_CENTER, 0.0, 0.0)
         BlzFrameSetTextAlignment(txt, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetScale(txt, 1.00)
         BlzFrameSetText(txt, label or "")
+        BlzFrameSetEnable(txt, false)
+        -- keep buttons above content panes
+        BlzFrameSetLevel(btn, 20)
         return btn
     end
 
@@ -62,6 +68,8 @@ do
         BlzFrameSetTextAlignment(t, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetScale(t, 1.10)
         BlzFrameSetText(t, text or "")
+        BlzFrameSetEnable(t, false)
+        BlzFrameSetLevel(t, 25)
         return t
     end
 
@@ -70,6 +78,8 @@ do
         BlzFrameSetTextAlignment(t, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
         BlzFrameSetScale(t, 0.96)
         BlzFrameSetText(t, text or "")
+        BlzFrameSetEnable(t, false)
+        BlzFrameSetLevel(t, 24)
         return t
     end
 
@@ -84,6 +94,7 @@ do
         local r = makeBackdrop(ui, PANEL_W, PANEL_H, BG_TEX, 230)
         root[pid] = r
         BlzFrameSetPoint(r, FRAMEPOINT_CENTER, ui, FRAMEPOINT_CENTER, 0.0, 0.02)
+        BlzFrameSetLevel(r, 5)
         BlzFrameSetVisible(r, false)
 
         -- Close button
@@ -100,10 +111,12 @@ do
         -- Left nav column
         local left = makeBackdrop(r, NAV_W, PANEL_H - PAD*2, BG_TEX, 230)
         BlzFrameSetPoint(left, FRAMEPOINT_TOPLEFT, r, FRAMEPOINT_TOPLEFT, PAD, -PAD)
+        BlzFrameSetLevel(left, 6)
 
         -- Persistent content slot on the right (never destroyed)
         local cont = makeBackdrop(r, PANEL_W - NAV_W - PAD*3, PANEL_H - PAD*2, BG_TEX, 230)
         BlzFrameSetPoint(cont, FRAMEPOINT_TOPLEFT, r, FRAMEPOINT_TOPLEFT, NAV_W + PAD*2, -PAD)
+        BlzFrameSetLevel(cont, 6)
         slot[pid] = cont
 
         -- Prepare pane table
@@ -121,25 +134,26 @@ do
                 TriggerAddAction(t, onClick)
             end
 
+            -- Home (neutral landing)
+            addNav("Home", function() YemmaHub.ShowHome(pid) end)
+
             -- Tasks (pane created lazily)
-            addNav("Tasks", function()
-                YemmaHub.ShowTasks(pid)
-            end)
+            addNav("Tasks", function() YemmaHub.ShowTasks(pid) end)
 
             -- Travel (pane created lazily)
-            addNav("Travel", function()
-                YemmaHub.ShowTravel(pid)
+            addNav("Travel", function() YemmaHub.ShowTravel(pid) end)
+
+            -- Shop (uses ShopUI) + debug ping
+            addNav("Shop", function()
+                DisplayTextToPlayer(Player(pid), 0, 0, "[Hub] Shop clicked")
+                YemmaHub.ShowShop(pid)
             end)
 
             -- Services (static text)
-            addNav("Services", function()
-                YemmaHub.ShowServices(pid)
-            end)
+            addNav("Services", function() YemmaHub.ShowServices(pid) end)
 
             -- Intro (static text)
-            addNav("Intro", function()
-                YemmaHub.ShowIntro(pid)
-            end)
+            addNav("Intro", function() YemmaHub.ShowIntro(pid) end)
 
             wired[pid] = true
         end
@@ -147,10 +161,12 @@ do
 
     local function hideAllPanes(pid)
         local p = panes[pid]; if not p then return end
-        if p.tasks   then BlzFrameSetVisible(p.tasks,   false) end
-        if p.travel  then BlzFrameSetVisible(p.travel,  false) end
+        if p.home     then BlzFrameSetVisible(p.home,     false) end
+        if p.tasks    then BlzFrameSetVisible(p.tasks,    false) end
+        if p.travel   then BlzFrameSetVisible(p.travel,   false) end
+        if p.shop     then BlzFrameSetVisible(p.shop,     false) end
         if p.services then BlzFrameSetVisible(p.services, false) end
-        if p.intro   then BlzFrameSetVisible(p.intro,   false) end
+        if p.intro    then BlzFrameSetVisible(p.intro,    false) end
     end
 
     -- Create a new empty pane under the persistent slot; we don't destroy panes
@@ -158,19 +174,37 @@ do
         local parent = slot[pid]
         local pane = makeBackdrop(parent, 0.001, 0.001, BG_TEX, 0) -- transparent holder
         BlzFrameSetAllPoints(pane, parent)
+        -- keep pane at a visible level but under buttons
+        BlzFrameSetLevel(pane, 7)
         return pane
     end
 
     --------------------------------------------------
     -- Pages (show/hide panes; create once)
     --------------------------------------------------
+    function YemmaHub.ShowHome(pid)
+        ensureUI(pid)
+        hideAllPanes(pid)
+        local p = panes[pid]
+        if not p.home then
+            p.home = makePane(pid)
+            local hdr = makeHeader(p.home, "Hub")
+            BlzFrameSetPoint(hdr, FRAMEPOINT_TOPLEFT, p.home, FRAMEPOINT_TOPLEFT, PAD, -PAD)
+
+            local info = makeText(p.home,
+                "Welcome! Use the left panel to open Tasks, Travel, Shop, and Services.\n" ..
+                "This Home page is the default landing and shared content area.")
+            BlzFrameSetPoint(info, FRAMEPOINT_TOPLEFT, p.home, FRAMEPOINT_TOPLEFT, PAD, -0.045)
+        end
+        BlzFrameSetVisible(p.home, true)
+    end
+
     function YemmaHub.ShowTasks(pid)
         ensureUI(pid)
         hideAllPanes(pid)
         local p = panes[pid]
         if not p.tasks then
             p.tasks = makePane(pid)
-            -- Embed the task module into this pane
             if _G.YemmaTaskMenu and YemmaTaskMenu.RenderIn then
                 YemmaTaskMenu.RenderIn(pid, p.tasks)
             else
@@ -180,7 +214,6 @@ do
                 BlzFrameSetPoint(tip, FRAMEPOINT_TOPLEFT, p.tasks, FRAMEPOINT_TOPLEFT, PAD, -0.045)
             end
         else
-            -- Pane exists: just ask the module to refresh in-place
             if _G.YemmaTaskMenu and YemmaTaskMenu.Refresh then
                 YemmaTaskMenu.Refresh(pid)
             end
@@ -204,6 +237,38 @@ do
             end
         end
         BlzFrameSetVisible(p.travel, true)
+    end
+
+    function YemmaHub.ShowShop(pid)
+        ensureUI(pid)
+        hideAllPanes(pid)
+        local p = panes[pid]
+        if not p.shop then
+            p.shop = makePane(pid)
+        end
+
+        -- Diagnostics + embed
+        if _G.ShopUI and ShopUI.RenderIn then
+            DisplayTextToPlayer(Player(pid), 0, 0, "[Hub] ShopUI found")
+            ShopUI.RenderIn(pid, p.shop)
+            DisplayTextToPlayer(Player(pid), 0, 0, "[Hub] ShopUI.RenderIn done")
+        else
+            DisplayTextToPlayer(Player(pid), 0, 0, "[Hub] ShopUI NOT found — showing fallback")
+            if not p.shop_fallback then
+                local hdr = makeHeader(p.shop, "Shop")
+                BlzFrameSetPoint(hdr, FRAMEPOINT_TOPLEFT, p.shop, FRAMEPOINT_TOPLEFT, PAD, -PAD)
+                local tip = makeText(p.shop, "Shop module not found")
+                BlzFrameSetPoint(tip, FRAMEPOINT_TOPLEFT, p.shop, FRAMEPOINT_TOPLEFT, PAD, -0.045)
+                p.shop_fallback = true
+            end
+        end
+
+        if GetLocalPlayer() == Player(pid) then
+            BlzFrameSetVisible(p.shop, true)
+        else
+            -- still set visible for other clients to keep state coherent
+            BlzFrameSetVisible(p.shop, true)
+        end
     end
 
     function YemmaHub.ShowServices(pid)
@@ -242,8 +307,7 @@ do
         if GetLocalPlayer() == Player(pid) then
             BlzFrameSetVisible(root[pid], true)
         end
-        -- Optional: default to Tasks or last opened pane
-        YemmaHub.ShowTasks(pid)
+        YemmaHub.ShowHome(pid)
     end
 
     function YemmaHub.Close(pid)

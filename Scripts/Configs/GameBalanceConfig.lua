@@ -23,7 +23,7 @@ do
         -- King Yemma's Desk (hub)
         YEMMA = { x = 28853.2, y = 28777.6, facing = 180.0 },
 
-        HFIL = { x = 20991.0, y = -29402.3, facing = 294.0 },
+        HFIL = { x = 28546.5, y = -21148.4, facing = 180.0 },
         -- Optional placeholders; fill when ready:
         -- KAMI_LOOKOUT = { x = 0.0, y = 0.0, facing = 0.0 },
     }

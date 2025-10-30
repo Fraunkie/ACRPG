@@ -44,11 +44,12 @@ do
 
     local function parseNum(msg, cmd)
         local s = string.sub(msg, string.len(cmd) + 2)
-        return tonumber(s) or 0
+        local num = tonumber(s) or 0
+        print("Parsed number: " .. tostring(num))
+        return num
     end
 
     local function getSelectedUnitSafe(p)
-        if BlzGetUnitWithOrderTarget and false then end
         local u = GetTriggerUnit()
         if u and GetUnitTypeId(u) ~= 0 then return u end
         if SelectUnitForPlayerSingle then
@@ -88,15 +89,27 @@ do
     --------------------------------------------------
     registerChat("-soul", function(p, pid)
         if _G.SoulEnergy then
-            local v = SoulEnergy.Get and SoulEnergy.Get(pid) or 0
-            DisplayTextToPlayer(p, 0, 0, "Soul energy: " .. tostring(v))
+            local getXp = (SoulEnergy.GetXp or SoulEnergy.Get)
+            local xp = getXp and getXp(pid) or 0
+            DisplayTextToPlayer(p, 0, 0, "Soul energy: " .. tostring(xp))
+        end
+    end)
+
+    registerChat("-souls", function(p, pid)
+        if _G.SoulEnergy then
+            local getXp = (SoulEnergy.GetXp or SoulEnergy.Get)
+            local xp  = getXp and getXp(pid) or 0
+            local lvl = (SoulEnergy.GetLevel and SoulEnergy.GetLevel(pid)) or 1
+            DisplayTextToPlayer(p, 0, 0,
+                "Soul XP: " .. tostring(xp) .. "  |  Soul Level: " .. tostring(lvl))
         end
     end)
 
     registerChat("-souladd", function(p, pid, msg)
         if _G.SoulEnergy then
             local n = parseNum(msg, "-souladd")
-            local v = SoulEnergy.Add and SoulEnergy.Add(pid, n) or 0
+            local addFn = SoulEnergy.AddXp or SoulEnergy.Add
+            local v = addFn and addFn(pid, n) or 0
             DisplayTextToPlayer(p, 0, 0, "Soul energy now " .. tostring(v))
         end
     end)
@@ -104,7 +117,8 @@ do
     registerChat("-soulset", function(p, pid, msg)
         if _G.SoulEnergy then
             local n = parseNum(msg, "-soulset")
-            local v = SoulEnergy.Set and SoulEnergy.Set(pid, n) or 0
+            local setFn = SoulEnergy.SetXp or SoulEnergy.Set
+            local v = setFn and setFn(pid, n) or 0
             DisplayTextToPlayer(p, 0, 0, "Soul energy set to " .. tostring(v))
         end
     end)
@@ -174,7 +188,6 @@ do
     registerChat("-sp", function(p, pid, msg)
         if _G.SpiritDrive then
             local n = parseNum(msg, "-sp")
-            -- Spirit power debug command
             DisplayTextToPlayer(p, 0, 0, "Spirit Power: " .. n)
         end
     end)

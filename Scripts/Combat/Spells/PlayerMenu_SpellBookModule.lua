@@ -1,9 +1,8 @@
 if Debug and Debug.beginFile then Debug.beginFile("PlayerMenu_SpellbookModule.lua") end
 --==================================================
--- PlayerMenu_SpellbookModule.lua (v3.3)
--- Mirrors Inventory module lifecycle EXACTLY:
--- • ShowInto: build once per open (per toggle), or just re-show + rebuild
--- • Hide: hide all spellbook frames, hide root, then UI[pid] = nil
+-- PlayerMenu_SpellbookModule.lua (v3.3b)
+-- Mirrors Inventory module lifecycle EXACTLY.
+-- • ShowInto/Hide; build once per open; tiles rebuilt on tab/toggle
 -- • Uses PlayerMenu contentFrame as root; does NOT destroy contentFrame
 -- • No percent symbols anywhere
 --==================================================
@@ -12,9 +11,6 @@ do
   PlayerMenu_SpellbookModule = PlayerMenu_SpellbookModule or {}
   _G.PlayerMenu_SpellbookModule = PlayerMenu_SpellbookModule
 
-  --------------------------------------------------
-  -- Constants
-  --------------------------------------------------
   local TEX_PANEL_DARK = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background.blp"
   local TEX_PANEL_ALT  = "UI\\Widgets\\EscMenu\\NightElf\\nightelf-options-menu-background.blp"
   local TEX_BTN        = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller.blp"
@@ -26,24 +22,18 @@ do
   local TOP_H          = 0.028
   local TOP_GAP        = 0.010
 
-  local GRID_COLS      = 5
-  local GRID_ROWS      = 3
-  local CELL_W         = 0.090
-  local CELL_H         = 0.078
+  local GRID_COLS      = 3
+  local GRID_ROWS      = 5
+  local CELL_W         = 0.070
+  local CELL_H         = 0.058
   local CELL_GAP_X     = 0.016
   local CELL_GAP_Y     = 0.014
   local ICON_W         = 0.036
   local ICON_H         = 0.036
 
-  --------------------------------------------------
-  -- State (per player)
-  --------------------------------------------------
-  -- UI[pid] = { root, bg, overlay, tabSpells, tabTalents, toggleBtn, tSpells, tTalents, tToggle, showLocked, tiles={}, tipBox, tipText }
+  -- UI[pid] = { root, bg, tabSpells, tabTalents, toggleBtn, tSpells, tTalents, tToggle, showLocked, tiles={}, tipBox, tipText }
   local UI = {}
 
-  --------------------------------------------------
-  -- Helpers
-  --------------------------------------------------
   local function four(v) return type(v)=="string" and FourCC(v) or v end
   local function validUnit(u) return u and GetUnitTypeId(u) ~= 0 end
 
@@ -82,12 +72,20 @@ do
     need = need or {}
     if need.pl_min then
       local pl = 0
-      if PlayerData and PlayerData[pid] and type(PlayerData[pid].powerLevel)=="number" then pl = PlayerData[pid].powerLevel end
+      if PlayerData and PlayerData[pid] and type(PlayerData[pid].powerLevel)=="number" then
+        pl = PlayerData[pid].powerLevel
+      end
       if pl < need.pl_min then return false end
     end
     if need.sl_min then
       local sl = 0
-      if PlayerData and PlayerData[pid] and type(PlayerData[pid].soulLevel)=="number" then sl = PlayerData[pid].soulLevel end
+      if rawget(_G, "SoulEnergyLogic") and SoulEnergyLogic.GetLevel then
+        local ok, lvl = pcall(SoulEnergyLogic.GetLevel, pid)
+        if ok and type(lvl)=="number" then sl = lvl end
+      end
+      if sl == 0 and PlayerData and PlayerData[pid] and type(PlayerData[pid].soulLevel)=="number" then
+        sl = PlayerData[pid].soulLevel
+      end
       if sl < need.sl_min then return false end
     end
     return true
@@ -98,9 +96,7 @@ do
     return GetUnitAbilityLevel(u, four(abilStr)) > 0
   end
 
-  --------------------------------------------------
-  -- Tooltip
-  --------------------------------------------------
+  -- tooltip
   local uniq = 0
   local function tipHide(pid)
     local ui = UI[pid]; if not ui or not ui.tipBox then return end
@@ -127,9 +123,6 @@ do
     if GetLocalPlayer()==Player(pid) then BlzFrameSetVisible(ui.tipBox,true) end
   end
 
-  --------------------------------------------------
-  -- Tiles
-  --------------------------------------------------
   local function setTilesVisible(pid, vis)
     local ui = UI[pid]; if not ui or not ui.tiles then return end
     if GetLocalPlayer()~=Player(pid) then return end
@@ -141,9 +134,6 @@ do
     ui.tiles = {}
   end
 
-  --------------------------------------------------
-  -- Rebuild Spells grid
-  --------------------------------------------------
   local function rebuildSpells(pid)
     local ui = UI[pid]; if not ui then return end
     clearTiles(pid)
@@ -209,21 +199,45 @@ do
         BlzFrameSetTexture(lock, TEX_LOCK, 0, true)
         BlzFrameSetVisible(lock, (not passive) and (not usable) and UI[pid].showLocked)
 
+        -- Build the tooltip string dynamically for Spirit Vortex
         local parts = {}
         if entry.need then
           if entry.need.pl_min then parts[#parts+1] = "PL "..tostring(entry.need.pl_min) end
           if entry.need.sl_min then parts[#parts+1] = "Soul Lv "..tostring(entry.need.sl_min) end
         end
-        local tip = entry.name or "Ability"
-        if #parts>0 then tip = tip.."  ["..table.concat(parts, ", ").."]" end
-        if passive then tip = tip.."\nPassive ability" end
 
+        -- Now check if it's the Spirit Vortex ability and add its description
+        local tip = entry.name or "Ability"
+        if #parts > 0 then
+          tip = tip.."  ["..table.concat(parts, ", ").."]"
+        end
+        if passive then
+          tip = tip.."\nPassive ability"
+        end
+
+        -- Add Spirit Vortex Description and dynamic damage
+        if abilId == FourCC("A0SV") then
+            local dmg = 40  -- Default damage
+            if _G.Spell_SpiritVortex and Spell_SpiritVortex.GetDamage then
+                local ok, val = pcall(Spell_SpiritVortex.GetDamage, pid)
+                if ok and type(val) == "number" then
+                    dmg = val
+                end
+            end
+            tip = tip
+            .."\n|cffddddddSummons six spirit orbs that orbit you.|r"
+            .."\n|cffff9900Orbs:|r 6"
+            .."\n|cffff6666Damage per orb:|r "..tostring(dmg)
+        end
+
+        -- Mouse-enter event to show the tooltip
         local tIn, tOut = CreateTrigger(), CreateTrigger()
         BlzTriggerRegisterFrameEvent(tIn,  iconBtn, FRAMEEVENT_MOUSE_ENTER)
         BlzTriggerRegisterFrameEvent(tOut, iconBtn, FRAMEEVENT_MOUSE_LEAVE)
         TriggerAddAction(tIn,  function() tipShow(pid, cell, tip) end)
         TriggerAddAction(tOut, function() tipHide(pid) end)
 
+        -- Click action for the spell
         local trigClick = CreateTrigger()
         BlzTriggerRegisterFrameEvent(trigClick, iconBtn, FRAMEEVENT_CONTROL_CLICK)
         TriggerAddAction(trigClick, function()
@@ -235,16 +249,17 @@ do
             DisplayTextToPlayer(Player(pid), 0, 0, "Ability is locked — meet requirements first.")
             return
           end
+
+          -- Open the slot picker for assignment
           local parentForPicker = ui.root
           if parentForPicker and _G.SlotPicker and SlotPicker.Show then
             SlotPicker.Show(pid, parentForPicker, cell, function(slotIdx)
-              if _G.CustomSpellBar and CustomSpellBar.SetSlot then
+              if _G.SlotPicker and SlotPicker.AssignSlot then
+                SlotPicker.AssignSlot(pid, slotIdx, abilId)
+              elseif _G.CustomSpellBar and CustomSpellBar.SetSlot then
                 CustomSpellBar.SetSlot(pid, slotIdx, abilId)
+                if CustomSpellBar.Refresh then CustomSpellBar.Refresh(pid) end
               end
-              PlayerData[pid] = PlayerData[pid] or {}
-              PlayerData[pid].loadout = PlayerData[pid].loadout or {}
-              PlayerData[pid].loadout[slotIdx] = abilId
-              DisplayTextToPlayer(Player(pid), 0, 0, "Assigned "..tostring(abilId).." to slot "..tostring(slotIdx))
             end)
           else
             DisplayTextToPlayer(Player(pid), 0, 0, "[Spellbook] SlotPicker unavailable.")
@@ -257,9 +272,7 @@ do
     end
   end
 
-  --------------------------------------------------
-  -- Chrome
-  --------------------------------------------------
+
   local function ensureChrome(pid)
     local ui = UI[pid]; if not ui then return end
     if ui.bg then return end
@@ -269,7 +282,6 @@ do
     BlzFrameSetTexture(ui.bg, TEX_PANEL_DARK, 0, true)
     BlzFrameSetLevel(ui.bg, 40)
 
-    -- top buttons
     local function makeTop(label, xOff)
       local b = BlzCreateFrameByType("BUTTON", "", ui.root, "", 0)
       BlzFrameSetSize(b, TOP_W, TOP_H)
@@ -319,13 +331,9 @@ do
     end)
   end
 
-  --------------------------------------------------
-  -- Public API (Inventory pattern)
-  --------------------------------------------------
   function PlayerMenu_SpellbookModule.ShowInto(pid, contentFrame)
     if UI[pid] then
       if GetLocalPlayer()==Player(pid) then BlzFrameSetVisible(UI[pid].root, true) end
-      -- refresh chrome text and tiles
       if UI[pid].tToggle then
         BlzFrameSetText(UI[pid].tToggle, UI[pid].showLocked and "Show Locked: ON" or "Show Locked: OFF")
       end
@@ -334,7 +342,6 @@ do
       return
     end
 
-    -- build fresh (per-open)
     UI[pid] = { root = contentFrame, showLocked = true, tiles = {} }
     local ui = UI[pid]
     if GetLocalPlayer()==Player(pid) then BlzFrameSetVisible(contentFrame, true) end
@@ -357,9 +364,9 @@ do
       if ui.tabTalents then BlzFrameSetVisible(ui.tabTalents, false) end
       if ui.toggleBtn then BlzFrameSetVisible(ui.toggleBtn, false) end
       if ui.tipBox then BlzFrameSetVisible(ui.tipBox, false) end
-      BlzFrameSetVisible(ui.root, false)  -- exactly like Inventory.Hide
+      BlzFrameSetVisible(ui.root, false)
     end
-    UI[pid] = nil -- exactly like Inventory.Hide
+    UI[pid] = nil
   end
 end
 

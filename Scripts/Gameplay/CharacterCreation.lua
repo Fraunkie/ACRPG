@@ -19,14 +19,8 @@ do
     -- Resolve spawn (supports SPAWN in multiple layouts)
     local function readSpawnXY()
         if GameBalance then
-            if GameBalance.SPAWN then
-                return GameBalance.SPAWN.x or 0, GameBalance.SPAWN.y or 0
-            end
-            if GameBalance.START_NODES and GameBalance.START_NODES.SPAWN then
-                return GameBalance.START_NODES.SPAWN.x or 0, GameBalance.START_NODES.SPAWN.y or 0
-            end
-            if GameBalance.HUB_COORDS and GameBalance.HUB_COORDS.SPAWN then
-                return GameBalance.HUB_COORDS.SPAWN.x or 0, GameBalance.HUB_COORDS.SPAWN.y or 0
+            if GameBalance.COORDS and GameBalance.COORDS.SPAWN then
+                return GameBalance.COORDS.SPAWN.x or 0, GameBalance.COORDS.SPAWN.y or 0
             end
         end
         return 0, 0
@@ -72,6 +66,7 @@ do
         pd.isInitialized     = true
         pd.bootflow_active   = false
         pd.yemmaIntroPending = false
+        CustomSpellBar.BindHero(pid, hero)
 
         DisplayTextToPlayer(Player(pid), 0, 0, "Soul successfully created.")
 

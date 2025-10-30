@@ -9,9 +9,9 @@ if Debug and Debug.beginFile then Debug.beginFile("PlayerData.lua") end
 --==================================================
 
 if not PlayerData then PlayerData = {} end
-_G.PlayerData = PlayerData
-PLAYER_DATA = PLAYER_DATA or {}
-PlayerHero  = PlayerHero or {}
+_G.PlayerData = PlayerData  -- Make sure PlayerData is accessible globally
+if not PLAYER_DATA then PLAYER_DATA = {} end  -- Ensure PLAYER_DATA is initialized
+if not PlayerHero then PlayerHero = {} end  -- Ensure PlayerHero exists
 
 do
     --------------------------------------------------
@@ -119,10 +119,10 @@ do
     -- Accessors
     --------------------------------------------------
     function PlayerData.Get(pid)
-        local t = PLAYER_DATA[pid]
+        local t = PlayerData[pid]
         if t == nil then
             t = defaultTable()
-            PLAYER_DATA[pid] = t
+            PlayerData[pid] = t
         end
         return t
     end

@@ -20,9 +20,9 @@ do
     local fogMod = {}
 
     local function PD(pid)
-        PLAYER_DATA = PLAYER_DATA or {}
-        PLAYER_DATA[pid] = PLAYER_DATA[pid] or {}
-        return PLAYER_DATA[pid]
+        PlayerData = PlayerData or {}
+        PlayerData[pid] = PlayerData[pid] or {}
+        return PlayerData[pid]
     end
     local function ValidUnit(u) return u and GetUnitTypeId(u) ~= 0 end
 
@@ -199,7 +199,7 @@ do
 
                 -- gentle blue atmospheric fog from 1000 to 4000
                 if SetTerrainFogColor then SetTerrainFogColor(140, 165, 205, 255) end
-                if SetTerrainFogEx then SetTerrainFogEx(0, 1000.0, 4000.0, 0.0, 140, 165, 205) end
+                if SetTerrainFogEx then SetTerrainFogEx(0, 1000.0, 4000.0, 1.0, 140, 165, 205) end
             end
 
             -- Remove the inventory cover reliably
@@ -226,6 +226,7 @@ do
                     BlzFrameSetSize(BlzGetFrameByName("ConsoleUIBackdrop",0), 0, 0.0001)
                     BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_HERO_BAR,0), false)
                     BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_MINIMAP,0), false)
+                    BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_COMMAND_BUTTON, 0), false)
                     BlzFrameSetVisible(BlzGetFrameByName("ResourceBarFrame",0), false)
                     BlzFrameSetVisible(BlzGetFrameByName("UpperButtonBarFrame",0), false)
                     BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_PORTRAIT, 0), false)
@@ -234,8 +235,14 @@ do
                     BlzFrameSetSize(BlzGetFrameByName("InfoPanelIconHeroIcon", 6), 0.00001, 0.00001)
                     BlzFrameSetSize(BlzGetFrameByName("SimpleInfoPanelIconHero", 6), 0.00001, 0.00001)
                     BlzFrameSetSize(BlzGetFrameByName("InfoPanelIconBackdrop", 6), 0.00001, 0.00001)
+                    BlzFrameSetScale(BlzGetOriginFrame(ORIGIN_FRAME_UNIT_PANEL_BUFF_BAR_LABEL, 0), 0.00001)
+                    BlzFrameSetScale(BlzGetOriginFrame(ORIGIN_FRAME_UNIT_PANEL_BUFF_BAR, 0), 0.00001)
                     -- Shrink leftover info panel elements safely
                     BlzFrameSetScale(BlzGetFrameByName("SimpleHeroLevelBar", 0), 0.0001)
+                                        -- Reposition the Buff bar
+                    handle = BlzGetOriginFrame(ORIGIN_FRAME_UNIT_PANEL_BUFF_BAR, 0)
+                    BlzFrameSetAbsPoint(handle, FRAMEPOINT_TOPLEFT, -0.123456, -0.045000)
+                    BlzFrameSetAbsPoint(handle, FRAMEPOINT_BOTTOMRIGHT, -0.482620, -0.100000)
                     BlzFrameSetScale(BlzGetFrameByName("SimpleNameValue", 0), 0.0001)
                     BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelIconDamage", 0), 0.0001)
                     BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelIconDamageValue", 0), 0.0001)
@@ -260,7 +267,6 @@ do
 
                     -- HIDE ARMOR block (icon, value, label)
                     -- note: “armor” is index 2 of the generic InfoPanel icon rows
-                    --BlzFrameSetScale(BlzGetFrameByName("InfoPanelIconBackdrop", 2), 0.0001)
                     BlzFrameSetScale(BlzGetFrameByName("InfoPanelIconValue",    2), 0.0001)
                    BlzFrameSetScale(BlzGetFrameByName("InfoPanelIconLabel",    2), 0.0001)
 
@@ -273,6 +279,29 @@ do
                     BlzFrameSetScale(BlzGetFrameByName("InventoryButton_3", 0), 0.0001)
                     BlzFrameSetScale(BlzGetFrameByName("InventoryButton_4", 0), 0.0001)
                     BlzFrameSetScale(BlzGetFrameByName("InventoryButton_5", 0), 0.0001)
+
+                    -- hide command buttons 
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_0", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_1", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_2", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_3", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_4", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_5", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_6", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_7", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_8", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_9", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_10", 0), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("CommandButton_11", 0), 0.0001)
+
+                    -- Hide item info panel (center)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleItemNameValue", 3), 0.0001)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleItemDescriptionValue", 3), 0.0001)  
+                    -- Hide unit info panel (center)
+                    BlzFrameSetScale(BlzGetFrameByName("SimpleInfoPanelUnitDetail", 0), 0.0001)
+                    --hide whole bottom info panel
+                    BlzFrameSetScale(BlzGetFrameByName("InfoPanel", 0), 0.0001)
+
 
                     -- Portrait (top-left corner, keep current size)
                     local ui     = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
@@ -294,6 +323,9 @@ do
 
                     BlzFrameSetAlpha( BlzGetFrameByName("SimpleInventoryCover", 0), 0)
                     BlzFrameSetVisible(BlzFrameGetChild(BlzGetFrameByName("ConsoleUI", 0), 5), false)
+                    if CommandUIKiller and CommandUIKiller.Apply then
+                        CommandUIKiller.Apply(pid)
+                    end
                     BlzEnableUIAutoPosition(false)
                 end
                 Bootflow.Show(pid)

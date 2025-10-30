@@ -11,10 +11,10 @@ do
     --------------------------------------------------
     -- Tunables
     --------------------------------------------------
-    local BAR_W        = 0.22      -- overall width
+    local BAR_W        = 0.11      -- overall width
     local BAR_H        = 0.030     -- overall height
     local FILL_PAD     = 0.006     -- inner padding from backdrop to fill
-    local BOTTOM_Y     = 0.085     -- distance from bottom of screen
+    local BOTTOM_Y     = 0.05     -- distance from bottom of screen
     local LEVEL        = 12        -- z-order of the container frame
 
     local TEXT_SCALE   = 0.90

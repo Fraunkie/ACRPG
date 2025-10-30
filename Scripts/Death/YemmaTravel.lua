@@ -1,13 +1,8 @@
 if Debug and Debug.beginFile then Debug.beginFile("YemmaTravel.lua") end
 --==================================================
--- YemmaTravel.lua
+-- YemmaTravel.lua (v1.1)
 -- Simple 2x4 grid “Yemma’s Teleports” menu.
--- Black background, hover glow, multiplayer-safe.
--- Now wired to TeleportSystem:
---  • Buttons call TeleportSystem.TeleportToNode
---  • Locked nodes show gray icon and tooltip with requirements
---  • Dev mode shows everything as unlocked
---  • Auto-refresh on open and on OnTeleportUnlock
+-- Updated: “Spirit Realm” renamed to “HFIL”
 --==================================================
 
 if not YemmaTravel then YemmaTravel = {} end
@@ -31,27 +26,25 @@ do
 
     -- Display labels in grid order (8 slots)
     local TELEPORT_ENTRIES = {
-        "Check In", "Spirit Realm", "Kami Lookout", "Tournament",
+        "Check In", "HFIL", "Kami Lookout", "Tournament",
         "Forest", "Mountains", "Desert", "Ocean"
     }
 
     -- Map labels to node ids (extend as nodes go live)
     local BUTTON_TO_NODE = {
         ["Check In"]     = "YEMMA",
-        ["Spirit Realm"] = "HFIL",
+        ["HFIL"]         = "HFIL",
         ["Kami Lookout"] = "KAMI_LOOKOUT",
         ["Forest"]       = "VIRIDIAN",
         ["Mountains"]    = "FILE_ISLAND",
         ["Desert"]       = "LAND_OF_FIRE",
-        -- "Tournament" and "Ocean" can be wired later once nodes exist
     }
 
     --------------------------------------------------
     -- State per player
     --------------------------------------------------
-    local root = {}         -- pid -> modal root frame
-    local grids = {}        -- pid -> array of cell structs for refresh
-    -- cell struct: { btn, icon, hover, label, nodeId, tooltip, tooltipText }
+    local root = {}
+    local grids = {}
 
     --------------------------------------------------
     -- Helpers
@@ -90,18 +83,15 @@ do
     local function setIconGray(icon, isGray)
         if not icon then return end
         if isGray then
-            -- dark tint plus lower alpha
             BlzFrameSetVertexColor(icon, BlzConvertColor(255, 128, 128, 128))
             BlzFrameSetAlpha(icon, 120)
         else
-            -- full white, full alpha
             BlzFrameSetVertexColor(icon, BlzConvertColor(255, 255, 255, 255))
             BlzFrameSetAlpha(icon, 255)
         end
     end
 
     local function ensureTooltip(parent)
-        -- A small text tooltip anchored above the parent
         local tip = BlzCreateFrameByType("TEXT", "", parent, "", 0)
         BlzFrameSetScale(tip, 0.85)
         BlzFrameSetTextAlignment(tip, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_TOP)
@@ -116,9 +106,7 @@ do
     end
 
     local function resolveNodeIdByLabel(label)
-        -- 1) direct static map
         if BUTTON_TO_NODE[label] then return BUTTON_TO_NODE[label] end
-        -- 2) match against PRETTY names
         local GB = GameBalance or {}
         local pretty = GB.NODE_PRETTY or {}
         for id, name in pairs(pretty) do
@@ -147,19 +135,16 @@ do
             if req.se_min then parts[#parts + 1] = "Requires Soul Energy " .. tostring(req.se_min) end
         end
         local txt = table.concat(parts, "  ")
-        if txt == "" then
-            txt = "Locked"
-        end
+        if txt == "" then txt = "Locked" end
         return txt
     end
 
     --------------------------------------------------
-    -- Refresh grid cells for a player
+    -- Refresh grid cells
     --------------------------------------------------
     local function refreshGrid(pid)
         local list = grids[pid]
         if not list then return end
-
         for i = 1, #list do
             local cell = list[i]
             local nodeId = cell.nodeId
@@ -174,7 +159,6 @@ do
                     setTooltip(cell.tooltip, "")
                 end
             else
-                -- no node wired, keep icon normal
                 setIconGray(cell.icon, false)
                 setTooltip(cell.tooltip, "")
             end
@@ -182,7 +166,7 @@ do
     end
 
     --------------------------------------------------
-    -- Grid builder
+    -- Build grid
     --------------------------------------------------
     local function buildGrid(pid, parent)
         grids[pid] = {}
@@ -197,16 +181,14 @@ do
             for c = 1, COLS do
                 index = index + 1
                 local labelTxt = TELEPORT_ENTRIES[index] or ("Slot " .. tostring(index))
-                local nodeId = resolveNodeIdByLabel(labelTxt)  -- may be nil for placeholders
+                local nodeId = resolveNodeIdByLabel(labelTxt)
                 local cx = startX + (c - 1) * (CELL_W + GAP_X)
                 local cy = startY - (r - 1) * (CELL_H + GAP_Y)
 
-                -- cell
                 local cellFrame = makeBackdrop(parent, CELL_W, CELL_H, BG_BLACK)
                 BlzFrameSetAlpha(cellFrame, 64)
                 BlzFrameSetPoint(cellFrame, FRAMEPOINT_TOPLEFT, parent, FRAMEPOINT_TOPLEFT, cx, cy)
 
-                -- button
                 local btn = makeButton(cellFrame, ICON_W, ICON_H)
                 BlzFrameSetPoint(btn, FRAMEPOINT_TOP, cellFrame, FRAMEPOINT_TOP, 0.0, -0.002)
 
@@ -214,7 +196,6 @@ do
                 BlzFrameSetAllPoints(icon, btn)
                 BlzFrameSetTexture(icon, BTN_ICON, 0, true)
 
-                -- Hover overlay
                 local hover = BlzCreateFrameByType("BACKDROP", "", btn, "", 0)
                 BlzFrameSetAllPoints(hover, btn)
                 BlzFrameSetTexture(hover, "UI\\Feedback\\AutocastButton.blp", 0, true)
@@ -224,11 +205,9 @@ do
                 BlzFrameSetPoint(label, FRAMEPOINT_BOTTOM, cellFrame, FRAMEPOINT_BOTTOM, 0.0, 0.004)
                 BlzFrameSetSize(label, CELL_W, LABEL_H)
 
-                -- Tooltip
                 local tooltip = ensureTooltip(cellFrame)
                 setTooltip(tooltip, "")
 
-                -- Hover effects
                 local tEnter = CreateTrigger()
                 BlzTriggerRegisterFrameEvent(tEnter, btn, FRAMEEVENT_MOUSE_ENTER)
                 TriggerAddAction(tEnter, function()
@@ -253,7 +232,6 @@ do
                     end
                 end)
 
-                -- Click behavior
                 local tClick = CreateTrigger()
                 BlzTriggerRegisterFrameEvent(tClick, btn, FRAMEEVENT_CONTROL_CLICK)
                 TriggerAddAction(tClick, function()
@@ -272,6 +250,7 @@ do
                         return
                     end
                     TeleportSystem.TeleportToNode(pid, nodeId, { reason = "yemma_travel", setHub = true })
+                    setUiFocus(pid, false)
                 end)
 
                 grids[pid][#grids[pid] + 1] = {
@@ -281,12 +260,11 @@ do
             end
         end
 
-        -- Initial visual state
         refreshGrid(pid)
     end
 
     --------------------------------------------------
-    -- Render inside another frame
+    -- Render / Init
     --------------------------------------------------
     function YemmaTravel.RenderIn(pid, parent)
         if not parent then return end
@@ -296,65 +274,7 @@ do
         buildGrid(pid, parent)
     end
 
-    --------------------------------------------------
-    -- Standalone modal (dev only)
-    --------------------------------------------------
-    local function ensureStandalone(pid)
-        if root[pid] then return end
-        local ui = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
-        local r = makeBackdrop(ui, PANEL_W, PANEL_H, BG_BLACK)
-        root[pid] = r
-        BlzFrameSetPoint(r, FRAMEPOINT_CENTER, ui, FRAMEPOINT_CENTER, 0.0, 0.02)
-        BlzFrameSetAlpha(r, 230)
-        BlzFrameSetVisible(r, false)
-
-        local close = makeButton(r, 0.024, 0.022)
-        BlzFrameSetPoint(close, FRAMEPOINT_TOPRIGHT, r, FRAMEPOINT_TOPRIGHT, -PAD, -PAD)
-        local txt = makeText(close, "X", 0.95)
-        BlzFrameSetPoint(txt, FRAMEPOINT_CENTER, close, FRAMEPOINT_CENTER, 0.0, 0.0)
-        local t = CreateTrigger()
-        BlzTriggerRegisterFrameEvent(t, close, FRAMEEVENT_CONTROL_CLICK)
-        TriggerAddAction(t, function()
-            if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(r, false) end
-        end)
-
-        local cont = makeBackdrop(r, PANEL_W - PAD * 2, PANEL_H - PAD * 2, BG_BLACK)
-        BlzFrameSetPoint(cont, FRAMEPOINT_TOPLEFT, r, FRAMEPOINT_TOPLEFT, PAD, -PAD)
-        buildGrid(pid, cont)
-    end
-
-    function YemmaTravel.Show(pid)
-        ensureStandalone(pid)
-        if GetLocalPlayer() == Player(pid) then
-            BlzFrameSetVisible(root[pid], true)
-        end
-        refreshGrid(pid)
-    end
-
-    function YemmaTravel.Close(pid)
-        if root[pid] and GetLocalPlayer() == Player(pid) then
-            BlzFrameSetVisible(root[pid], false)
-        end
-    end
-
-    --------------------------------------------------
-    -- Auto-refresh on unlock events
-    --------------------------------------------------
-    local function wireBus()
-        local PB = rawget(_G, "ProcBus")
-        if PB and PB.On then
-            PB.On("OnTeleportUnlock", function(e)
-                if not e or e.pid == nil then return end
-                refreshGrid(e.pid)
-            end)
-        end
-    end
-
-    --------------------------------------------------
-    -- Init
-    --------------------------------------------------
     OnInit.final(function()
-        wireBus()
         if InitBroker and InitBroker.SystemReady then
             InitBroker.SystemReady("YemmaTravel")
         end

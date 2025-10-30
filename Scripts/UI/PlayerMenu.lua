@@ -5,6 +5,7 @@ if Debug and Debug.beginFile then Debug.beginFile("PlayerMenu.lua") end
 -- • L toggles menu (KeyEventHandler calls PlayerMenu.Toggle(pid))
 -- • Opening one module hides the others
 -- • Fixed texture paths (.blp) to remove green backdrops
+-- • Added: Spellbook button + Show/Hide plumbing
 --==================================================
 
 do
@@ -53,14 +54,14 @@ do
   --------------------------------------------------
   -- Style
   --------------------------------------------------
-  local TEX_BG_LIGHT   = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
-  local TEX_PANEL_DARK = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background.blp"
+  local TEX_BG_LIGHT   = "war3mapImported\\ContentPanel.blp"
+  local TEX_PANEL_DARK = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
   local TEX_BTN        = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller.blp"
 
-  local W_OUT, H_OUT   = 0.58, 0.40
-  local RAIL_W         = 0.18
+  local W_OUT, H_OUT   = 0.48, 0.42
+  local RAIL_W         = 0.12
   local PAD            = 0.012
-  local BTN_H          = 0.050
+  local BTN_H          = 0.030
   local BTN_GAP        = 0.012
 
   --------------------------------------------------
@@ -115,9 +116,8 @@ do
     BlzFrameSetTextAlignment(titleInfo, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
     BlzFrameSetText(titleInfo, "Info")
 
-    -- small helper to make a button on the rail
     local function makeButton(yOff, label, onClick)
-      local b = BlzCreateFrameByType("BUTTON", "", rail, "", 0)
+      local b = BlzCreateFrameByType("BUTTON", "", rail, "IconButtonTemplate", 0)
       BlzFrameSetSize(b, RAIL_W - PAD * 2, BTN_H)
       BlzFrameSetPoint(b, FRAMEPOINT_TOPLEFT, rail, FRAMEPOINT_TOPLEFT, PAD, -yOff)
 
@@ -139,7 +139,7 @@ do
       return b
     end
 
-    local y = 0.036 + BTN_H
+    local y = 0.025 + BTN_H
 
     -- Save / Load
     makeButton(y, "Load  Save", function()
@@ -147,7 +147,7 @@ do
     end)
     y = y + BTN_H + BTN_GAP
 
-    -- Stats
+    -- Character Stats
     makeButton(y, "Character Stats", function()
       PlayerMenu.ShowModule(pid, "stats")
     end)
@@ -159,10 +159,15 @@ do
     end)
     y = y + BTN_H + BTN_GAP
 
+    -- Spellbook (NEW)
+    makeButton(y, "Spellbook", function()
+      PlayerMenu.ShowModule(pid, "spellbook")
+    end)
+    y = y + BTN_H + BTN_GAP
+
     -- Remember next y for optional late-added buttons (Companions)
     t.railNextY = y
 
-    -- NOTE: Do NOT create the Companions button here; we defer to Show() after a fresh license check.
     return t
   end
 
@@ -170,7 +175,6 @@ do
   local function refreshCompanionsButton(pid, t)
     local shouldShow = HasCompanionLicense(pid)
 
-    -- Already created? Toggle visibility + enable state.
     if t.btnCompanions then
       if GetLocalPlayer() == Player(pid) then
         BlzFrameSetVisible(t.btnCompanions, shouldShow)
@@ -179,11 +183,10 @@ do
       return
     end
 
-    -- Not created yet, and allowed now -> create it
     if shouldShow then
       local rail = t.rail
       local function makeButton(yOff, label, onClick)
-        local b = BlzCreateFrameByType("BUTTON", "", rail, "", 0)
+        local b = BlzCreateFrameByType("BUTTON", "", rail, "IconButtonTemplate", 0)
         BlzFrameSetSize(b, RAIL_W - PAD * 2, BTN_H)
         BlzFrameSetPoint(b, FRAMEPOINT_TOPLEFT, rail, FRAMEPOINT_TOPLEFT, PAD, -yOff)
 
@@ -230,6 +233,10 @@ do
     local compMod = rawget(_G, "PlayerMenu_CompanionsModule")
     if compMod and compMod.Hide then pcall(compMod.Hide, pid) end
 
+    -- NEW: Spellbook module hide
+    local sbMod = rawget(_G, "PlayerMenu_SpellbookModule")
+    if sbMod and sbMod.Hide then pcall(sbMod.Hide, pid) end
+
     t.activeId = nil
   end
 
@@ -264,7 +271,6 @@ do
       end
 
     elseif which == "companions" then
-      -- If license was lost mid-session, deny cleanly.
       if not HasCompanionLicense(pid) and not DevMode then
         DisplayTextToPlayer(Player(pid), 0, 0, "Requires Companion License.")
         return
@@ -275,6 +281,14 @@ do
       else
         DisplayTextToPlayer(Player(pid), 0, 0, "Companions panel not available.")
       end
+
+    elseif which == "spellbook" then
+      local sbMod = rawget(_G, "PlayerMenu_SpellbookModule")
+      if sbMod and sbMod.ShowInto then
+        pcall(sbMod.ShowInto, pid, t.content)
+      else
+        DisplayTextToPlayer(Player(pid), 0, 0, "Spellbook panel not available.")
+      end
     end
   end
 
@@ -283,7 +297,6 @@ do
   --------------------------------------------------
   function PlayerMenu.Show(pid)
     local t = ensure(pid)
-    -- Decide Companions button *now* based on current license
     refreshCompanionsButton(pid, t)
 
     if GetLocalPlayer() == Player(pid) then

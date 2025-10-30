@@ -1,57 +1,62 @@
 if Debug and Debug.beginFile then Debug.beginFile("TargetingSystem.lua") end
 --==================================================
 -- TargetingSystem.lua
--- Version: v1.10 (2025-10-25)
---  TAB cycles nearest hostile targets (front-biased)
---  Lock lives on PLAYER_DATA[pid].control.target
---  Persistent marker above the locked target
---  Top-center target HP bar + text (updates live)
---  Auto-clears on death or leaving range
---  Emits ProcBus "OnTargetChanged"
+-- Version: v1.13 (2025-10-26)
+--  • TAB cycles nearest hostile targets (front-biased)
+--  • Optional RMB click sets target under cursor (hostile only)
+--  • Persistent overhead marker on the locked target
+--  • Top-center target HP bar + text (updates live)
+--  • Auto-clears on death or leaving range
+--  • Emits ProcBus "OnTargetChanged"
+--  • FIX: Fully hide HUD (root, backdrop, bar, text) when no target
 --==================================================
 
 do
     --------------------------------------------------
     -- Tunables
     --------------------------------------------------
-    local CYCLE_RADIUS            = 1200.0   -- search radius from hero
-    local FRONT_CONE_DEG          = 140.0    -- prefer units roughly in front
-    local CLEAR_RADIUS            = 1400.0   -- clear lock if beyond this
+    local CYCLE_RADIUS            = 1500.0   -- search radius from hero
+    local FRONT_CONE_DEG          = 150.0   -- prefer units roughly in front
+    local CLEAR_RADIUS            = 1900.0   -- clear lock if beyond this
     local RETAIN_ON_OUT_OF_CONE   = true     -- keep lock even if it leaves cone
 
-    -- Target marker model (arrow over head). This stays while locked.
-    -- Common WC3 model: the "TalkToMe" speaking icon or selection arrow.
-    -- Pick ONE of these:
-    local FX_MODEL_FALLBACK       = "Abilities\\Spells\\Other\\TalkToMe\\TalkToMe.mdl"
-    -- local FX_MODEL_FALLBACK    = "Abilities\\Spells\\Items\\AIlb\\AIlbTarget.mdl"
-    local FX_ATTACH_POINT         = "overhead"
-    local FX_SCALE                = 1.10
+    -- RMB pick under cursor (merge convenience)
+    local ENABLE_RIGHT_CLICK_PICK = true
+    local PICK_RADIUS             = 96.0     -- screen-ground pick radius
 
-    -- Target HUD (top center) visuals
+    -- Marker model (arrow / target reticle)
+    -- Path requested in screenshot:
+    local FX_MODEL_FALLBACK       = "Abilities\\Spells\\Other\\Aneu\\AneuTarget.mdl"
+    local FX_ATTACH_POINT         = "overhead"
+    local FX_SCALE                = 0.90
+
+    -- Target HUD (top-center) – anchored to GAME_UI
     local HUD_W                   = 0.28
     local HUD_H                   = 0.030
     local HUD_PAD                 = 0.006
-    local HUD_Y                   = 0.545      -- distance up from screen center
+    local HUD_TOP_Y_OFFSET        = -0.060   -- from the very top of the screen
     local HUD_LEVEL               = 12
     local HUD_TEXT_SCALE          = 0.96
     local HUD_BACK_TEX            = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
     local HUD_FILL_TEX            = "ReplaceableTextures\\TeamColor\\TeamColor00" -- red
 
     -- Timings
-    local POLL_DT                 = 0.15       -- live HP updates
-    local MAINT_DT                = 0.20       -- range/death checks
+    local POLL_DT                 = 0.15     -- live HP updates
+    local MAINT_DT                = 0.20     -- range/death checks
 
     --------------------------------------------------
     -- Locals / State
     --------------------------------------------------
-    local MARKER    = {}                -- pid -> effect/fx id
+    TargetingSystem = TargetingSystem or {}
+
+    local MARKER     = {}                -- pid -> effect/fx id
     local ENUM_GROUP = CreateGroup()
 
     -- Target HUD per-pid
-    local thRoot  = {}  -- FRAME (container in WORLD_FRAME)
+    local thRoot  = {}  -- FRAME (container in GAME_UI)
     local thBack  = {}  -- BACKDROP (underlay)
     local thBar   = {}  -- SIMPLESTATUSBAR (fill)
-    local thText  = {}  -- TEXT (parented to GAME_UI so it renders above)
+    local thText  = {}  -- TEXT (label)
 
     --------------------------------------------------
     -- Helpers
@@ -62,8 +67,8 @@ do
     local function isHostile(a, b)
         return IsPlayerEnemy(GetOwningPlayer(a), GetOwningPlayer(b))
     end
-    local function uiWorld()  return BlzGetOriginFrame(ORIGIN_FRAME_WORLD_FRAME, 0) end
-    local function uiRoot()   return BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0) end
+
+    local function uiRoot()  return BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0) end
 
     local function ensureControl(pid)
         local pd = _G.PLAYER_DATA and PLAYER_DATA[pid]
@@ -88,6 +93,11 @@ do
         while d < -180.0 do d = d + 360.0 end
         if d < 0.0 then d = -d end
         return d
+    end
+
+    local function dist2(ax, ay, bx, by)
+        local dx, dy = ax - bx, ay - by
+        return dx*dx + dy*dy
     end
 
     --------------------------------------------------
@@ -125,16 +135,13 @@ do
     local function ensureHUD(pid)
         if thRoot[pid] then return end
 
-        local parent = uiWorld()
+        local parent = uiRoot()
         local r = BlzCreateFrameByType("FRAME", "TargetHUDRoot"..pid, parent, "", 0)
         thRoot[pid] = r
         BlzFrameSetLevel(r, HUD_LEVEL)
         BlzFrameSetSize(r, HUD_W, HUD_H)
-        -- top-center: anchor relative to world frame center then nudge up
-        BlzFrameSetPoint(r, FRAMEPOINT_TOP, parent, FRAMEPOINT_TOP, 0.0, -0.100)
-        -- alternative: center + Y offset
-        BlzFrameClearAllPoints(r)
-        BlzFrameSetPoint(r, FRAMEPOINT_CENTER, parent, FRAMEPOINT_CENTER, 0.0, HUD_Y)
+        -- anchor to the top center of GAME_UI, nudge downward
+        BlzFrameSetPoint(r, FRAMEPOINT_TOP, parent, FRAMEPOINT_TOP, 0.0, HUD_TOP_Y_OFFSET)
 
         local bg = BlzCreateFrameByType("BACKDROP", "TargetHUDBG"..pid, r, "", 0)
         thBack[pid] = bg
@@ -150,7 +157,7 @@ do
         BlzFrameSetMinMaxValue(sb, 0, 1)
         BlzFrameSetValue(sb, 0)
 
-        local t = BlzCreateFrameByType("TEXT", "TargetHUDText"..pid, uiRoot(), "", 0)
+        local t = BlzCreateFrameByType("TEXT", "TargetHUDText"..pid, parent, "", 0)
         thText[pid] = t
         BlzFrameSetPoint(t, FRAMEPOINT_CENTER, r, FRAMEPOINT_CENTER, 0.0, 0.0)
         BlzFrameSetTextAlignment(t, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
@@ -158,23 +165,23 @@ do
         BlzFrameSetText(t, "")
         BlzFrameSetVisible(t, false)
 
-        -- hidden by default
         BlzFrameSetVisible(r, false)
     end
 
+    -- Be explicit: hide every subframe to avoid any linger
     local function hideHUD(pid)
-        if thRoot[pid] then
-            BlzFrameSetVisible(thRoot[pid], false)
-        end
-        if thText[pid] then
-            BlzFrameSetVisible(thText[pid], false)
-        end
+        if thBack[pid] then BlzFrameSetVisible(thBack[pid], false) end
+        if thBar[pid]  then BlzFrameSetVisible(thBar[pid],  false) end
+        if thText[pid] then BlzFrameSetVisible(thText[pid], false) end
+        if thRoot[pid] then BlzFrameSetVisible(thRoot[pid], false) end
     end
 
     local function showHUD(pid)
         ensureHUD(pid)
         BlzFrameSetVisible(thRoot[pid], true)
-        BlzFrameSetVisible(thText[pid], true)
+        if thBack[pid] then BlzFrameSetVisible(thBack[pid], true) end
+        if thBar[pid]  then BlzFrameSetVisible(thBar[pid],  true) end
+        if thText[pid] then BlzFrameSetVisible(thText[pid], true) end
     end
 
     local function updateHUD(pid, tgt)
@@ -187,14 +194,13 @@ do
         local max = math.max(1, BlzGetUnitMaxHP(tgt))
         BlzFrameSetMinMaxValue(thBar[pid], 0, max)
         BlzFrameSetValue(thBar[pid], cur)
-        -- No percent signs; safe string for WE:
         local nm = GetUnitName(tgt) or "Target"
         BlzFrameSetText(thText[pid], nm .. "  HP " .. tostring(cur) .. " / " .. tostring(max))
         showHUD(pid)
     end
 
     --------------------------------------------------
-    -- Selection logic
+    -- Candidate building / cycling (hostile only)
     --------------------------------------------------
     local function buildCandidates(pid, uHero)
         GroupClear(ENUM_GROUP)
@@ -234,7 +240,6 @@ do
         if not c then return end
         c.target = tgt
 
-        -- marker + HUD
         if tgt then
             placeMarker(pid, tgt)
             updateHUD(pid, tgt)
@@ -249,8 +254,8 @@ do
     end
 
     local function pickNext(pid)
-        local hero = heroOf(pid); if not validUnit(hero) then return end
-        local inCone, all = buildCandidates(pid, hero)
+        local h = heroOf(pid); if not validUnit(h) then return end
+        local inCone, all = buildCandidates(pid, h)
         local list = (#inCone > 0) and inCone or all
         if #list == 0 then
             setTarget(pid, nil)
@@ -264,7 +269,6 @@ do
             return
         end
 
-        -- find current index in list (if current not in list, start from 1)
         local idx = 0
         for i = 1, #list do
             if list[i].unit == cur then
@@ -283,9 +287,36 @@ do
     end
 
     --------------------------------------------------
+    -- RMB pick under cursor (hostile only)
+    --------------------------------------------------
+    local function rmbPick(pid)
+        if not ENABLE_RIGHT_CLICK_PICK then return end
+        local h = heroOf(pid); if not validUnit(h) then return end
+
+        -- world position under cursor
+        local mx = BlzGetTriggerPlayerMouseX()
+        local my = BlzGetTriggerPlayerMouseY()
+
+        local best, bestd2 = nil, nil
+        GroupEnumUnitsInRange(ENUM_GROUP, mx, my, PICK_RADIUS, nil)
+        local u = FirstOfGroup(ENUM_GROUP)
+        while u ~= nil do
+            GroupRemoveUnit(ENUM_GROUP, u)
+            if validUnit(u) and isHostile(u, h) then
+                local d2 = dist2(mx, my, GetUnitX(u), GetUnitY(u))
+                if not bestd2 or d2 < bestd2 then
+                    best, bestd2 = u, d2
+                end
+            end
+            u = FirstOfGroup(ENUM_GROUP)
+        end
+
+        if best then setTarget(pid, best) end
+    end
+
+    --------------------------------------------------
     -- Public API
     --------------------------------------------------
-    TargetingSystem = TargetingSystem or {}
     function TargetingSystem.Cycle(pid) pickNext(pid) end
     function TargetingSystem.Get(pid)
         local c = ensureControl(pid); if not c then return nil end
@@ -308,19 +339,21 @@ do
                     if validUnit(h) then
                         local dx = GetUnitX(tgt) - GetUnitX(h)
                         local dy = GetUnitY(tgt) - GetUnitY(h)
-                        local dist2 = dx*dx + dy*dy
-                        if dist2 > (CLEAR_RADIUS * CLEAR_RADIUS) then
+                        local d2 = dx*dx + dy*dy
+                        if d2 > (CLEAR_RADIUS * CLEAR_RADIUS) then
                             setTarget(pid, nil)
-                        elseif not RETAIN_ON_OUT_OF_CONE then
-                            local ang = math.deg(math.atan(dy, dx))
-                            local off = angleDiffDeg(ang, GetUnitFacing(h))
-                            if off > (FRONT_CONE_DEG * 0.5) then
-                                setTarget(pid, nil)
-                            else
-                                updateHUD(pid, tgt)
-                            end
                         else
-                            updateHUD(pid, tgt)
+                            if RETAIN_ON_OUT_OF_CONE then
+                                updateHUD(pid, tgt)
+                            else
+                                local ang = math.deg(math.atan(dy, dx))
+                                local off = angleDiffDeg(ang, GetUnitFacing(h))
+                                if off > (FRONT_CONE_DEG * 0.5) then
+                                    setTarget(pid, nil)
+                                else
+                                    updateHUD(pid, tgt)
+                                end
+                            end
                         end
                     else
                         setTarget(pid, nil)
@@ -345,16 +378,7 @@ do
     -- Wiring
     --------------------------------------------------
     OnInit.final(function()
-        -- request cycle hook (TAB is wired elsewhere)
-        if _G.ProcBus and ProcBus.On then
-            ProcBus.On("RequestTargetCycle", function(payload)
-                if not payload then return end
-                local pid = payload.pid
-                if type(pid) == "number" then pickNext(pid) end
-            end)
-        end
-
-        -- per-player HUD frames
+        -- Ensure HUD exists per-player (local)
         for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 if GetLocalPlayer() == Player(pid) then
@@ -363,12 +387,42 @@ do
             end
         end
 
-        -- maintenance timers
-        local tA = CreateTimer()
-        TimerStart(tA, MAINT_DT, true, maintenance)
+        -- ProcBus request hook
+        if _G.ProcBus and ProcBus.On then
+            ProcBus.On("RequestTargetCycle", function(payload)
+                if not payload then return end
+                local pid = payload.pid
+                if type(pid) == "number" then pickNext(pid) end
+            end)
+        end
 
-        local tB = CreateTimer()
-        TimerStart(tB, POLL_DT, true, pollHP)
+        -- TAB fallback (works even if not wired elsewhere)
+        for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do
+            local trig = CreateTrigger()
+            BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_TAB, 0, true)
+            TriggerAddAction(trig, function()
+                local p = GetTriggerPlayer()
+                local id = GetPlayerId(p)
+                if GetLocalPlayer() == p then pickNext(id) end
+            end)
+        end
+
+        -- RMB pick
+        if ENABLE_RIGHT_CLICK_PICK then
+            for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do
+                local t = CreateTrigger()
+                TriggerRegisterPlayerMouseEventBJ(t, Player(pid), bj_MOUSEEVENTTYPE_DOWN)
+                TriggerAddAction(t, function()
+                    if BlzGetTriggerPlayerMouseButton() == MOUSE_BUTTON_TYPE_RIGHT then
+                        rmbPick(GetPlayerId(GetTriggerPlayer()))
+                    end
+                end)
+            end
+        end
+
+        -- maintenance timers
+        TimerStart(CreateTimer(), MAINT_DT, true, maintenance)
+        TimerStart(CreateTimer(), POLL_DT,  true, pollHP)
 
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("TargetingSystem")

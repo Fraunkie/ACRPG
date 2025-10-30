@@ -1,12 +1,11 @@
 if Debug and Debug.beginFile then Debug.beginFile("TeleportSystem.lua") end
 --==================================================
--- TeleportSystem.lua
--- Core travel: unlocks, checks, and node-to-coordinates teleporting.
--- Emits ProcBus events:
---   • OnTeleportUnlock { pid, node, source }
---   • OnTeleportDepart { pid, node, reason }
---   • OnTeleportArrive { pid, node, reason }
--- Safe strings (no percent), nil-safe, frame-only friendly.
+-- TeleportSystem.lua  (v1.1, 2025-10-26)
+-- Core teleport and unlock logic.
+-- • Syncs with GameBalance + TeleportConfig
+-- • Handles unlocking, checking, and teleporting
+-- • Emits ProcBus events:
+--      OnTeleportUnlock, OnTeleportDepart, OnTeleportArrive
 --==================================================
 
 if not TeleportSystem then TeleportSystem = {} end
@@ -14,11 +13,11 @@ _G.TeleportSystem = TeleportSystem
 
 do
     --------------------------------------------------
-    -- Config / Data sources
+    -- Config / Sources
     --------------------------------------------------
     local GB = GameBalance or {}
 
-    -- Node coordinate sources (in priority order)
+    -- Safe node coordinate fetch
     local function getNodeCoords(id)
         if GB.NODE_COORDS and GB.NODE_COORDS[id] then return GB.NODE_COORDS[id] end
         if GB.HUB_COORDS  and GB.HUB_COORDS[id]  then return GB.HUB_COORDS[id]  end
@@ -26,25 +25,25 @@ do
         return nil
     end
 
-    -- Identify which nodes count as “hubs” for return logic
+    -- Identify hubs for hub-tracking logic
     local HUB_SET = {}
     do
         local ids = GB.TELEPORT_NODE_IDS or {}
-        local hubList = { ids.YEMMA, ids.KAMI_LOOKOUT }
-        for i = 1, #hubList do
-            local v = hubList[i]
+        local hubs = { ids.YEMMA, ids.KAMI_LOOKOUT }
+        for i = 1, #hubs do
+            local v = hubs[i]
             if type(v) == "string" and v ~= "" then HUB_SET[v] = true end
         end
     end
 
     --------------------------------------------------
-    -- State
+    -- Helpers / State
     --------------------------------------------------
     local function PD(pid)
-        if not PLAYER_DATA then PLAYER_DATA = {} end
-        PLAYER_DATA[pid] = PLAYER_DATA[pid] or {}
-        local pd = PLAYER_DATA[pid]
-        pd.unlockedNodes = pd.unlockedNodes or {}  -- set<string,bool>
+        if not PlayerData then PlayerData = {} end
+        PlayerData[pid] = PlayerData[pid] or {}
+        local pd = PlayerData[pid]
+        pd.unlockedNodes = pd.unlockedNodes or {}
         return pd
     end
 
@@ -52,7 +51,7 @@ do
         return pid and pid >= 0 and pid < bj_MAX_PLAYERS
     end
 
-    local function hasHero(pid)
+    local function hero(pid)
         local pd = PD(pid)
         if pd.hero and GetUnitTypeId(pd.hero) ~= 0 then return pd.hero end
         if _G.PlayerHero and PlayerHero[pid] and GetUnitTypeId(PlayerHero[pid]) ~= 0 then
@@ -64,13 +63,11 @@ do
 
     local function emit(evt, payload)
         local PB = rawget(_G, "ProcBus")
-        if PB and PB.Emit then
-            pcall(PB.Emit, evt, payload)
-        end
+        if PB and PB.Emit then pcall(PB.Emit, evt, payload) end
     end
 
     --------------------------------------------------
-    -- API: Unlock / Check
+    -- Unlock / Check
     --------------------------------------------------
     function TeleportSystem.Unlock(pid, node)
         if not isValidPlayer(pid) then return false end
@@ -84,30 +81,27 @@ do
 
     function TeleportSystem.IsUnlocked(pid, node)
         if not isValidPlayer(pid) then return false end
-        if type(node) ~= "string" or node == "" then return false end
         local pd = PD(pid)
         return pd.unlockedNodes[node] and true or false
     end
 
     --------------------------------------------------
-    -- API: Teleport
+    -- Core Teleport
     --------------------------------------------------
-    -- opts: { reason = "string", setHub = bool }  -- setHub forces lastHubNode = node if true
+    -- opts = { reason = "string", setHub = bool }
     function TeleportSystem.TeleportToNode(pid, node, opts)
         if not isValidPlayer(pid) then return false end
         if type(node) ~= "string" or node == "" then return false end
 
-        local u = hasHero(pid)
+        local u = hero(pid)
         if not u then return false end
 
-        -- require unlock, silently unlock if config prefers that
         if not TeleportSystem.IsUnlocked(pid, node) then
             TeleportSystem.Unlock(pid, node)
         end
 
         local c = getNodeCoords(node)
         if not c then
-            -- no coords means nothing to do
             DisplayTextToPlayer(Player(pid), 0, 0, "Unknown teleport destination: " .. tostring(node))
             return false
         end
@@ -115,14 +109,10 @@ do
         local reason = opts and opts.reason or "teleport"
         emit("OnTeleportDepart", { pid = pid, node = node, reason = reason })
 
-        -- move unit
-        local x, y = c.x or 0.0, c.y or 0.0
-        local z = c.z or 0.0
-        SetUnitPosition(u, x, y)
-        if SetUnitFlyHeight then SetUnitFlyHeight(u, z, 0.00) end
-        PanCameraToTimedForPlayer(Player(pid), x, y, 0.10)
-
-        -- hub tracking
+        SetUnitPosition(u, c.x or 0.0, c.y or 0.0)
+        if SetUnitFlyHeight then SetUnitFlyHeight(u, c.z or 0.0, 0.00) end
+        PanCameraToTimedForPlayer(Player(pid), c.x or 0.0, c.y or 0.0, 0.15)
+        PlayerMenu.Hide(pid)  -- Close travel UI if open
         local pd = PD(pid)
         local forceHub = opts and opts.setHub == true
         if forceHub or HUB_SET[node] then
@@ -134,13 +124,12 @@ do
     end
 
     --------------------------------------------------
-    -- Convenience: Save/Load serialization hooks (optional)
+    -- Export / Import (save system)
     --------------------------------------------------
     function TeleportSystem.Export(pid)
         local pd = PD(pid)
         local out = {}
         for k, v in pairs(pd.unlockedNodes) do if v then out[#out + 1] = k end end
-        -- return simple array; your save system can JSON this if desired
         return out, pd.lastHubNode
     end
 
@@ -161,7 +150,7 @@ do
     end
 
     --------------------------------------------------
-    -- Chat helpers (dev)
+    -- Developer Chat Helpers
     --------------------------------------------------
     local function splitSpaces(s)
         local out, acc = {}, ""
@@ -179,7 +168,7 @@ do
 
     local function reg(prefix, fn)
         local t = CreateTrigger()
-        for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
+        for i = 0, bj_MAX_PLAYERS - 1 do
             TriggerRegisterPlayerChatEvent(t, Player(i), prefix, false)
         end
         TriggerAddAction(t, function()
@@ -190,7 +179,7 @@ do
         end)
     end
 
-    -- -unlock NODE
+    -- -unlock <NODE>
     reg("-unlock ", function(p, pid, msg)
         local rest = string.sub(msg, string.len("-unlock ") + 1)
         local t = splitSpaces(rest)
@@ -202,7 +191,7 @@ do
         end
     end)
 
-    -- -tp NODE
+    -- -tp <NODE>
     reg("-tp ", function(p, pid, msg)
         local rest = string.sub(msg, string.len("-tp ") + 1)
         local t = splitSpaces(rest)
@@ -216,7 +205,7 @@ do
     -- Init
     --------------------------------------------------
     OnInit.final(function()
-        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+        if rawget(_G,"InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("TeleportSystem")
         end
     end)

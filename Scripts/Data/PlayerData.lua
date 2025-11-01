@@ -9,9 +9,9 @@ if Debug and Debug.beginFile then Debug.beginFile("PlayerData.lua") end
 --==================================================
 
 if not PlayerData then PlayerData = {} end
-_G.PlayerData = PlayerData  -- Make sure PlayerData is accessible globally
-if not PLAYER_DATA then PLAYER_DATA = {} end  -- Ensure PLAYER_DATA is initialized
-if not PlayerHero then PlayerHero = {} end  -- Ensure PlayerHero exists
+_G.PlayerData = PlayerData
+PLAYER_DATA = PLAYER_DATA or {}
+PlayerHero  = PlayerHero or {}
 
 do
     --------------------------------------------------
@@ -28,14 +28,24 @@ do
 
             -- power/progression mirrors
             powerLevel = 0,
-            soulEnergy = 0,
             soulLevel  = 1,
             soulXP     = 0,
             soulNextXP = 200,
             spiritDrive = 0,
 
             -- basic stats mirror
-            stats = { power = 0, defense = 0, speed = 0, crit = 0 },
+            stats = {
+                power = 0,
+                defense = 0,
+                speed = 0,
+                crit = 0,
+                basestr = 0, -- base strength
+                baseagi = 0, -- base agility
+                baseint = 0, -- base intelligence
+                strmulti = 1.0,
+                agimulti = 1.0,
+                intmulti = 1.0,
+            },
 
             -- combat stats mirror
             combat = {
@@ -119,10 +129,10 @@ do
     -- Accessors
     --------------------------------------------------
     function PlayerData.Get(pid)
-        local t = PlayerData[pid]
+        local t = PLAYER_DATA[pid]
         if t == nil then
             t = defaultTable()
-            PlayerData[pid] = t
+            PLAYER_DATA[pid] = t
         end
         return t
     end
@@ -133,7 +143,6 @@ do
         if v == nil then return defaultValue end
         return v
     end
-
     --------------------------------------------------
     -- Companions (validates against CompanionCatalog)
     --------------------------------------------------
@@ -223,31 +232,48 @@ do
         PlayerHero[pid] = unit
         return unit
     end
-    function PlayerData.GetHero(pid) return PlayerData.Get(pid).hero end
+
+    function PlayerData.GetHero(pid)
+        return PlayerData.Get(pid).hero
+    end
 
     function PlayerData.SetHeroType(pid, tpe)
         local pd = PlayerData.Get(pid)
         if type(tpe) == "string" and tpe ~= "" then pd.heroType = tpe else pd.heroType = nil end
         return pd.heroType
     end
-    function PlayerData.GetHeroType(pid) return PlayerData.Get(pid).heroType end
+
+    function PlayerData.GetHeroType(pid)
+        return PlayerData.Get(pid).heroType
+    end
 
     function PlayerData.RefreshPower(pid)
         local pd = PlayerData.Get(pid)
-        local str = (rawget(_G, "PlayerMStr") and PlayerMStr[pid]) or 0
-        local agi = (rawget(_G, "PlayerMAgi") and PlayerMAgi[pid]) or 0
-        local int = (rawget(_G, "PlayerMInt") and PlayerMInt[pid]) or 0
+        local str = (pd.stats.basestr or 0) * (pd.stats.strmulti or 1.0)
+        local agi = (pd.stats.baseagi or 0) * (pd.stats.agimulti or 1.0)
+        local int = (pd.stats.baseint or 0) * (pd.stats.intmulti or 1.0)
         pd.powerLevel = math.max(0, math.floor((str + agi + int) / 3))
         return pd.powerLevel
     end
-    function PlayerData.GetPowerLevel(pid) return (PlayerData.Get(pid).powerLevel or 0) end
-    function PlayerData.GetSoulEnergy(pid) return (PlayerData.Get(pid).soulEnergy or 0) end
+
+    function PlayerData.GetPowerLevel(pid)
+        return (PlayerData.Get(pid).powerLevel or 0)
+    end
+
+    function PlayerData.GetSoulEnergy(pid)
+        return (PlayerData.Get(pid).soulXP or 0)
+    end
+
+    function PlayerData.GetSoulLevel(pid)
+        return (PlayerData.Get(pid).soulLevel or 0)
+    end
 
     function PlayerData.AddSoul(pid, amount)
         local pd = PlayerData.Get(pid)
-        pd.soulEnergy = math.max(0, (pd.soulEnergy or 0) + (amount or 0))
-        return pd.soulEnergy
+        pd.soulXP = math.max(0, (pd.soulXP or 0) + (amount or 0))
+        return pd.soulXP
     end
+
     function PlayerData.AddFragments(pid, amount)
         local pd = PlayerData.Get(pid)
         pd.fragments = math.max(0, (pd.fragments or 0) + (amount or 0))
@@ -259,7 +285,10 @@ do
         pd.zone = zone or pd.zone
         return pd.zone
     end
-    function PlayerData.GetZone(pid) return PlayerData.Get(pid).zone end
+
+    function PlayerData.GetZone(pid)
+        return PlayerData.Get(pid).zone
+    end
 
     function PlayerData.SetStats(pid, tbl)
         local pd = PlayerData.Get(pid)
@@ -271,10 +300,15 @@ do
         pd.stats = s
         return s
     end
+
     function PlayerData.GetStats(pid)
         local pd = PlayerData.Get(pid)
         if not pd.stats then
-            pd.stats = { power = 0, defense = 0, speed = 0, crit = 0 }
+            pd.stats = {
+                power = 0, defense = 0, speed = 0, crit = 0,
+                basestr = 0, baseagi = 0, baseint = 0,
+                strmulti = 1.0, agimulti = 1.0, intmulti = 1.0,
+            }
         end
         return pd.stats
     end
@@ -294,13 +328,14 @@ do
         pd.combat = c
         return c
     end
+
     function PlayerData.GetCombat(pid)
         local pd = PlayerData.Get(pid)
         if not pd.combat then
             pd.combat = {
                 armor = 0, energyResist = 0, dodge = 0, parry = 0, block = 0,
                 critChance = 0, critMult = 1.5,
-                spellBonusPct = 0.0, physicalBonusPct = 0.0
+                spellBonusPct = 0.0, physicalBonusPct = 0.0,
             }
         end
         return pd.combat

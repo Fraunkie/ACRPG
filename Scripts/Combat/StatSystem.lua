@@ -1,5 +1,4 @@
--- StatSystem.lua (merged: abilities + source aggregation + combat emit) [BJ-free percent math]
-if Debug and Debug.beginFile then Debug.beginFile('StatSystem') end
+if Debug and Debug.beginFile then Debug.beginFile('StatSystem v0.01') end
 
 StatSystem = {}
 _G.StatSystem = StatSystem

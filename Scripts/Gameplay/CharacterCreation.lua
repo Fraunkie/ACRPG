@@ -67,6 +67,8 @@ do
         pd.bootflow_active   = false
         pd.yemmaIntroPending = false
         CustomSpellBar.BindHero(pid, hero)
+        HeroStatSystem.InitializeStats(pid, hero)
+        HeroStatSystem.Recalculate(pid)
 
         DisplayTextToPlayer(Player(pid), 0, 0, "Soul successfully created.")
 

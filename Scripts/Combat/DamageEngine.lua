@@ -37,12 +37,83 @@ local function apply(caster, target, amount, opts)
 
     local before = GetWidgetLife(target)
     UnitDamageTarget(caster, target, amount, isAttack, isRanged, atkType, dmgType, wepType)
+    DisplayTextToPlayer(GetOwningPlayer(caster), 0, 0,
+        "[DamageEngine] " ..
+        "Caster=" .. tostring(GetUnitName(caster)) ..
+        " Target=" .. tostring(GetUnitName(target)) ..
+        " Amount=" .. tostring(amount) ..
+        " Type=" .. tostring(dmgType)
+    )
     local after = GetWidgetLife(target)
     local dealt = math.max(0, before - after)
     return dealt
 end
 
 --========== PUBLIC API ==========
+
+function DamageEngine.showArcingDamageText(caster, target, damage, dmgType)
+    -- Get the location of the target to place the text tag
+    local x, y = GetUnitX(target), GetUnitY(target)
+
+    -- Debug: Check if the position is valid
+    DisplayTextToPlayer(GetOwningPlayer(target), 0, 0, "TextTag Position: x = " .. tostring(x) .. ", y = " .. tostring(y))
+
+    -- Define text tag properties
+    local textTag = CreateTextTag()
+    if textTag == nil then
+        print("[Error] Failed to create text tag!")
+        return
+    end
+
+    SetTextTagPermanent(textTag, false)  -- Make it disappear after a short time
+    SetTextTagLifespan(textTag, 1.0)  -- Lifespan of the text tag (in seconds)
+    SetTextTagFadepoint(textTag, 0.8)  -- When it starts fading
+
+    -- Set the text and size
+    SetTextTagText(textTag, tostring(damage), 0.025)  -- Size of the text (adjustable)
+
+    -- Set color based on damage type
+    if dmgType == DAMAGE_TYPE_MAGIC then
+        SetTextTagColor(textTag, 0, 0, 255, 255)  -- Blue for Energy (Magic)
+    elseif dmgType == DAMAGE_TYPE_NORMAL then
+        SetTextTagColor(textTag, 255, 255, 0, 255)  -- Yellow for Physical damage
+    elseif dmgType == DAMAGE_TYPE_UNIVERSAL then
+        SetTextTagColor(textTag, 255, 0, 0, 255)  -- Red for True Damage (Crit)
+    else
+        SetTextTagColor(textTag, 255, 255, 255, 255)  -- Default White
+    end
+
+    -- Position the text tag above the target unit (Z offset for height)
+    SetTextTagPos(textTag, x, y, 50)  -- Adjust the height (50 is above the unit)
+
+    -- Start a timer for the timed movement
+    local startTime = os.clock()  -- Record the starting time when the text is created
+
+    -- Create a timer to handle the movement and scaling over time
+    local timer = CreateTimer()
+
+    -- Timer update function
+    TimerStart(timer, 0.03, true, function()
+        local elapsedTime = os.clock() - startTime  -- Calculate how much time has passed since creation
+
+        -- Debug: Check if the timer is running
+
+        -- Calculate the movement and size increase over time
+        local p = math.sin(math.pi * ((1 - elapsedTime) / 1.0))  -- Scaling effect
+        x = x - 0.5  -- Move left
+        y = y + 0.5  -- Move up
+        SetTextTagPos(textTag, x, y, 50 + 50 * p)  -- Add dynamic height
+        SetTextTagText(textTag, tostring(damage), (0.025 + 0.012 * p))  -- Increase text size over time
+
+        -- End the timer after 1 second (to stop the movement)
+        if elapsedTime >= 1.0 then
+            DestroyTimer(timer)  -- Stop the timer
+        end
+    end)
+
+    return textTag  -- Return the text tag for reference
+end
+
 function DamageEngine.applySpellDamage(caster, target, amount, damageType)
     return apply(caster, target, amount, {
         attackType = ATTACK_TYPE_MAGIC,

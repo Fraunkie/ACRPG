@@ -87,39 +87,39 @@ do
     --------------------------------------------------
     -- Soul Energy
     --------------------------------------------------
-    registerChat("-soul", function(p, pid)
-        if _G.SoulEnergy then
-            local getXp = (SoulEnergy.GetXp or SoulEnergy.Get)
-            local xp = getXp and getXp(pid) or 0
-            DisplayTextToPlayer(p, 0, 0, "Soul energy: " .. tostring(xp))
-        end
-    end)
-
+    -- Displays current Soul XP and level
     registerChat("-souls", function(p, pid)
         if _G.SoulEnergy then
             local getXp = (SoulEnergy.GetXp or SoulEnergy.Get)
             local xp  = getXp and getXp(pid) or 0
+            local nxt = SoulEnergy.GetNextXP and SoulEnergy.GetNextXP(pid) or 0
             local lvl = (SoulEnergy.GetLevel and SoulEnergy.GetLevel(pid)) or 1
             DisplayTextToPlayer(p, 0, 0,
-                "Soul XP: " .. tostring(xp) .. "  |  Soul Level: " .. tostring(lvl))
+                "Soul XP: " .. tostring(xp) .. " / " .. tostring(nxt) .. "  —  Soul Level: " .. tostring(lvl))
         end
     end)
 
+    -- Adds to Soul XP and displays the new value
     registerChat("-souladd", function(p, pid, msg)
         if _G.SoulEnergy then
             local n = parseNum(msg, "-souladd")
             local addFn = SoulEnergy.AddXp or SoulEnergy.Add
             local v = addFn and addFn(pid, n) or 0
-            DisplayTextToPlayer(p, 0, 0, "Soul energy now " .. tostring(v))
+            local nxt = SoulEnergy.GetNextXP(pid) or 0
+            local lvl = SoulEnergy.GetLevel(pid) or 1
+            DisplayTextToPlayer(p, 0, 0, "Soul XP: " .. tostring(v) .. " / " .. tostring(nxt) .. "  —  Soul Level: " .. tostring(lvl))
         end
     end)
 
+    -- Sets the Soul XP and displays the new value
     registerChat("-soulset", function(p, pid, msg)
         if _G.SoulEnergy then
             local n = parseNum(msg, "-soulset")
             local setFn = SoulEnergy.SetXp or SoulEnergy.Set
             local v = setFn and setFn(pid, n) or 0
-            DisplayTextToPlayer(p, 0, 0, "Soul energy set to " .. tostring(v))
+            local nxt = SoulEnergy.GetNextXP(pid) or 0
+            local lvl = SoulEnergy.GetLevel(pid) or 1
+            DisplayTextToPlayer(p, 0, 0, "Soul XP: " .. tostring(v) .. " / " .. tostring(nxt) .. "  —  Soul Level: " .. tostring(lvl))
         end
     end)
 
@@ -183,13 +183,30 @@ do
     end)
 
     --------------------------------------------------
-    -- Spirit System Debug
+    -- SIMPLE STATS VIEW (fixed)
     --------------------------------------------------
-    registerChat("-sp", function(p, pid, msg)
-        if _G.SpiritDrive then
-            local n = parseNum(msg, "-sp")
-            DisplayTextToPlayer(p, 0, 0, "Spirit Power: " .. n)
+    registerChat("-stats", function(p, pid)
+        -- PlayerData part
+        local pd   = _G.PlayerData and PlayerData.Get and PlayerData.Get(pid) or nil
+        local hero = pd and pd.hero or ( _G.PlayerHero and PlayerHero[pid] ) or nil
+        local s    = pd and pd.stats or nil
+
+        local baseStr = s and s.basestr or 0
+        local baseAgi = s and s.baseagi or 0
+        local baseInt = s and s.baseint or 0
+
+        -- Hero actual stats (only if hero exists)
+        local heroStr, heroAgi, heroInt = 0, 0, 0
+        if hero and GetUnitTypeId(hero) ~= 0 then
+            heroStr = GetHeroStr(hero, false)
+            heroAgi = GetHeroAgi(hero, false)
+            heroInt = GetHeroInt(hero, false)
         end
+
+        DisplayTextToPlayer(p, 0, 0, "Stats for Player " .. tostring(pid) .. ":")
+        DisplayTextToPlayer(p, 0, 0, "Base STR: " .. tostring(baseStr) .. "   (hero: " .. tostring(heroStr) .. ")")
+        DisplayTextToPlayer(p, 0, 0, "Base AGI: " .. tostring(baseAgi) .. "   (hero: " .. tostring(heroAgi) .. ")")
+        DisplayTextToPlayer(p, 0, 0, "Base INT: " .. tostring(baseInt) .. "   (hero: " .. tostring(heroInt) .. ")")
     end)
 
     --------------------------------------------------
@@ -204,18 +221,6 @@ do
     registerChat("-debug", function(p, pid)
         if _G.DebugUtils and DebugUtils.ToggleDebug then
             DebugUtils.ToggleDebug(pid)
-        end
-    end)
-
-    --------------------------------------------------
-    -- Stats System Debug
-    --------------------------------------------------
-    registerChat("-stats", function(p, pid)
-        if _G.HeroStatSystem and HeroStatSystem.DebugStats then
-            local hero = PlayerData.GetHero(pid)
-            if hero then
-                HeroStatSystem.DebugStats(hero)
-            end
         end
     end)
 

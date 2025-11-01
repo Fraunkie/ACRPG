@@ -1,60 +1,33 @@
 if Debug and Debug.beginFile then Debug.beginFile("SoulEnergyLogic.lua") end
 --==================================================
--- SoulEnergyLogic.lua  (XP-only, RuneScape curve)
--- • soulXp   = cumulative XP (never decreases)
--- • soulLvl  = derived level from soulXp
---
--- Public API (kept for adapter compatibility; XP-only semantics):
---   Get(pid)                 -> XP total
---   Set(pid, xp)            -> set XP (clamped >=0), recalculates level
---   Add(pid, delta, reason, meta)
---       * delta <= 0 is ignored (XP never drops)
---   Spend(pid, cost)        -> always false (no currency to spend)
---   Ping(pid, amount)       -> UI ping event only (no state change)
---   GetXP(pid), GetLevel(pid)
---   LevelProgress(pid)      -> into, need, totalAtLevel, totalAtNext
---   XpToLevel(xp), LevelToTotalXp(level), LevelToNext(level)
---
--- Events (if ProcBus present):
---   OnSoulXPChanged { pid, xp }
---   OnSoulLevelUp   { pid, level, gained }
---   OnSoulPing      { pid, delta }
---   OnSoulChanged   { pid, value }  -- legacy mirror of XP for old UIs
---
--- Reward lookup retained:
---   GetReward(fourId)
+-- SoulEnergyLogic.lua  (XP-only, RuneScape curve)  [diag]
 --==================================================
 
 if not SoulEnergyLogic then SoulEnergyLogic = {} end
 _G.SoulEnergyLogic = SoulEnergyLogic
 
 do
-    --------------------------------------------------
-    -- Config
-    --------------------------------------------------
     local MAX_LEVEL   = 120
     local START_LEVEL = 1
 
-    --------------------------------------------------
-    -- Utils / Events
-    --------------------------------------------------
     local function emit(evt, payload)
         local PB = rawget(_G, "ProcBus")
         if PB and PB.Emit then pcall(PB.Emit, evt, payload) end
     end
 
+    -- THIS is the one that might be the issue: using PLAYER_DATA directly.
+    -- we keep it, but we’ll show what it returns.
     local function PD(pid)
         if not PLAYER_DATA then PLAYER_DATA = {} end
         PLAYER_DATA[pid] = PLAYER_DATA[pid] or {}
         local pd = PLAYER_DATA[pid]
-        pd.soulXp  = pd.soulXp  or 0
-        pd.soulLvl = pd.soulLvl or START_LEVEL
+        pd.soulXP    = pd.soulXP    or 0
+        pd.soulLevel = pd.soulLevel or START_LEVEL
         return pd
     end
 
     --------------------------------------------------
-    -- RuneScape-style curve (precomputed)
-    -- totalXpForLevel[L] = floor(sum_{i=1}^{L-1} floor(i + 300*2^(i/7)) / 4)
+    -- RuneScape table
     --------------------------------------------------
     local totalXpForLevel = {}
     local function buildRSTable()
@@ -95,101 +68,130 @@ do
     end
 
     --------------------------------------------------
-    -- Reward lookup (unchanged)
+    -- core API
     --------------------------------------------------
-    local function fromBalance(four)
-        if not _G.GameBalance then return 0 end
-        local t = GameBalance.SOUL_REWARD_BY_FOUR
-        if type(t) == "table" then
-            local v = t[four]
-            if type(v) == "number" and v > 0 then return v end
-        end
-        if type(GameBalance.XP_PER_KILL_BASE) == "number" and GameBalance.XP_PER_KILL_BASE > 0 then
-            return GameBalance.XP_PER_KILL_BASE
-        end
-        return 0
-    end
-
-    local function fromHFIL(four)
-        if _G.HFILUnitConfig and HFILUnitConfig.GetByTypeId then
-            local row = HFILUnitConfig.GetByTypeId(four)
-            if row and type(row.baseSoul) == "number" then return math.max(0, row.baseSoul) end
-        end
-        if _G.HFIL_UnitConfig_Dev and HFIL_UnitConfig_Dev.GetByTypeId then
-            local row = HFIL_UnitConfig_Dev.GetByTypeId(four)
-            if row and type(row.baseSoul) == "number" then return math.max(0, row.baseSoul) end
-        end
-        return 0
-    end
-
-    function SoulEnergyLogic.GetReward(four)
-        if type(four) ~= "number" then return 0 end
-        local v = fromHFIL(four); if v > 0 then return v end
-        v = fromBalance(four);    if v > 0 then return v end
-        return 0
-    end
-
-    --------------------------------------------------
-    -- Core API (XP-only)
-    --------------------------------------------------
-    function SoulEnergyLogic.Get(pid)           -- returns XP (legacy name kept)
-        return PD(pid).soulXp or 0
+    function SoulEnergyLogic.Get(pid)
+        return PD(pid).soulXP or 0
     end
 
     function SoulEnergyLogic.GetXP(pid)
-        return PD(pid).soulXp or 0
+        return PD(pid).soulXP or 0
     end
 
     function SoulEnergyLogic.GetLevel(pid)
-        return PD(pid).soulLvl or START_LEVEL
+        return PD(pid).soulLevel or START_LEVEL
     end
 
-    function SoulEnergyLogic.LevelProgress(pid)
-        local pd = PD(pid)
-        local lvl = pd.soulLvl
-        local curTotal  = SoulEnergyLogic.LevelToTotalXp(lvl)
-        local nextTotal = SoulEnergyLogic.LevelToTotalXp(lvl + 1)
-        local into = (pd.soulXp or 0) - curTotal
-        local need = nextTotal - curTotal
-        if need < 1 then need = 1 end
-        if into < 0 then into = 0 end
-        return into, need, curTotal, nextTotal
-    end
+ local function applyLevelRecalc(pid, pd)
+    local old = pd.soulLevel or START_LEVEL
+    local new = SoulEnergyLogic.XpToLevel(pd.soulXP or 0)
+    pd.soulLevel = new
 
-    local function applyLevelRecalc(pid, pd)
-        local old = pd.soulLvl or START_LEVEL
-        local new = SoulEnergyLogic.XpToLevel(pd.soulXp or 0)
-        pd.soulLvl = new
-        if new > old then
-            emit("OnSoulLevelUp",  { pid = pid, level = new, gained = (new - old) })
+    if new > old then
+        local gained = new - old
+
+        -- try to get hero (can be nil early)
+        local u = nil
+        if _G.PlayerData and PlayerData.GetHero then
+            u = PlayerData.GetHero(pid)
         end
+
+        -- how much per level (for the hero stats)
+        local perLevel = 3
+
+        -- run once per level gained so big XP jumps still give stats
+        for _ = 1, gained do
+            -- Call HeroStatSystem's OnLevelUp function to handle per-level stat increases
+            if u and _G.HeroStatSystem and HeroStatSystem.OnLevelUp then
+                HeroStatSystem.OnLevelUp(pid, 1) -- You can pass `1` to indicate the level-up increment
+            end
+        end
+
+        -- Sync updated base stats into PlayerData after the level-up
+        if _G.PlayerData and PlayerData.SetStats then
+            local pdStats = PlayerData.GetStats(pid)
+            pdStats.power   = (pdStats.power or 0) + perLevel
+            pdStats.defense = (pdStats.defense or 0) + math.floor((pdStats.basestr or 0) * 0.5)
+            pdStats.speed   = (pdStats.speed or 0) + math.floor((pdStats.baseagi or 0) * 0.75)
+        end
+
+        -- fire level-up event like before
+        emit("OnSoulLevelUp", { pid = pid, level = new, gained = gained })
     end
+end
+
+
 
     function SoulEnergyLogic.Set(pid, xp)
         local pd = PD(pid)
         local newXp = math.max(0, tonumber(xp) or 0)
-        pd.soulXp = newXp
+        pd.soulXP = newXp
         applyLevelRecalc(pid, pd)
         emit("OnSoulXPChanged", { pid = pid, xp = newXp })
-        -- Legacy mirror for UIs listening to OnSoulChanged
         emit("OnSoulChanged",   { pid = pid, value = newXp })
         return newXp
     end
 
-    -- delta <= 0 is ignored (XP never decreases)
+    -- THIS is what your chat command should be hitting.
     function SoulEnergyLogic.Add(pid, delta, reason, meta)
         local d = tonumber(delta) or 0
-        if d <= 0 then return PD(pid).soulXp or 0 end
+        if d <= 0 then
+            -- show we got called but ignored
+            DisplayTextToPlayer(Player(pid), 0, 0, "[SoulLogic] Add called but delta <= 0 (" .. tostring(d) .. ")")
+            return PD(pid).soulXP or 0
+        end
+
         local pd = PD(pid)
-        pd.soulXp = (pd.soulXp or 0) + d
+        local before = pd.soulXP or 0
+
+        pd.soulXP = before + d
         applyLevelRecalc(pid, pd)
-        emit("OnSoulXPChanged", { pid = pid, xp = pd.soulXp })
-        emit("OnSoulChanged",   { pid = pid, value = pd.soulXp }) -- legacy
+
+        emit("OnSoulXPChanged", { pid = pid, xp = pd.soulXP })
+        emit("OnSoulChanged",   { pid = pid, value = pd.soulXP })
         emit("OnSoulPing",      { pid = pid, delta = d })
-        return pd.soulXp
+
+        -- DIAG: show actual write
+        DisplayTextToPlayer(Player(pid), 0, 0,
+            "[SoulLogic] pid=" .. tostring(pid) ..
+            " before=" .. tostring(before) ..
+            " + " .. tostring(d) ..
+            " => " .. tostring(pd.soulXP))
+
+        return pd.soulXP
     end
 
-    -- XP-only system: cannot spend
+    -- Award XP based on unit type and HFILUnitConfig
+function AwardXPFromHFILUnitConfig(kpid, dead)
+    -- Ensure HFILUnitConfig is available
+    if not rawget(_G, "HFILUnitConfig") then
+        print("HFILUnitConfig is not available.")
+        return
+    end
+
+    local unitTypeId = GetUnitTypeId(dead)  -- Get the unit type ID of the dead unit
+
+    -- Fetch the XP reward from HFILUnitConfig using unitTypeId
+    local unitConfig = HFILUnitConfig.GetByTypeId(unitTypeId)
+    
+    local baseXP = 0
+    if unitConfig and unitConfig.baseSoul then
+        baseXP = unitConfig.baseSoul  -- Fetch base XP from the unit config
+    else
+        -- Fallback to GameBalance if no entry in HFILUnitConfig
+        baseXP = GameBalance.XP_PER_KILL_BASE or 0
+    end
+
+    -- If baseXP is greater than 0, apply XP to the player
+    if baseXP > 0 and kpid and _G.SoulEnergy and SoulEnergy.AddXp then
+        print("Adding XP to player:", kpid, "XP:", baseXP)  -- Debug log
+        pcall(SoulEnergy.AddXp, kpid, baseXP)
+    else
+        print("No XP to add for player:", kpid)
+    end
+end
+
+
     function SoulEnergyLogic.Spend(pid, cost)
         return false
     end
@@ -197,6 +199,8 @@ do
     function SoulEnergyLogic.Ping(pid, amount)
         emit("OnSoulPing", { pid = pid, delta = amount or 0 })
     end
+
+    --------------------------------------------------
 
     OnInit.final(function()
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then

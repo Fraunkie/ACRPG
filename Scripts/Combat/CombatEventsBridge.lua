@@ -272,45 +272,65 @@ do
     -- Core damage and kill hooks
     --------------------------------------------------
     local function onDamageCurrent(d)
-        local src, tgt = d.source, d.target
-        if not ValidUnit(src) or not ValidUnit(tgt) then return end
-        if IsBag(src) or IsBag(tgt) then return end
+    local src, tgt = d.source, d.target
+    if not ValidUnit(src) or not ValidUnit(tgt) then return end
+    if IsBag(src) or IsBag(tgt) then return end
 
-        local pid = pidOf(src)
-        if pid then
-            lastHitAt[pid] = now()
-            -- Confirm combat on real contact
-            enterCombat(pid, "damage")
-            -- Any pending aggro is satisfied by real damage
-            cancelAggroWindow(pid)
-        end
+    local pid = pidOf(src)
+    if pid then
+        lastHitAt[pid] = now()
+        -- Confirm combat on real contact
+        enterCombat(pid, "damage")
+        -- Any pending aggro is satisfied by real damage
+        cancelAggroWindow(pid)
+    end
 
-        if pid == nil or not passRecordGate(pid, tgt) then return end
+    if pid == nil or not passRecordGate(pid, tgt) then return end
 
-        local amt = sanitizeAmount(d.amount)
-        if amt <= 0 then return end
+    local amt = sanitizeAmount(d.amount)
+    if amt <= 0 then return end
 
-        -- HUD and DPS bus
-        emit("OnDealtDamage", { pid = pid, source = src, target = tgt, amount = amt })
+    -- Debug: Output damage being dealt
+    DisplayTextToPlayer(GetOwningPlayer(src), 0, 0, "Damage Dealt: " .. tostring(amt))
 
-        -- Threat
-        local threatAdd = math.floor(amt * (THREAT_PER_DAMAGE or 1.0))
-        if threatAdd > 0 then
-            AddThreatTS(src, tgt, threatAdd)
-            if _G.AggroManager and AggroManager.AddThreat then
-                pcall(AggroManager.AddThreat, tgt, pid, threatAdd)
-            end
-        end
+    -- HUD and DPS bus
+    emit("OnDealtDamage", { pid = pid, source = src, target = tgt, amount = amt })
 
-        -- Spirit Drive
-        if SD_ON_HIT ~= 0 and pid and _G.SpiritDrive and SpiritDrive.Add then
-            local melee = isMeleeAttacker(src)
-            local isAtk = (d.isAttack == nil) and true or (d.isAttack == true)
-            if melee and isAtk and passSDGate(pid, tgt) then
-                pcall(SpiritDrive.Add, pid, SD_ON_HIT)
-            end
+    -- Threat
+    local threatAdd = math.floor(amt * (THREAT_PER_DAMAGE or 1.0))
+    if threatAdd > 0 then
+        AddThreatTS(src, tgt, threatAdd)
+        if _G.AggroManager and AggroManager.AddThreat then
+            pcall(AggroManager.AddThreat, tgt, pid, threatAdd)
         end
     end
+
+    -- Spirit Drive
+    if SD_ON_HIT ~= 0 and pid and _G.SpiritDrive and SpiritDrive.Add then
+        local melee = isMeleeAttacker(src)
+        local isAtk = (d.isAttack == nil) and true or (d.isAttack == true)
+        if melee and isAtk and passSDGate(pid, tgt) then
+            pcall(SpiritDrive.Add, pid, SD_ON_HIT)
+        end
+    end
+
+    -- Apply damage dynamically based on damage type
+    if d.isAttack then
+        -- Apply physical damage if it's an attack (melee or ranged)
+        DamageEngine.applyPhysicalDamage(src, tgt, amt)
+        DamageEngine.showArcingDamageText(src, tgt, amt, DAMAGE_TYPE_NORMAL)
+    elseif d.isAttack == false then
+        -- Apply spell or energy-based damage
+        DamageEngine.applySpellDamage(src, tgt, amt, DAMAGE_TYPE_MAGIC)
+        DamageEngine.showArcingDamageText(src, tgt, amt, DAMAGE_TYPE_MAGIC)
+    else
+        -- Apply true damage (e.g., critical)
+        DamageEngine.applyTrueDamage(src, tgt, amt)
+    end
+
+    -- Show the arcing damage text after damage is applied
+end
+
 
     local function onKillCurrent(d)
         local dead, killer = d.target, d.source
@@ -327,18 +347,7 @@ do
         emit("OnKill",      { pid = kpid, source = killer, target = dead })
         emit("OnHeroDeath", { pid = pidOf(dead), unit = dead })
 
-        -- Reward soul or xp
-        do
-            local base = 0
-            if rawget(_G, "SoulEnergyLogic") and SoulEnergyLogic.GetReward then
-                base = SoulEnergyLogic.GetReward(GetUnitTypeId(dead)) or 0
-            elseif GameBalance and GameBalance.XP_PER_KILL_BASE then
-                base = GameBalance.XP_PER_KILL_BASE
-            end
-            if base > 0 and kpid and _G.SoulEnergy and SoulEnergy.Add then
-                pcall(SoulEnergy.Add, kpid, base)
-            end
-        end
+       AwardXPFromHFILUnitConfig(kpid, dead)
 
         if SD_ON_KILL ~= 0 and kpid and _G.SpiritDrive and SpiritDrive.Add then
             pcall(SpiritDrive.Add, kpid, SD_ON_KILL)

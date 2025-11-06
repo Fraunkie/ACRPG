@@ -1,3 +1,5 @@
+if Debug and Debug.beginFile then Debug.beginFile("BootFlow.lua") end
+--@debug
 if not Bootflow then Bootflow = {} end
 _G.Bootflow = Bootflow
 
@@ -223,7 +225,7 @@ do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 if GetLocalPlayer() == Player(pid) then
                     BlzHideOriginFrames(true) 
-                    BlzFrameSetSize(BlzGetFrameByName("ConsoleUIBackdrop",0), 0, 0.0001)
+                   -- BlzFrameSetSize(BlzGetFrameByName("ConsoleUIBackdrop",0), 0, 0.0001)
                     BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_HERO_BAR,0), false)
                     BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_MINIMAP,0), false)
                     BlzFrameSetVisible(BlzGetOriginFrame(ORIGIN_FRAME_COMMAND_BUTTON, 0), false)
@@ -322,7 +324,7 @@ do
 
 
                     BlzFrameSetAlpha( BlzGetFrameByName("SimpleInventoryCover", 0), 0)
-                    BlzFrameSetVisible(BlzFrameGetChild(BlzGetFrameByName("ConsoleUI", 0), 5), false)
+                   -- BlzFrameSetVisible(BlzFrameGetChild(BlzGetFrameByName("ConsoleUI", 0), 5), false)
                     if CommandUIKiller and CommandUIKiller.Apply then
                         CommandUIKiller.Apply(pid)
                     end
@@ -336,3 +338,4 @@ do
         end
     end)
 end
+if Debug and Debug.endFile then Debug.endFile() end

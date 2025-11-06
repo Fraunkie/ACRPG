@@ -59,10 +59,10 @@ do
   local TEX_BTN        = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller.blp"  -- Button texture
 
   -- Border Textures (replace these with your border textures)
-local TEX_BORDER_LEFT = "war3mapImported\\SideMenuBorder.blp"
-local TEX_BORDER_RIGHT = "war3mapImported\\SideMenuBorder.blp"
-local TEX_BORDER_TOP = "war3mapImported\\TopMenuBorder.blp"
-local TEX_BORDER_BOTTOM = "war3mapImported\\BottomMenuBorder.blp"
+local TEX_BORDER_LEFT = "UI\\Widgets\\EscMenu\\Human\\borderstone.blp"
+local TEX_BORDER_RIGHT = "UI\\Widgets\\EscMenu\\Human\\borderstone.blp"
+local TEX_BORDER_TOP = "UI\\Widgets\\EscMenu\\Human\\borderstone.blp"
+local TEX_BORDER_BOTTOM = "UI\\Widgets\\EscMenu\\Human\\borderstone.blp"
 
   local W_OUT, H_OUT   = 0.48, 0.42
   local RAIL_W         = 0.12

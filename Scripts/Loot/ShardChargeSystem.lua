@@ -1,8 +1,10 @@
 if Debug and Debug.beginFile then Debug.beginFile("ShardChargeSystem.lua") end
 --==================================================
--- ShardChargeSystem.lua
--- Marks shard items as charged and manages consumption.
--- Integrates with SpiritDrive full events.
+-- ShardChargeSystem.lua (per-shard conditions)
+-- • CURRENT: only Goku shard (I00W)
+-- • Cond: player has it in CUSTOM inventory AND Spirit Drive hits 100
+-- • Effect: mark charged in PLAYER_DATA and tell the player
+-- • No WC3 item charges, no fragment cost
 --==================================================
 
 if not ShardChargeSystem then ShardChargeSystem = {} end
@@ -10,207 +12,130 @@ _G.ShardChargeSystem = ShardChargeSystem
 
 do
     --------------------------------------------------
-    -- Config
+    -- CONFIG
     --------------------------------------------------
-    local CHARGE_ON_FULL_SD       = true
-    local ONE_CHARGE_PER_FULL     = true
-    local SET_ITEM_CHARGES_VISUAL = true
+    local GOKU_SHARD_ID = FourCC("I00W")
+
+    -- later we can add more:
+    -- [FourCC("I0XY")] = { id=FourCC("I0XY"), cond="boss_killed:garlicjr" },
+    local SHARD_RULES = {
+        [GOKU_SHARD_ID] = {
+            id   = GOKU_SHARD_ID,
+            name = "Goku Ascension Shard",
+            mode = "spirit_full",  -- current mode
+        },
+    }
 
     --------------------------------------------------
-    -- Helpers
+    -- INTERNAL HELPERS
     --------------------------------------------------
     local function dprint(s)
         if Debug and Debug.printf then Debug.printf("[ShardCharge] " .. tostring(s)) end
     end
 
-    local function validUnit(u) return u and GetUnitTypeId(u) ~= 0 end
-
     local function PD(pid)
-        if not PLAYER_DATA then PLAYER_DATA = {} end
+        PLAYER_DATA = PLAYER_DATA or {}
         PLAYER_DATA[pid] = PLAYER_DATA[pid] or {}
         local pd = PLAYER_DATA[pid]
-        pd.chargedShards   = pd.chargedShards   or {}
-        pd.chargedFamilies = pd.chargedFamilies or {}
+        pd.chargedShards = pd.chargedShards or {}
         return pd
     end
 
-    local function getHero(pid)
-        local pd = PD(pid)
-        if validUnit(pd.hero) then return pd.hero end
-        if _G.PlayerHero and validUnit(_G.PlayerHero[pid]) then return _G.PlayerHero[pid] end
-        return nil
+    -- read custom inventory (NOT WC3 inventory)
+    local function listCustomInv(pid)
+        if _G.InventoryService and InventoryService.List then
+            local ok, list = pcall(InventoryService.List, pid)
+            if ok and type(list) == "table" then
+                return list
+            end
+        end
+        return {}
     end
 
-    local function familyKeyForItemType(itemTypeId)
-        if _G.GameBalance and GameBalance.FamilyKeyForItem then
-            local fk = GameBalance.FamilyKeyForItem(itemTypeId)
-            if fk then return fk end
-        end
-        if _G.ShardFamilySystem and ShardFamilySystem.GetFamilyByItemId then
-            local ok, fk = pcall(ShardFamilySystem.GetFamilyByItemId, itemTypeId)
-            if ok and fk then return fk end
-        end
-        if _G.ShardSystem and ShardSystem.GetFamilyKeyByItem then
-            local ok2, fk2 = pcall(ShardSystem.GetFamilyKeyByItem, itemTypeId)
-            if ok2 and fk2 then return fk2 end
-        end
-        return nil
-    end
-
-    local function isShardItemHandle(it)
-        if not it then return false end
-        if _G.ShardSystem and ShardSystem.IsShardItemHandle then
-            local ok, res = pcall(ShardSystem.IsShardItemHandle, it)
-            if ok then return res == true end
-        end
-        -- fallback heuristic: look for a known family mapping
-        local id = GetItemTypeId(it)
-        if id == 0 then return false end
-        return familyKeyForItemType(id) ~= nil
-    end
-
-    --------------------------------------------------
-    -- Public queries
-    --------------------------------------------------
-    function ShardChargeSystem.IsCharged(pid, itemTypeId)
-        local pd = PD(pid)
-        return pd.chargedShards[itemTypeId] == true
-    end
-
-    function ShardChargeSystem.HasChargedShard(pid)
-        local pd = PD(pid)
-        -- check inventory
-        local u = getHero(pid)
-        if not validUnit(u) then return false end
-        for slot = 0, 5 do
-            local it = UnitItemInSlot(u, slot)
-            if it then
-                local id = GetItemTypeId(it)
-                if id ~= 0 and pd.chargedShards[id] then
-                    return true
-                end
+    -- does player have this itemId in custom inv?
+    local function hasCustomItem(pid, itemId)
+        local list = listCustomInv(pid)
+        for _, v in ipairs(list) do
+            if v == itemId then
+                return true
             end
         end
         return false
     end
 
-    --------------------------------------------------
-    -- Charging and consuming
-    --------------------------------------------------
-    local function markCharged(pid, itemTypeId, famKey, itemHandle)
+    -- mark charged + notify + tell UI (if exists)
+    local function markCharged(pid, itemId, niceName)
         local pd = PD(pid)
-        pd.chargedShards[itemTypeId] = true
-        if famKey then pd.chargedFamilies[famKey] = true end
-        if SET_ITEM_CHARGES_VISUAL and itemHandle and SetItemCharges then
-            pcall(SetItemCharges, itemHandle, 1)
+        pd.chargedShards[itemId] = true
+
+        local p = Player(pid)
+        if niceName and niceName ~= "" then
+            DisplayTextToPlayer(p, 0, 0, niceName .. " (Charged)")
+        else
+            DisplayTextToPlayer(p, 0, 0, "Shard charged.")
         end
-        dprint("charged item " .. tostring(itemTypeId) .. " for p" .. tostring(pid))
+
+        -- if your inventory UI has a refresh, call it
+        if _G.PlayerMenu_InventoryModule and PlayerMenu_InventoryModule.Render then
+            pcall(PlayerMenu_InventoryModule.Render, pid)
+        end
+
+        -- let other systems know
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.Emit then
+            PB.Emit("OnShardCharged", { pid = pid, itemId = itemId })
+        end
+
+        dprint("charged shard " .. tostring(itemId) .. " for p" .. tostring(pid))
     end
 
-    function ShardChargeSystem.TryChargeOne(pid)
-        local u = getHero(pid)
-        if not validUnit(u) then return false end
-        for slot = 0, 5 do
-            local it = UnitItemInSlot(u, slot)
-            if it and isShardItemHandle(it) then
-                local id = GetItemTypeId(it)
-                if id ~= 0 and not ShardChargeSystem.IsCharged(pid, id) then
-                    local fam = familyKeyForItemType(id)
-                    markCharged(pid, id, fam, it)
-                    return true
+    --------------------------------------------------
+    -- PUBLIC QUERY (so UI can check)
+    --------------------------------------------------
+    function ShardChargeSystem.IsCharged(pid, itemId)
+        local pd = PD(pid)
+        return pd.chargedShards[itemId] == true
+    end
+
+    --------------------------------------------------
+    -- CORE: handle spirit-drive-full
+    --------------------------------------------------
+    local function onSpiritDriveFull(e)
+        if not e or e.pid == nil then return end
+        local pid = e.pid
+
+        -- scan all defined shards
+        for itemId, rule in pairs(SHARD_RULES) do
+            -- only process spirit-full ones here
+            if rule.mode == "spirit_full" then
+                -- must own the shard in CUSTOM inventory
+                if hasCustomItem(pid, itemId) then
+                    -- must NOT be already charged
+                    if not ShardChargeSystem.IsCharged(pid, itemId) then
+                        markCharged(pid, itemId, rule.name)
+                    end
                 end
             end
         end
-        return false
-    end
-
-    function ShardChargeSystem.TryChargeAll(pid)
-        local u = getHero(pid)
-        if not validUnit(u) then return 0 end
-        local count = 0
-        for slot = 0, 5 do
-            local it = UnitItemInSlot(u, slot)
-            if it and isShardItemHandle(it) then
-                local id = GetItemTypeId(it)
-                if id ~= 0 and not ShardChargeSystem.IsCharged(pid, id) then
-                    local fam = familyKeyForItemType(id)
-                    markCharged(pid, id, fam, it)
-                    count = count + 1
-                end
-            end
-        end
-        return count
-    end
-
-    -- Consume any one charged shard in inventory
-    function ShardChargeSystem.ConsumeChargedShard(pid)
-        local pd = PD(pid)
-        local u = getHero(pid)
-        if not validUnit(u) then return false end
-        for slot = 0, 5 do
-            local it = UnitItemInSlot(u, slot)
-            if it then
-                local id = GetItemTypeId(it)
-                if id ~= 0 and pd.chargedShards[id] then
-                    pd.chargedShards[id] = nil
-                    if SetItemCharges then pcall(SetItemCharges, it, 0) end
-                    dprint("consumed charged shard " .. tostring(id) .. " for p" .. tostring(pid))
-                    return true
-                end
-            end
-        end
-        return false
-    end
-
-    function ShardChargeSystem.ClearAll(pid)
-        local pd = PD(pid)
-        pd.chargedShards = {}
-        pd.chargedFamilies = {}
-        dprint("cleared all charges for p" .. tostring(pid))
     end
 
     --------------------------------------------------
-    -- Wiring: auto charge when SpiritDrive is full
+    -- INIT
     --------------------------------------------------
-    local function wireSpiritDrive()
-        if not CHARGE_ON_FULL_SD then return end
+    OnInit.final(function()
+        -- hook into ProcBus
         local PB = rawget(_G, "ProcBus")
         if PB and PB.On then
-            PB.On("OnSpiritDriveFull", function(e)
-                if not e or e.pid == nil then return end
-                local pid = e.pid
-                if ONE_CHARGE_PER_FULL then
-                    ShardChargeSystem.TryChargeOne(pid)
-                else
-                    ShardChargeSystem.TryChargeAll(pid)
-                end
-            end)
-            return
+            PB.On("OnSpiritDriveFull", onSpiritDriveFull)
+            dprint("wired to ProcBus.OnSpiritDriveFull")
+        else
+            dprint("WARNING: ProcBus missing, shard auto-charge will not run.")
         end
-        -- direct subscription fallback if SpiritDrive has its own subscribe
-        if _G.SpiritDrive and SpiritDrive.Subscribe then
-            SpiritDrive.Subscribe("OnFull", function(pid)
-                if ONE_CHARGE_PER_FULL then
-                    ShardChargeSystem.TryChargeOne(pid)
-                else
-                    ShardChargeSystem.TryChargeAll(pid)
-                end
-            end)
-        end
-    end
 
-    --------------------------------------------------
-    -- Init
-    --------------------------------------------------
-    if OnInit and OnInit.final then
-        OnInit.final(function()
-            wireSpiritDrive()
-            dprint("ready")
-            if rawget(_G, "InitBroker") and InitBroker.SystemReady then
-                InitBroker.SystemReady("ShardChargeSystem")
-            end
-        end)
-    end
+        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
+            InitBroker.SystemReady("ShardChargeSystem")
+        end
+    end)
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

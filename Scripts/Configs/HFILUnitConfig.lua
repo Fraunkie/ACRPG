@@ -22,6 +22,15 @@ do
     local SRC = {
         ["n001"] = {
             baseSoul = 12,
+            health   = 200, -- check to see if = to actual unit HP change if not  for testing i have it marked as 175 in editor
+            armor    = 5,
+            damage   = 10,
+            energyResist = 5,
+            dodge = 0,
+            parry = 0,
+            block = 0,
+            crit = 1,
+            critMult = 1.5,
             isElite  = false,
             abilities = {
                 { order = "berserk", castWhenHpBelow = 50, cooldown = 8 },

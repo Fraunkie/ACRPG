@@ -256,29 +256,6 @@ do; local _, codeLoc = pcall(error, "", 2) --get line number where DebugUtils be
     --localization
     local settings, paramLog, nameCache, nameDepths, autoIndexedTables, nameCacheMirror, sourceMap, printCache, data = Debug.settings, Debug.data.paramLog, Debug.data.nameCache, Debug.data.nameDepths, Debug.data.autoIndexedTables, Debug.data.nameCacheMirror, Debug.data.sourceMap, Debug.data.printCache, Debug.data
 
-    -- ===== Simple color + logger helpers (global) =====
-        Color = Color or {
-        GOLD   = "|cFFFFD700",
-        GREEN  = "|cFF00FF00",
-        CYAN   = "|cFF00FFFF",
-        ORANGE = "|cFFFFA500",
-        RED    = "|cFFFF4040",
-        GRAY   = "|cFFB0B0B0",
-        WHITE  = "|cFFFFFFFF",
-        END    = "|r",
-        }
-
--- Tag-style print: Log("LootSystem", Color.GOLD, "Using DamageEngine lethal hook.")
-function Log(tag, color, msg)
-  print((color or "") .. "[" .. tostring(tag) .. "]" .. Color.END .. " " .. tostring(msg))
-end
-
--- printf-style convenience: Logf("ThreatSystem", Color.CYAN, "Registered %d creeps", count)
-function Logf(tag, color, fmt, ...)
-  print((color or "") .. "[" .. tostring(tag) .. "]" .. Color.END .. " " .. string.format(fmt, ...))
-end
--- ==================================================
-
     --Write DebugUtils first line number to sourceMap:
     Debug.data.sourceMap[1].firstLine = tonumber(codeLoc:match(":\x25d+"):sub(2,-1))
 

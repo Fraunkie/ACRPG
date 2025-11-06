@@ -6,6 +6,9 @@ if Debug and Debug.beginFile then Debug.beginFile("DamageResolver.lua") end
 -- API:
 --   DamageResolver.Resolve(ctx) -> { amount, result, isCrit }
 -- Uses StatSystem first; falls back to PlayerData if needed.
+-- Also: if DamageEngine.showCombatResultText exists, we show
+--       CRIT / BLOCK / DODGE / PARRY tags right here, AFTER
+--       we know the final outcome.
 --==================================================
 
 if not DamageResolver then DamageResolver = {} end
@@ -15,8 +18,14 @@ do
     --------------------------------------------------
     -- Helpers
     --------------------------------------------------
-    local function ValidUnit(u) return u and GetUnitTypeId(u) ~= 0 end
-    local function rnd() return GetRandomReal(0.0, 1.0) end
+    local function ValidUnit(u)
+        return u and GetUnitTypeId(u) ~= 0
+    end
+
+    local function rnd()
+        return GetRandomReal(0.0, 1.0)
+    end
+
     local function clamp01(x)
         if x < 0 then return 0 end
         if x > 1 then return 1 end
@@ -25,7 +34,9 @@ do
 
     local function GB(key, def)
         local GB = rawget(_G, "GameBalance")
-        if GB and GB[key] ~= nil then return GB[key] end
+        if GB and GB[key] ~= nil then
+            return GB[key]
+        end
         return def
     end
 
@@ -34,19 +45,27 @@ do
 
     -- classify: default to Physical for basic attacks, Energy otherwise
     local function isEnergyHit(ctx)
-        if ctx == nil then return false end
-        if ctx.isAttack == true then return false end
+        if ctx == nil then
+            return false
+        end
+        if ctx.isAttack == true then
+            return false
+        end
         -- You can tag specific spells later to force Energy true.
         return true
     end
 
     local function armorMitigate(amt, armor)
-        if armor <= 0 then return amt end
+        if armor <= 0 then
+            return amt
+        end
         return amt * (100.0 / (100.0 + armor))
     end
 
     local function resistMitigate(amt, resist)
-        if resist <= 0 then return amt end
+        if resist <= 0 then
+            return amt
+        end
         return amt * (100.0 / (100.0 + resist))
     end
 
@@ -56,7 +75,10 @@ do
         local PD = rawget(_G, "PlayerData")
 
         local function pidOf(u)
-            local p = GetOwningPlayer(u); if not p then return nil end
+            local p = GetOwningPlayer(u)
+            if not p then
+                return nil
+            end
             return GetPlayerId(p)
         end
 
@@ -84,15 +106,29 @@ do
 
         if PD then
             if tgtPid ~= nil then
-                if armor == 0 and PD.GetArmor then armor = PD.GetArmor(tgtPid) or armor end
-                if eres  == 0 and PD.GetEnergyResist then eres  = PD.GetEnergyResist(tgtPid) or eres end
-                if dodge == 0 and PD.GetDodge then dodge = PD.GetDodge(tgtPid) or dodge end
-                if parry == 0 and PD.GetParry then parry = PD.GetParry(tgtPid) or parry end
-                if block == 0 and PD.GetBlock then block = PD.GetBlock(tgtPid) or block end
+                if armor == 0 and PD.GetArmor then
+                    armor = PD.GetArmor(tgtPid) or armor
+                end
+                if eres == 0 and PD.GetEnergyResist then
+                    eres = PD.GetEnergyResist(tgtPid) or eres
+                end
+                if dodge == 0 and PD.GetDodge then
+                    dodge = PD.GetDodge(tgtPid) or dodge
+                end
+                if parry == 0 and PD.GetParry then
+                    parry = PD.GetParry(tgtPid) or parry
+                end
+                if block == 0 and PD.GetBlock then
+                    block = PD.GetBlock(tgtPid) or block
+                end
             end
             if srcPid ~= nil then
-                if critC == 0 and PD.GetCrit then critC = PD.GetCrit(srcPid) or critC end
-                if (not critM or critM <= 1.0) and PD.GetCritMult then critM = PD.GetCritMult(srcPid) or critM end
+                if critC == 0 and PD.GetCrit then
+                    critC = PD.GetCrit(srcPid) or critC
+                end
+                if (not critM or critM <= 1.0) and PD.GetCritMult then
+                    critM = PD.GetCritMult(srcPid) or critM
+                end
             end
         end
 
@@ -111,23 +147,38 @@ do
     -- Resolve
     --------------------------------------------------
     function DamageResolver.Resolve(ctx)
+        -- ctx = { source, target, amount, isAttack, ... }
         if not ctx or not ValidUnit(ctx.target) then
-            return { amount = ctx and ctx.amount or 0, result = "HIT", isCrit = false }
+            return {
+                amount = ctx and ctx.amount or 0,
+                result = "HIT",
+                isCrit = false
+            }
         end
 
-        local src, tgt = ctx.source, ctx.target
+        local src = ctx.source
+        local tgt = ctx.target
         local amt = tonumber(ctx.amount or 0) or 0
-        if amt <= 0 then return { amount = 0, result = "HIT", isCrit = false } end
+        if amt <= 0 then
+            return { amount = 0, result = "HIT", isCrit = false }
+        end
 
         local st = getStats(src, tgt)
 
         -- Avoidance (priority: dodge > parry > block)
         if rnd() < st.dodge then
             ctx.result = "DODGE"
+            if DamageEngine and DamageEngine.showCombatResultText then
+                DamageEngine.showCombatResultText(tgt, "DODGE")
+            end
             return { amount = 0, result = "DODGE", isCrit = false }
         end
+
         if rnd() < st.parry then
             ctx.result = "PARRY"
+            if DamageEngine and DamageEngine.showCombatResultText then
+                DamageEngine.showCombatResultText(tgt, "PARRY")
+            end
             return { amount = 0, result = "PARRY", isCrit = false }
         end
 
@@ -141,15 +192,15 @@ do
         -- Mitigation: Energy uses energy resist; Physical uses armor
         if isEnergyHit(ctx) then
             amt = resistMitigate(amt, st.eres)
-            ctx.isEnergy = true
+            ctx.isEnergy   = true
             ctx.isPhysical = false
         else
             amt = armorMitigate(amt, st.armor)
-            ctx.isEnergy = false
+            ctx.isEnergy   = false
             ctx.isPhysical = true
         end
 
-        -- Crit (allowed on both; you can restrict to basic attacks later)
+        -- Crit (allowed on both)
         local didCrit = false
         if amt > 0 and rnd() < st.critC then
             amt = amt * st.critM
@@ -159,12 +210,24 @@ do
             end
         end
 
-        if amt < 0 then amt = 0 end
+        if amt < 0 then
+            amt = 0
+        end
+
         if ctx.result ~= "BLOCK" and not didCrit then
             ctx.result = "HIT"
         end
 
-        return { amount = amt, result = ctx.result, isCrit = didCrit }
+        -- Show outcome tag here (only if not just HIT)
+        if DamageEngine and DamageEngine.showCombatResultText and ctx.result and ctx.result ~= "HIT" then
+            DamageEngine.showCombatResultText(tgt, ctx.result)
+        end
+
+        return {
+            amount = amt,
+            result = ctx.result,
+            isCrit = didCrit
+        }
     end
 end
 

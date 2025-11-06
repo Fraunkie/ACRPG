@@ -252,7 +252,7 @@ do
 
     function CustomSpellBar.ActivateSlot(pid, slotIndex)
         if GetLocalPlayer() ~= Player(pid) then return end
-
+            
         local e = slots[pid] and slots[pid][slotIndex]
         if not e then
             DisplayTextToPlayer(Player(pid), 0, 0, "No ability in this slot.")
@@ -305,7 +305,6 @@ do
     -- INIT
     --------------------------------------------------
     OnInit.final(function()
-        -- Example runner mapping
         RUNNER[FourCC('A002')] = function(caster)
             if _G.Spell_SoulBurst and Spell_SoulBurst.Cast then
                 Spell_SoulBurst.Cast(caster)
@@ -314,14 +313,12 @@ do
             return false
         end
         RUNNER[FourCC('A0SV')] = function(caster)
-        local pid = GetPlayerId(GetOwningPlayer(caster))
-            if _G.Spell_SpiritVortex and Spell_SpiritVortex.Use then
-                Spell_SpiritVortex.Use(pid)
+            if _G.Spell_SpiritVortex and Spell_SpiritVortex.Cast then
+                Spell_SpiritVortex.Cast(caster)
                 return true
             end
             return false
         end
-
 
         for pid=0, bj_MAX_PLAYERS-1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then

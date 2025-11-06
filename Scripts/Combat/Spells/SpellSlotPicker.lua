@@ -113,6 +113,17 @@ do
   end
 
   -- Convenience: assign direct and refresh
+
+  function SlotPicker.ClearLoadout(pid)
+    local loadout = ensureLoadout(pid)
+    for i = 1, 9 do
+        loadout[i] = nil  -- Clear each slot
+    end
+    if CustomSpellBar.Refresh then
+        CustomSpellBar.Refresh(pid)  -- Refresh the spell bar UI
+    end
+  end
+
   function SlotPicker.AssignSlot(pid, slotIdx, abilRaw)
     local u = getHero(pid)
     if not validUnit(u) then

@@ -223,15 +223,6 @@ do
             DebugUtils.ToggleDebug(pid)
         end
     end)
-
-    --------------------------------------------------
-    -- Init marker
-    --------------------------------------------------
-    OnInit.final(function()
-        if rawget(_G, "InitBroker") and InitBroker.SystemReady then
-            InitBroker.SystemReady("ChatTriggerRegistry")
-        end
-    end)
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

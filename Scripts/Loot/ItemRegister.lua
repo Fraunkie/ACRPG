@@ -54,6 +54,13 @@ OnInit.final(function()
       slot        = "Chest",
       stats       = { hp = 120, defense = 6 },
     },
+
+    [FourCC("I00W")] = {
+      name = "Goku Ascension Shard (Uncharged)",
+      description = "Shard used to change your hero.",
+      iconpath = "ReplaceableTextures\\CommandButtons\\BTNTatteredSoulcloth.blp",
+      category = "MISC",
+    }
   })
 end)
 

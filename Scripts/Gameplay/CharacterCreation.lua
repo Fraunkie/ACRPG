@@ -44,6 +44,30 @@ do
         return FourCC("H001")
     end
 
+
+    local function test(unit)
+    local data = ALICE_PairLoadData()
+    local dist = ALICE_PairGetDistance2D()
+    local u = ALICE_GetAnchor(unit)
+    local pid = GetPlayerId(GetOwningPlayer(u))
+
+    if dist < 500 then
+        if ALICE_PairIsFirstContact() then
+            DisplayTextToPlayer(Player(pid), 0, 0, "working")
+
+            -- Only call CreateAscensionForPlayer if the player has a charged shard
+            if ShardChargeSystem.HasChargedShard(pid) then
+                -- Call CreateAscensionForPlayer from the other script
+                CreateAscensionForPlayer(pid)  -- Simply call without passing itemid
+            end
+        end
+    else
+        ALICE_PairReset()
+    end
+end
+
+    
+
     function CharacterCreation.Begin(pid)
         local pd = PD(pid)
         if pd.hero then
@@ -69,6 +93,7 @@ do
         CustomSpellBar.BindHero(pid, hero)
         HeroStatSystem.InitializeStats(pid, hero)
         HeroStatSystem.Recalculate(pid)
+        CTT.SetTrees(Player(pid),"Lost Soul")
 
         DisplayTextToPlayer(Player(pid), 0, 0, "Soul successfully created.")
 
@@ -82,6 +107,18 @@ do
         if ProcBus and ProcBus.Emit then
             ProcBus.Emit("OnHeroCreated", { pid = pid, unit = hero })
         end
+
+        -- Add ALICE Actor to Hero Unit
+        local actorData = {
+            identifier = "heroActor", -- Unique identifier for the actor
+            interactions = {h004 = test},  -- Define interactions, like being near an object
+            flags =  {radius = 500, anchor = hero}
+
+        }
+
+        
+        ALICE_Create(hero, actorData.identifier, actorData.interactions)
+        print("Hero actor added to unit.")
     end
 
     function CharacterCreation.ShowMenu(pid)

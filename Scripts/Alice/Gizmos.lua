@@ -78,7 +78,7 @@ do
                                                                 (gizmo, normalSpeed, tangentialSpeed, totalSpeed). If the onTerrainCollision field is empty, ALICE_Kill will be
                                                                 invoked instead. Requires the .collisionRadius field of your table to be set.
     CAT_TerrainBounce                                           A function for onTerrainCollision. Uses the .elasticity field to determine the elasticity of the collision. This
-                                                                value is multiplied by the CAT_Data.TERRAIN_TYPE_ELASTICITY, which can be set in the Objects CAT.
+                                                                value is multiplied by the CAT_Data.TERRAIN_TYPE_ELASTICITY, which can be set in the Data CAT.
     CAT_OutOfBoundsCheck                                        Checks if the gizmo has left the playable map area and destroys it if it does. You can set the .reflectsOnBounds
                                                                 field of your gizmo table to true to make it reflect on the bounds instead of being destroyed. Uses the .maxSpeed
                                                                 field to determine how often the out-of-bounds check is performed, or CAT_Data.DEFAULT_GIZMO_MAX_SPEED if not set.
@@ -115,6 +115,11 @@ do
 
     --=============================================================================================================================================================================
 
+    ---Required fields:
+    -- - lifetime
+    ---
+    ---Optional fields:
+    -- - onExpire
     function CAT_Decay(gizmo)
         gizmo.lifetime = gizmo.lifetime - INTERVAL
         if gizmo.lifetime <= 0 then
@@ -125,6 +130,9 @@ do
         end
     end
 
+    ---Optional fields:
+    -- - elasticity
+    -- - onTerrainCallback
     ---@param gizmo table
     ---@param x number
     ---@param y number
@@ -165,7 +173,7 @@ do
         local H32 = H23
         local H33 = 1 - e*vecN_z^2
 
-        if gizmo.onTerrainCallback ~= nil then
+        if gizmo.onTerrainCallback then
             local totalSpeed = sqrt(gizmo.vx^2 + gizmo.vy^2 + gizmo.vz^2)
             local tangentialSpeed = sqrt(totalSpeed^2 - normalSpeed^2)
             gizmo:onTerrainCallback(normalSpeed, tangentialSpeed, totalSpeed)
@@ -210,6 +218,11 @@ do
         return x - p*dx, y - p*dy
     end
 
+    ---Required fields:
+    -- - collisionRadius
+    ---
+    ---Optional fields:
+    -- - onTerrainCollision
     function CAT_CheckTerrainCollision(gizmo)
         if gizmo.isAirborne == false then
             ALICE_PairPause()
@@ -247,6 +260,9 @@ do
         end
     end
 
+    ---Optional fields:
+    -- - reflectOnBounds
+    -- - maxSpeed
     function CAT_OutOfBoundsCheck(gizmo)
         local nearestDist
         if gizmo.x < gizmoBoundMinX then

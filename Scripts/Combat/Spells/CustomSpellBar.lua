@@ -319,7 +319,18 @@ do
             end
             return false
         end
-
+        RUNNER[FourCC('A0CE')] = function(caster)
+    print("RUNNER triggered for A0CE")  -- Debugging line to check if the runner is triggered
+    if _G.Spell_KiBlast and Spell_KiBlast.Cast then
+        local hero = hero[GetPlayerId(GetOwningPlayer(caster))]
+        if hero then
+            print("Casting Continuous Energy Bullet for hero: ", GetUnitName(caster))  -- Debug print
+            Spell_KiBlast.Cast(hero)  -- Pass the hero to Cast function
+            return true
+        end
+    end
+    return false
+end
         for pid=0, bj_MAX_PLAYERS-1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 if GetLocalPlayer() == Player(pid) then

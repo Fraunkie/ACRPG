@@ -246,6 +246,7 @@ do
         -- LOST SOUL (H001) 
         H001 = {
             { name="Soul Spirit",  abil="A000", need={ sl_min=0, passive=true } },
+            { name="Energy Volley",  abil="A0CE", need={ sl_min=0,} },
             { name="Spirit Vortex", abil="A0SV", need={ sl_min=4 } },
             { name="Spirit Burst",  abil="A002", need={ sl_min=8 } },
             { name="Soul Strike", abil="A003", need={ sl_min=15, passive=true } },
@@ -255,6 +256,14 @@ do
         H003 = {
             { name="Training Focus", abil="A01J", need={ pl_min=1, passive=true } },
         },
+    }
+
+
+    GameBalance.TALENT_TREES = GameBalance.TALENT_TREES or {
+        H001 = "LostSoul",  -- Link LostSoul hero to the LostSoul talent tree
+        H000 = "Goku",      -- Link Goku hero to the Goku talent tree
+        H002 = "Vegeta",    -- Link Vegeta hero to the Vegeta talent tree
+        -- Add more heroes here as needed
     }
 
     -- Normalize to numeric FourCC keys

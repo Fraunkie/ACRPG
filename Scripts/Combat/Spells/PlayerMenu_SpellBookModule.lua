@@ -309,17 +309,52 @@ do
     end)
 
     local trigT = CreateTrigger()
-    BlzTriggerRegisterFrameEvent(trigT, ui.tabTalents, FRAMEEVENT_CONTROL_CLICK)
-    TriggerAddAction(trigT, function()
-      tipHide(pid)
-      BlzFrameSetTexture(ui.bg, TEX_PANEL_ALT, 0, true)
-      clearTiles(pid)
-      local text = BlzCreateFrameByType("TEXT","SB_TalentsText", ui.root, "", 0)
-      BlzFrameSetPoint(text, FRAMEPOINT_TOPLEFT, ui.root, FRAMEPOINT_TOPLEFT, PAD, - (TOP_H + PAD + PAD))
-      BlzFrameSetText(text, "Talents placeholder\nComing soon")
-      UI[pid].tiles[#UI[pid].tiles+1] = { root = text }
-      setTilesVisible(pid, true)
-    end)
+BlzTriggerRegisterFrameEvent(trigT, ui.tabTalents, FRAMEEVENT_CONTROL_CLICK)
+TriggerAddAction(trigT, function()
+   tipHide(pid)
+   BlzFrameSetTexture(ui.bg, TEX_PANEL_ALT, 0, true)
+   clearTiles(pid)  -- Clear any previous UI elements
+
+   -- Get the hero unit for this player (pid)
+   local heroUnit = heroOf(pid)
+   if not validUnit(heroUnit) then return end
+
+   -- Get the unit type ID (e.g., H001 for LostSoul)
+   local unitTypeId = GetUnitTypeId(heroUnit)
+
+   -- Get the talent tree(s) for the unit type
+   local talentTrees = GameBalance.TALENT_TREES[unitTypeId]
+   if not talentTrees then return end  -- If no talent trees are found, exit
+
+   -- Create sub-tab buttons for each talent tree at the bottom
+   local startX = PAD  -- Starting X position for the buttons
+   local buttonWidth = 0.1
+   local buttonHeight = 0.03
+   local buttonGap = 0.015  -- Gap between buttons
+
+   for idx, treeName in ipairs(talentTrees) do
+       -- Create the button for each talent tree
+       local button = BlzCreateFrameByType("BUTTON", "", UI[pid].root, "", 0)
+       BlzFrameSetSize(button, buttonWidth, buttonHeight)
+       BlzFrameSetPoint(button, FRAMEPOINT_BOTTOMLEFT, UI[pid].root, FRAMEPOINT_BOTTOMLEFT, startX + (buttonWidth + buttonGap) * (idx - 1), PAD)
+
+       -- Set button label (name of the talent tree)
+       local text = BlzCreateFrameByType("TEXT", "", button, "", 0)
+       BlzFrameSetText(text, treeName)  -- Tree name will be the label
+
+       -- Add action to switch to the selected talent tree when clicked
+       local trigClick = CreateTrigger()
+       BlzTriggerRegisterFrameEvent(trigClick, button, FRAMEEVENT_CONTROL_CLICK)
+       TriggerAddAction(trigClick, function()
+           -- Switch to the selected tree
+           changeBackgroundForTree(pid, treeName)  -- Change background for the selected tree
+           rebuildTalentsForTree(pid, treeName)    -- Rebuild talents for the selected tree
+       end)
+
+       -- Increment X position for the next button
+       startX = startX + buttonWidth + buttonGap
+   end
+end)
 
     local trigToggle = CreateTrigger()
     BlzTriggerRegisterFrameEvent(trigToggle, ui.toggleBtn, FRAMEEVENT_CONTROL_CLICK)

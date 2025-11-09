@@ -246,6 +246,7 @@ do
         -- LOST SOUL (H001) 
         H001 = {
             { name="Soul Spirit",  abil="A000", need={ sl_min=0, passive=true } },
+            { name="Energy Bounce", abil="A0EB", need={ pl_min=0,  sl_min=0 } },
             { name="Energy Volley",  abil="A0CE", need={ sl_min=0,} },
             { name="Spirit Vortex", abil="A0SV", need={ sl_min=4 } },
             { name="Spirit Burst",  abil="A002", need={ sl_min=8 } },

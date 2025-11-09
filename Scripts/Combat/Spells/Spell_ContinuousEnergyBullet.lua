@@ -3,14 +3,14 @@ if Debug then Debug.beginFile("Spell_KiBlast.lua") end
 do
     -- Configurations
     local ABIL_ID_STR = "A0CE"  -- Ability ID for Ki Blast (change this to your spell's ID)
-    local EFFECT_MODEL = "Effect\\KiMissile.mdl"
+    local EFFECT_MODEL = "Effect\\KiMissile.mdl"  -- Model for the Ki Blast visual effect
     local MAX_SPEED = 1000  -- Speed of the Ki Blast
     local DAMAGE = 50       -- Damage dealt by the Ki Blast
     local MAX_RANGE = 1200  -- Max range for the Ki Blast
 
+    -- The state for active Ki Blasts
     Spell_KiBlast = Spell_KiBlast or {}
     _G.Spell_KiBlast = Spell_KiBlast
-    -- State for active Ki Blasts
     local S = {}
 
     -- Helper function to convert strings to FourCC
@@ -21,13 +21,14 @@ do
         return v
     end
 
-    local function validUnit(u) 
+    -- Function to validate if the unit is alive and valid
+    local function validUnit(u)
         return u and GetUnitTypeId(u) ~= 0 and GetWidgetLife(u) > 0.405
     end
 
-    -- Ki Blast hit detection and damage (using DamageEngine for proper spell damage application)
+    -- Ki Blast hit detection and damage application (using DamageEngine for proper spell damage application)
     function KiBlastHit(kiblast, unit)
-        local dist = ALICE_PairGetDistance2D()
+        local dist = ALICE_PairGetDistance3D()  -- Use 3D distance to properly handle vertical movement
 
         -- Debugging: Print the distance and check if the target is an enemy or not
         if Debug then
@@ -78,14 +79,14 @@ do
         end
     end
 
-    -- Ki Blast Gizmo Class
+    -- Ki Blast Gizmo Class (Updated for 3D Movement)
     KiBlast = {
         x = nil,
         y = nil,
         z = 0,   -- Set to 0 for base height (ground level)
         vx = nil,
         vy = nil,
-        vz = 0,  -- No vertical movement
+        vz = 0,  -- No vertical movement (initially no vertical motion)
         visual = nil,
         --ALICE
         identifier = "kiblast",
@@ -93,7 +94,7 @@ do
             unit = KiBlastHit  -- Set the KiBlastHit function to handle unit interactions
         },
         selfInteractions = {
-            CAT_Move2D,  -- Use 2D movement (flat, on ground)
+            CAT_Move3D,  -- 3D movement (not flat on the ground)
             CAT_OutOfBoundsCheck,  -- Check if the Ki Blast is out of bounds
         },
         maxSpeed = MAX_SPEED,
@@ -106,48 +107,55 @@ do
     local kiblastMt = { __index = KiBlast }
 
     function KiBlast.create(caster)
-        local new = {}
-        setmetatable(new, kiblastMt)
-        new.x = GetUnitX(caster)  -- Start position of the Ki Blast (caster's position)
-        new.y = GetUnitY(caster)
-        new.z = 0  -- Set to 0 for base height (ground level)
-        new.vz = 0  -- No vertical movement (flat 3D)
+    local new = {}
+    setmetatable(new, kiblastMt)
+    
+    -- Start position of the Ki Blast (caster's position)
+    new.x = GetUnitX(caster)
+    new.y = GetUnitY(caster)
+    
+    -- Get the caster's current Z position (height) from the terrain
+    new.z = GetTerrainZ(new.x, new.y)  -- Set to the caster's terrain height
+    new.vz = 0  -- No vertical movement (flat 3D)
+    
+    -- Calculate the direction the caster is facing
+    local angle = GetUnitFacing(caster)
+    
+    -- Velocity in the X and Y direction based on the facing angle
+    new.vx = MAX_SPEED * math.cos(angle * bj_DEGTORAD)
+    new.vy = MAX_SPEED * math.sin(angle * bj_DEGTORAD)
 
-        local angle = GetUnitFacing(caster)  -- Direction the hero is facing
-        new.vx = MAX_SPEED * math.cos(angle * bj_DEGTORAD)  -- Velocity in the X direction
-        new.vy = MAX_SPEED * math.sin(angle * bj_DEGTORAD)  -- Velocity in the Y direction
+    -- Create the visual effect for the Ki Blast
+    new.visual = AddSpecialEffect(EFFECT_MODEL, new.x, new.y)  -- Visual effect for the Ki Blast
+    
+    -- Set the Z position of the visual effect to match the caster's height + an offset (visualZ)
+    BlzSetSpecialEffectPosition(new.visual, new.x, new.y, new.z + new.visualZ)  -- Set the visual effect height with visualZ
+    
+    -- Scale the visual effect (optional, adjust based on your preference)
+    BlzSetSpecialEffectScale(new.visual, 0.75)
+    
+    -- Set the yaw of the visual effect to match the unit's facing direction
+    BlzSetSpecialEffectYaw(new.visual, angle * bj_DEGTORAD)
+    
+    -- Assign the owner field to the caster's owner
+    new.owner = GetOwningPlayer(caster)
 
-        -- Create the visual effect for the Ki Blast
-        new.visual = AddSpecialEffect(EFFECT_MODEL, new.x, new.y)  -- Visual effect for the Ki Blast
-        BlzSetSpecialEffectPosition(new.visual, new.x, new.y, new.z + new.visualZ)  -- Set the visual effect height with visualZ
-        BlzSetSpecialEffectScale(new.visual, 0.75)  -- Scale the visual effect
+    -- Add the gizmo to ALICE
+    ALICE_Create(new)
 
-        -- Debugging: Log the Z position of the visual effect
-        if Debug then
-            print("KiBlast Visual Effect Z: " .. new.z + new.visualZ)
-        end
-
-        -- Set the yaw of the visual effect to match the unit's facing direction
-        BlzSetSpecialEffectYaw(new.visual, angle * bj_DEGTORAD)
-
-        -- Assign the owner field to the caster's owner
-        new.owner = GetOwningPlayer(caster)
-
-        -- Add the gizmo to ALICE
-        ALICE_Create(new)
-
-        -- Update the special effect position in 2D each frame (update position as the KiBlast moves)
-        local function updateEffectPosition()
-            -- Continuously update the visual effect's position with the gizmo's position
-            BlzSetSpecialEffectPosition(new.visual, new.x, new.y, new.z + new.visualZ)
-        end
-
-        -- Call this every frame to update the special effect's position
-        new.updateEffectPosition = updateEffectPosition
-
-        -- Return the newly created KiBlast gizmo
-        return new
+    -- Update the special effect position in 3D each frame (update position as the KiBlast moves)
+    local function updateEffectPosition()
+        -- Continuously update the visual effect's position in 3D space (X, Y, Z)
+        BlzSetSpecialEffectPosition(new.visual, new.x, new.y, new.z + new.visualZ)
     end
+
+    -- Call this every frame to update the special effect's position
+    new.updateEffectPosition = updateEffectPosition
+
+    -- Return the newly created KiBlast gizmo
+    return new
+end
+
 
     -- Handle casting the Ki Blast
     function Spell_KiBlast.Cast(caster)

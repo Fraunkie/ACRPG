@@ -305,6 +305,23 @@ do
     -- INIT
     --------------------------------------------------
     OnInit.final(function()
+
+        --------------------------------------------------
+        --- Runners 
+        --------------------------------------------------
+
+        RUNNER[FourCC('A0EB')] = function(caster)
+            print("RUNNER triggered for A0EB")
+            if _G.Spell_EnergyBall and Spell_EnergyBall.Cast then
+                print("Casting Energy Ball for hero:", GetUnitName(caster))
+                Spell_EnergyBall.Cast(caster)
+                return true
+            end
+            return false
+        end
+
+
+
         RUNNER[FourCC('A002')] = function(caster)
             if _G.Spell_SoulBurst and Spell_SoulBurst.Cast then
                 Spell_SoulBurst.Cast(caster)
@@ -320,17 +337,20 @@ do
             return false
         end
         RUNNER[FourCC('A0CE')] = function(caster)
-    print("RUNNER triggered for A0CE")  -- Debugging line to check if the runner is triggered
-    if _G.Spell_KiBlast and Spell_KiBlast.Cast then
-        local hero = hero[GetPlayerId(GetOwningPlayer(caster))]
-        if hero then
-            print("Casting Continuous Energy Bullet for hero: ", GetUnitName(caster))  -- Debug print
-            Spell_KiBlast.Cast(hero)  -- Pass the hero to Cast function
-            return true
+            print("RUNNER triggered for A0CE")  -- Debugging line to check if the runner is triggered
+            if _G.Spell_KiBlast and Spell_KiBlast.Cast then
+                local hero = hero[GetPlayerId(GetOwningPlayer(caster))]
+                if hero then
+                    print("Casting Continuous Energy Bullet for hero: ", GetUnitName(caster))  -- Debug print
+                    Spell_KiBlast.Cast(hero)  -- Pass the hero to Cast function
+                    return true
+                end
+            end
+            return false
         end
-    end
-    return false
-end
+        --------------------------------------------------
+        --------------------------------------------------
+       
         for pid=0, bj_MAX_PLAYERS-1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 if GetLocalPlayer() == Player(pid) then

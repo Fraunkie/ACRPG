@@ -1,6 +1,81 @@
 {
+    "json.maxItemsComputed": 30000,
+    "Lua.runtime.version": "Lua 5.3",
+    "Lua.workspace.preloadFileSize": 2000,
+    "Lua.workspace.maxPreload": 1000,
+    "Lua.hint.enable": true,
+    "Lua.type.weakUnionCheck": true,
+    "Lua.type.weakNilCheck": true,
+    "Lua.diagnostics.disable": [
+        "lowercase-global",
+        "inject-field"
+    ],
+	"editor.parameterHints.enabled": true,
+    "workbench.editor.enablePreview": false,
+    "editor.semanticHighlighting.enabled": true,
+    "Lua.diagnostics.globals": [
+        "gg_unit_",
+        "GetHeroStr",
+        "GetHeroAgi",
+        "GetHeroInt",
+        "SetHeroStr",
+        "SetHeroAgi",
+        "SetHeroInt",
+        "Player",
+        "DisplayTextToPlayer"
+    ],
+    "Lua.runtime.nonstandardSymbol": [
+        "+",
+        "-",
+        "*",
+        "/",
+        "//",
+        "%",
+        "^",
+        "#",
+        "==",
+        "~=",
+        "<",
+        "<=",
+        ">",
+        ">=",
+        "="
+    ],
+    "editor.parameterHints.enabled": true,
+    "workbench.editor.enablePreview": false,
+    "editor.semanticHighlighting.enabled": true,
     "github.copilot.nextEditSuggestions.enabled": true,
+    "chat.mcp.discovery.enabled": {
+        "claude-desktop": true
+    },
+    "workbench.activityBar.location": "bottom",
+    "continue.showInlineTip": false,
+    "workbench.editorAssociations": {
+        "*.copilotmd": "vscode.markdown.preview.editor",
+        "*.exe": "default"
+    },
+    "editor.snippetSuggestions": "bottom",
+    "explorer.confirmDragAndDrop": false,
+    "git.enableSmartCommit": true,
+    "git.autofetch": true,
+    "colorHelper.pickerForm": "simple",
+    "workbench.settings.applyToAllProfiles": [
+        "colorHelper.pickerForm",
+        "editor.suggest.snippetsPreventQuickSuggestions",
+        "editor.quickSuggestions"
+    ],
+    "terminal.integrated.suggest.quickSuggestions": {
+        "commands": "on",
+        "arguments": "on",
+        "unknown": "off"
+    },
+    "colorHelper.resident": true,
+    "editor.quickSuggestions": {
+        "comments": "inline",
+        "strings": "inline"
+    },
     "github.copilot.enable": {
         "lua": true
-    }
+    },
+    "terminal.integrated.suggest.enabled": true
 }

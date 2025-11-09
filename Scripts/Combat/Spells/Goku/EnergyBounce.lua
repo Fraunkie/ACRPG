@@ -1,288 +1,207 @@
-if Debug and Debug.beginFile then Debug.beginFile("EnergyBounce.lua") end
---==================================================
--- Goku - Energy Bounce (unit-target, chains up to 3)
--- • Head unit chases targets with BlzSetUnitPosition
--- • Single-hit per target, never damages caster/allies
--- • Small "no-hit window" after launch to prevent self-tap
---==================================================
+if Debug then Debug.beginFile("Spell_EnergyBall.lua") end
 
-local M = {}
-_G.EnergyBounce = M
+do
+    ----------------------------------------------------------------
+    -- Global export (match exactly; same style as KiBlast)
+    ----------------------------------------------------------------
+    Spell_EnergyBall = Spell_EnergyBall or {}
+    _G.Spell_EnergyBall = Spell_EnergyBall
 
--- CONFIG -------------------------------------------------------------
-local ABIL_ID             = FourCC('A0EB')   -- your ability rawcode
-local MAX_BOUNCES         = 3                -- total hits including first
-local SEARCH_RADIUS       = 500.0
-local SPEED               = 900.0            -- units/sec
-local TICK                = 0.03
-local NO_HIT_TIME         = 0.20             -- grace window after launch
-local IMPACT_FX           = "Abilities\\Spells\\Human\\DispelMagic\\DispelMagicTarget.mdl"
-local TRAIL_PERIOD        = 0.06
-local TRAIL_UNIT          = FourCC('e001')   -- trail puff unit
-local HEAD_UNIT           = FourCC('e001')   -- projectile head model unit
-local HEAD_SCALE          = 0.20
-local HEAD_LIFETIME_GUARD = 3.5
-local SPAWN_OFFSET        = 80.0             -- push the head out from caster so it doesn't spawn on top
-local DEBUG_PRINT         = true
-local DAMAGE_FALLOFF      = 0.15              -- Damage reduction per bounce (0.15 = 15 percent)
+    ----------------------------------------------------------------
+    -- Config
+    ----------------------------------------------------------------
+    local ABIL_ID_STR   = "A0EB"
+    local EFFECT_MODEL  = "az_dd021.mdx"
+    local MAX_SPEED     = 1000
+    local BASE_DAMAGE   = 50
+    local MAX_RANGE     = 1200
+    local BOUNCE_RANGE  = 600   -- search radius for next target
+    local BOUNCES_MAX   = 2     -- # of extra hops after first hit
+    local DAMAGE_FALLOFF= 0.85  -- -15% each hop
 
--- UTILS --------------------------------------------------------------
-local function unitAlive(u)
-    return u and GetUnitTypeId(u) ~= 0 and GetWidgetLife(u) > 0.405
-end
+    -- state bucket (mirrors KiBlast)
+    local S = {}
 
-local function dprint(msg)
-    if DEBUG_PRINT then print("[EnergyBounce] " .. tostring(msg)) end
-end
-
-local function faceUnit(a, b)
-    if not unitAlive(a) or not unitAlive(b) then return end
-    local dx = GetUnitX(b) - GetUnitX(a)
-    local dy = GetUnitY(b) - GetUnitY(a)
-    SetUnitFacing(a, bj_RADTODEG * Atan2(dy, dx))
-end
-
-local function isEnemyOfPid(u, pid)
-    return unitAlive(u) and IsUnitEnemy(u, Player(pid))
-end
-
--- damage (prefer your DamageEngine "energy" path if present)
-local function dealDamage(caster, target, amount)
-    if not unitAlive(target) or amount <= 0 then return 0 end
-    local before = GetWidgetLife(target)
-
-    if DamageEngine and (DamageEngine.applyEnergyDamage or DamageEngine.applySpellDamage) then
-        local ok = false
-        if DamageEngine.applyEnergyDamage then
-            ok = pcall(DamageEngine.applyEnergyDamage, caster, target, amount)
-        elseif DamageEngine.applySpellDamage then
-            ok = pcall(DamageEngine.applySpellDamage, caster, target, amount, DAMAGE_TYPE_MAGIC)
-        end
-        if not ok then
-            UnitDamageTarget(caster, target, amount, false, false, ATTACK_TYPE_MAGIC, DAMAGE_TYPE_MAGIC, WEAPON_TYPE_NONE)
-        end
-    else
-        UnitDamageTarget(caster, target, amount, false, false, ATTACK_TYPE_MAGIC, DAMAGE_TYPE_MAGIC, WEAPON_TYPE_NONE)
+    ----------------------------------------------------------------
+    -- Helpers
+    ----------------------------------------------------------------
+    local function validUnit(u)
+        return u and GetUnitTypeId(u) ~= 0 and not IsUnitType(u, UNIT_TYPE_DEAD)
     end
 
-    local after = GetWidgetLife(target)
-    return math.max(0, before - after)
-end
-
--- PROJECTILE STATE ---------------------------------------------------
--- s = { caster, pid, abil, lvl, head, target, hits, visited={}, bornT, lastTrail, noHitUntil }
-local function newState(caster, target, abil)
-    local pid   = GetPlayerId(GetOwningPlayer(caster))
-    local cx,cy = GetUnitX(caster), GetUnitY(caster)
-    local ang   = GetUnitFacing(caster) * bj_DEGTORAD
-    local sx    = cx + math.cos(ang) * SPAWN_OFFSET
-    local sy    = cy + math.sin(ang) * SPAWN_OFFSET
-
-    local head = CreateUnit(GetOwningPlayer(caster), HEAD_UNIT, sx, sy, bj_RADTODEG*ang)
-    UnitAddAbility(head, FourCC('Aloc'))
-    SetUnitPathing(head, false)
-    PauseUnit(head, false)
-    SetUnitScale(head, HEAD_SCALE, HEAD_SCALE, HEAD_SCALE)
-
-    return {
-        caster  = caster,
-        pid     = pid,
-        abil    = abil,
-        lvl     = GetUnitAbilityLevel(caster, abil),
-        head    = head,
-        target  = target,
-        hits    = 0,
-        visited = {},
-        bornT   = 0.0,
-        lastTrail = 0.0,
-        noHitUntil = NO_HIT_TIME,  -- delay before any hit can register
-    }
-end
-
-local function destroyState(s)
-    if s and s.head and GetUnitTypeId(s.head) ~= 0 then
-        RemoveUnit(s.head)
+    -- Find closest “unit” object around (x,y). Condition kept nil so we don’t
+    -- accidentally call pair-only helpers during enumeration. Enemy filtering
+    -- is enforced in the collision callback via ALICE_PairIsEnemy().
+    local function getClosestUnit(x, y, cutoff)
+        return ALICE_GetClosestObject(x, y, "unit", cutoff or BOUNCE_RANGE, nil)
     end
-end
 
--- Replace the debug helper functions
-local function debugTarget(s, target, dmg)
-    if not DEBUG_PRINT then return end
-    local msg = "Hit " .. GetUnitName(target) .. " for " .. math.floor(dmg) .. 
-                " damage [" .. s.hits .. "/" .. MAX_BOUNCES .. "]"
-    dprint(msg)
-end
+    ----------------------------------------------------------------
+    -- Collision callback
+    ----------------------------------------------------------------
+    local function EnergyBallHit(self, hitUnit)
+        local dist = ALICE_PairGetDistance3D()
+        if Debug then
+            print(("EnergyBall Distance: %.3f, Is Enemy: %s"):format(dist, tostring(ALICE_PairIsEnemy())))
+        end
+        if dist >= 150 then return end
 
-local function debugBounce(from, to)
-    if not DEBUG_PRINT then return end
-    dprint("Bouncing from " .. GetUnitName(from) .. " to " .. GetUnitName(to))
-end
+        -- owner / caster unit
+        local ownerPlayer = ALICE_GetOwner(self)               -- player
+        local pid         = GetPlayerId(ownerPlayer)
+        local casterUnit  = PlayerData.GetHero(pid)
 
--- next bounce (closest new enemy)
-local function findNextBounce(fromUnit, casterPid, visited)
-    local best, bestD2 = nil, 9e30
-    local fx, fy = GetUnitX(fromUnit), GetUnitY(fromUnit)
-    local g = CreateGroup()
-    GroupEnumUnitsInRange(g, fx, fy, SEARCH_RADIUS, nil)
-    
-    ForGroup(g, function()
-        local u = GetEnumUnit()
-        -- Don't check visited here, do it in the state check
-        if isEnemyOfPid(u, casterPid) then
-            local dx, dy = GetUnitX(u)-fx, GetUnitY(u)-fy
-            local d2 = dx*dx + dy*dy
-            if d2 < bestD2 and not visited[GetHandleId(u)] then 
-                bestD2, best = d2, u
+        if not self or not hitUnit then return end
+
+        if not ALICE_PairIsEnemy() then
+            -- friendly -> ignore
+            ALICE_PairDisable()
+            return
+        end
+
+        if validUnit(hitUnit) and validUnit(casterUnit) then
+            DamageEngine.applySpellDamage(casterUnit, hitUnit, self.damage or BASE_DAMAGE, DAMAGE_TYPE_MAGIC)
+        end
+
+        -- bounce logic
+        if (self.bouncesRemaining or 0) > 0 then
+            local nx = GetUnitX(hitUnit)
+            local ny = GetUnitY(hitUnit)
+            local nextTarget = getClosestUnit(nx, ny, BOUNCE_RANGE)
+
+            if nextTarget and nextTarget ~= hitUnit then
+                -- spawn a new ball from the current hit target toward the next one
+                local nextDmg   = (self.damage or BASE_DAMAGE) * DAMAGE_FALLOFF
+                local nextHops  = (self.bouncesRemaining or 0) - 1
+                local nextBall  = EnergyBall.create(hitUnit, nextDmg, nextHops, nextTarget)
+                -- done with this instance
+                ALICE_Kill(self)
+                return
             end
         end
-    end)
-    DestroyGroup(g)
-    return best
-end
 
--- TICKER -------------------------------------------------------------
-local active, timer = {}, nil
-
-local function stepMove(s, dt)
-    -- Update timers
-    s.noHitUntil = math.max(0, s.noHitUntil - dt)
-    
-    -- Guard checks
-    if not unitAlive(s.head) or not unitAlive(s.caster) then 
-        dprint("Head or caster died")
-        return false 
+        -- no more bounces
+        ALICE_Kill(self)
     end
 
-    -- Target validation and bouncing
-    if not unitAlive(s.target) or not isEnemyOfPid(s.target, s.pid) then
-        local newTarget = findNextBounce(s.head, s.pid, s.visited)
-        if not newTarget then
-            dprint("No valid targets found")
-            return false
+    ----------------------------------------------------------------
+    -- Gizmo (actor) definition
+    ----------------------------------------------------------------
+    EnergyBall = {
+        -- position/velocity
+        x = nil, y = nil, z = 0,
+        vx = nil, vy = nil, vz = 0,
+
+        -- visuals
+        visual = nil,
+        visualZ = 150,
+
+        -- ALICE identity & behavior
+        identifier = "energyball",
+        interactions = { unit = EnergyBallHit },
+        selfInteractions = {
+            CAT_Move3D,
+            CAT_OutOfBoundsCheck },
+
+        -- dynamics
+        maxSpeed = MAX_SPEED,
+        collisionRadius = 100,
+
+        -- bookkeeping
+        actorClass = "energyball",
+        owner = nil,
+
+        -- gameplay
+        damage = BASE_DAMAGE,
+        bouncesRemaining = 0,
+    }
+
+    local mt = { __index = EnergyBall }
+
+    ----------------------------------------------------------------
+    -- Create a ball.
+    --   sourceUnit       : unit that spawns the ball
+    --   damage           : number (optional)
+    --   bouncesRemaining : integer (optional)
+    --   forceTarget      : unit (optional) — aim toward this
+    ----------------------------------------------------------------
+    function EnergyBall.create(sourceUnit, damage, bouncesRemaining, forceTarget)
+        if not validUnit(sourceUnit) then return nil end
+
+        local self = setmetatable({}, mt)
+
+        -- start at source
+        self.x = GetUnitX(sourceUnit)
+        self.y = GetUnitY(sourceUnit)
+        self.z = GetTerrainZ(self.x, self.y)
+        self.vz = 0
+
+        -- aim
+        local angleRad
+        if forceTarget and validUnit(forceTarget) then
+            local tx, ty = GetUnitX(forceTarget), GetUnitY(forceTarget)
+            angleRad = math.atan2(ty - self.y, tx - self.x)
+        else
+            angleRad = GetUnitFacing(sourceUnit) * bj_DEGTORAD
         end
-        debugBounce(s.target, newTarget)
-        s.target = newTarget
+
+        self.vx = MAX_SPEED * math.cos(angleRad)
+        self.vy = MAX_SPEED * math.sin(angleRad)
+
+        -- visual effect
+        self.visual = AddSpecialEffect(EFFECT_MODEL, self.x, self.y)
+        BlzSetSpecialEffectPosition(self.visual, self.x, self.y, self.z + self.visualZ)
+        BlzSetSpecialEffectScale(self.visual, 0.75)
+        BlzSetSpecialEffectYaw(self.visual, angleRad)
+
+        -- ownership
+        self.owner = GetOwningPlayer(sourceUnit)
+
+        -- gameplay payload
+        self.damage           = damage or BASE_DAMAGE
+        self.bouncesRemaining = math.max(0, bouncesRemaining or BOUNCES_MAX)
+
+        -- register with ALICE
+        ALICE_Create(self)
+
+        -- (optional) keep the visual riding the actor’s z
+        local function updateFx()
+            BlzSetSpecialEffectPosition(self.visual, self.x, self.y, self.z + self.visualZ)
+        end
+        self.updateEffectPosition = updateFx
+
+        return self
     end
 
-    -- Movement
-    local hx, hy = GetUnitX(s.head), GetUnitY(s.head)
-    local tx, ty = GetUnitX(s.target), GetUnitY(s.target)
-    local dx, dy = tx - hx, ty - hy
-    local dist = SquareRoot(dx*dx + dy*dy)
-    local step = SPEED * dt
+    ----------------------------------------------------------------
+    -- Cast API (same shape as KiBlast)
+    ----------------------------------------------------------------
+    function Spell_EnergyBall.Cast(caster)
+        if not validUnit(caster) then return false end
 
-    -- Not yet at target
-    if dist > step then
-        local nx = hx + dx*(step/dist)
-        local ny = hy + dy*(step/dist)
-        SetUnitPosition(s.head, nx, ny)
-        
-        -- Trail effect
-        s.lastTrail = s.lastTrail + dt
-        if s.lastTrail >= TRAIL_PERIOD then
-            s.lastTrail = 0.0
-            local puff = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), TRAIL_UNIT, nx, ny, 0)
-            UnitApplyTimedLife(puff, FourCC('BTLF'), 0.40)
-        end
+        -- choose first target (closest enemy-ish unit near the caster’s spot).
+        -- We let the collision callback enforce enemy strictly.
+        local target = getClosestUnit(GetUnitX(caster), GetUnitY(caster), BOUNCE_RANGE)
+
+        local ball = EnergyBall.create(caster, BASE_DAMAGE, BOUNCES_MAX, target)
+        if not ball then return false end
+
+        local pid = GetPlayerId(GetOwningPlayer(caster))
+        S[pid] = S[pid] or {}
+        table.insert(S[pid], ball)
+
         return true
     end
 
-    -- Impact handling
-    if s.noHitUntil <= 0 then
-        -- Get base damage
-        local baseDmg = SpellSystemInit and SpellSystemInit.GetDamageForSpell(s.pid, s.abil, s.lvl) or 100
-        
-        -- Apply falloff based on bounce count
-        local falloffMultiplier = 1.0 - (DAMAGE_FALLOFF * s.hits)
-        local dmg = baseDmg * falloffMultiplier
-        
-        -- Apply damage and show debug
-        local applied = dealDamage(s.caster, s.target, dmg)
-        debugTarget(s, s.target, applied)
-        
-        -- Visual feedback
-        if FX and FX.play then
-            FX.play(IMPACT_FX, { x = tx, y = ty })
+    function Spell_EnergyBall.Use(pid)
+        local hero = PlayerData.GetHero(pid)
+        if hero then
+            return Spell_EnergyBall.Cast(hero)
         end
-
-        -- Add debug message showing falloff
-        if DEBUG_PRINT then
-            dprint("Damage falloff: Hit " .. s.hits .. " reduced by " .. (DAMAGE_FALLOFF * s.hits * 100) .. " points")
-        end
-
-        -- Mark target as hit
-        s.hits = s.hits + 1
-        s.visited[GetHandleId(s.target)] = true
-
-        -- Check for next bounce
-        if s.hits < MAX_BOUNCES then
-            local nextTarget = findNextBounce(s.target, s.pid, s.visited)
-            if nextTarget then
-                debugBounce(s.target, nextTarget)
-                s.target = nextTarget
-                return true
-            end
-        end
-        dprint("Chain ended after " .. s.hits .. " hits")
         return false
     end
 
-    return true
+    OnInit.final(function() end)
 end
 
-local function tick()
-    if not timer then return end
-    local i = 1
-    while i <= #active do
-        local s = active[i]
-        if not s then
-            table.remove(active, i)
-        else
-            s.bornT = s.bornT + TICK
-            local alive = stepMove(s, TICK)
-            if (not alive) or (s.bornT > HEAD_LIFETIME_GUARD) then
-                destroyState(s)
-                table.remove(active, i)
-            else
-                i = i + 1
-            end
-        end
-    end
-    if #active == 0 and timer then PauseTimer(timer) end
-end
-
--- CAST HOOK ----------------------------------------------------------
-local function onCast()
-    if GetTriggerEventId() ~= EVENT_PLAYER_UNIT_SPELL_EFFECT then return end
-    local caster = GetTriggerUnit()
-    local abil   = GetSpellAbilityId()
-    if abil ~= ABIL_ID then return end
-
-    local target = GetSpellTargetUnit()
-    if not target or not unitAlive(target) then return end
-
-    -- Face target and spawn slightly in front so we never clip the caster
-    faceUnit(caster, target)
-
-    local s = newState(caster, target, abil)
-    table.insert(active, s)
-
-    if not timer then timer = CreateTimer() end
-    TimerStart(timer, TICK, true, tick)
-    dprint("Cast Energy Bounce")
-end
-
-local function hook()
-    local t = CreateTrigger()
-    for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
-        TriggerRegisterPlayerUnitEvent(t, Player(i), EVENT_PLAYER_UNIT_SPELL_EFFECT, nil)
-    end
-    TriggerAddAction(t, onCast)
-end
-
-OnInit.final(function()
-    hook()
-    print("[EnergyBounce] Ready")
-end)
-
-if Debug and Debug.endFile then Debug.endFile() end
+if Debug then Debug.endFile() end

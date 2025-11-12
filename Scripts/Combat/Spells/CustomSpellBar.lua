@@ -311,14 +311,18 @@ do
         --------------------------------------------------
 
         RUNNER[FourCC('A0EB')] = function(caster)
-            print("RUNNER triggered for A0EB")
-            if _G.Spell_EnergyBall and Spell_EnergyBall.Cast then
-                print("Casting Energy Ball for hero:", GetUnitName(caster))
-                Spell_EnergyBall.Cast(caster)
-                return true
+            print("RUNNER triggered for A0EB")  -- Debugging line to check if the runner is triggered
+            if _G.Spell_EnergyBounce and Spell_EnergyBounce.Cast then
+                local hero = hero[GetPlayerId(GetOwningPlayer(caster))]
+                if hero then
+                    print("Casting Energy Ball for hero: ", GetUnitName(caster))  -- Debug print
+                    Spell_EnergyBounce.Cast(hero)
+                    return true
+                end
             end
             return false
         end
+
 
 
 

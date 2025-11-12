@@ -33,9 +33,8 @@ do
         -- Debugging: Print the distance and check if the target is an enemy or not
         if Debug then
             local isEnemy = ALICE_PairIsEnemy()  -- ALICE's function to check if they are enemies
-            print("Ki Blast Distance: " .. dist .. ", Is Enemy: " .. tostring(isEnemy))
+           -- print("Ki Blast Distance: " .. dist .. ", Is Enemy: " .. tostring(isEnemy))
         end
-
         -- If the distance is less than 150, check for interactions
         if dist < 150 then
             -- Get the player that owns the KiBlast (caster)
@@ -72,6 +71,7 @@ do
 
                     -- Kill the Ki Blast after hitting an enemy
                     ALICE_Kill(kiblast)
+
                 end
             else
                 print("Invalid actor detected, skipping interaction.")  -- Debugging: Log if an actor is destroyed or invalid

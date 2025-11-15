@@ -1,71 +1,185 @@
 if Debug then Debug.beginFile "TalentDeclaration" end
 do
     OnInit.global(function()
-        -- Spirit Vortex Talent
+        --Lunar Blessing
         CTT.RegisterTalent({
-            fourCC = 'LST4',  -- Unique talent ID for the Lost Soul's Spirit Vortex
-            tree = "Lost Soul",  -- Lost Soul Talent Tree
-            column = 1,
-            row = 3,  -- Place this below other talents
-            maxPoints = 5,  -- Allow 5 points to be spent
-            values = {
-                additionalOrbs = 1,  -- Adds 1 orb per talent point
-            },
-            onLearn = function(pid, talentName, parentTree, oldRank, newRank)
-                -- Update the Spirit Vortex ability to increase the number of orbs
-                local currentOrbs = 2 + newRank * 1  -- Base 2 orbs + 1 orb per talent point
-                -- Update Spirit Vortex ability to reflect the new orb count
-                if _G.Spell_SpiritVortex and Spell_SpiritVortex.SetOrbCount then
-                    Spell_SpiritVortex.SetOrbCount(pid, currentOrbs)
-                end
-
-                -- Display the change to the player
-                DisplayTextToPlayer(Player(pid), 0, 0, "Spirit Vortex now has " .. tostring(currentOrbs) .. " orbs.")
-            end,
-        })
-
-        -- Lost Soul Talent Tree (You can adjust the other talents accordingly)
-        CTT.RegisterTalent({
-            fourCC = 'LST1',  -- Unique talent ID for the Lost Soul talent
-            tree = "Lost Soul",
-            column = 1,
-            row = 1,
-            maxPoints = 1,
-            values = {
-                spiritBoost = 0.1  -- Increase Spirit Drive speed by 10%
-            },
-            onLearn = function(pid, talentName, parentTree, oldRank, newRank)
-                -- Handle learning of the talent (for example, boosting Spirit Drive speed)
-                if newRank > 0 then
-                    DisplayTextToPlayer(Player(pid), 0, 0, "Spirit Drive Boost Activated!")
-                else
-                    DisplayTextToPlayer(Player(pid), 0, 0, "Spirit Drive Boost Removed!")
-                end
-            end,
-        })
-
-        -- Healing Boost Talent (Another example talent for Lost Soul)
-        CTT.RegisterTalent({
-            fourCC = 'LST2',
-            tree = "Lost Soul",
+            --Add name, tooltip, and icon from an ability.
+            fourCC = 'Tlub',
+            tree = "Lunar",
             column = 2,
             row = 1,
-            maxPoints = 1,
+            maxPoints = 5,
             values = {
-                healingBoost = 0.15  -- Increase healing received by 15%
+                manaReg = 0.2
             },
-            onLearn = function(pid, talentName, parentTree, oldRank, newRank)
-                -- Apply healing boost when talent is learned
+            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
                 if newRank > 0 then
-                    DisplayTextToPlayer(Player(pid), 0, 0, "Healing Boost Activated!")
+                    UnitAddAbility(HeroOfPlayer[whichPlayer], FourCC "Alub")
+                    SetUnitAbilityField(HeroOfPlayer[whichPlayer], "Alub", "Imrp", CTT.GetValue(whichPlayer, talentName, "manaReg"))
                 else
-                    DisplayTextToPlayer(Player(pid), 0, 0, "Healing Boost Removed!")
+                    UnitRemoveAbility(HeroOfPlayer[whichPlayer], FourCC "Alub")
                 end
             end,
         })
 
-        -- You can continue to add more talents here as needed...
+        --Improved Scout
+        CTT.RegisterTalent({
+            fourCC = 'Towl',
+            tree = "Lunar",
+            column = 3,
+            row = 1,
+            maxPoints = 5,
+            values = {
+                duration = 5
+            },
+            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
+                local newDuration = math.tointeger(GetAbilityField("AEst", "adur") + CTT.GetValue(whichPlayer, talentName, "duration"))
+                SetUnitAbilityField(HeroOfPlayer[whichPlayer], "AEst", "adur", newDuration)
+                if GetLocalPlayer() == whichPlayer then
+                    BlzSetAbilityExtendedTooltip(FourCC "AEst", "Summons an Owl Scout, which can be used to scout. Can see invisible units. Lasts " .. newDuration .. " seconds.", 0)
+                end
+            end
+        })
 
+        --Starlight Pillar
+        CTT.RegisterTalent({
+            fourCC = 'Tslp',
+            tree = "Lunar",
+            column = 2,
+            row = 2,
+            requirement = "Lunar Blessing",
+            values = {
+                healthReg = 20,
+                duration = 15
+            },
+            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
+                if newRank > 0 then
+                    UnitAddAbility(HeroOfPlayer[whichPlayer], FourCC "Apil")
+                else
+                    UnitRemoveAbility(HeroOfPlayer[whichPlayer], FourCC "Apil")
+                end
+            end,
+        })
+
+        --Starforce
+        CTT.RegisterTalent({
+            --Add name, tooltip, and icon without using an ability.
+            name = "Starforce",
+            tooltip = "Increases all spell damage you deal by !increase,\x25!.",
+			prelearnTooltip = "Increases all duderized damage you deal by !increase,\x25!.",
+            icon = "TalentIcons\\Starforce.blp",
+            tree = "Lunar",
+            column = 3,
+            row = 2,
+            maxPoints = 3,
+            requirement = "Starlight Pillar",
+            values = {
+                increase = {0.04, 0.07, 0.1}
+            },
+        })
+
+        --Improved Starlight Pillar
+        CTT.RegisterTalent({
+            fourCC = 'Tisp',
+            tree = "Lunar",
+            column = 2,
+            row = 3,
+            maxPoints = 5,
+            requirement = "Starlight Pillar",
+            values = {
+                increase = 0.1
+            },
+            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
+                local base = CTT.GetValue(whichPlayer, "Starlight Pillar", "healthReg")
+                local duration = CTT.GetValue(whichPlayer, "Starlight Pillar", "duration")
+                local increase = CTT.GetValue(whichPlayer, talentName, "increase")
+                if GetLocalPlayer() == whichPlayer then
+                    BlzSetAbilityExtendedTooltip(FourCC "Apil", "Creates a pillar of starlight at target location that heals a unit bathing in the light by " .. (math.tointeger(base*(1 + increase)) or base*(1 + increase)) .. " health per second. Lasts " .. duration .. " seconds.", 0)
+                end
+            end
+        })
+
+        --Starfall
+        CTT.RegisterTalent({
+            --Add name, tooltip, and icon without using an ability.
+            name = "Starfall",
+            tooltip = "While channeling, calls down waves of falling stars that damage nearby enemy units. Each wave deals !damage! damage. Lasts for !duration! seconds. !cooldown! seconds cooldown.",
+            icon = "TalentIcons\\Starfall.blp",
+            tree = "Lunar",
+            column = 3,
+            row = 3,
+            --Retrieve values from the ability fields of the linked ability.
+            ability = "AEsf",
+            values = {
+                damage = "Esf1",
+                duration = "adur",
+                cooldown = "acdn"
+            },
+            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
+                if newRank > 0 then
+                    UnitAddAbility(HeroOfPlayer[whichPlayer], FourCC "AEsf")
+                else
+                    UnitRemoveAbility(HeroOfPlayer[whichPlayer], FourCC "AEsf")
+                end
+            end,
+        })
+
+        --Elune's Protection
+        CTT.RegisterTalent({
+            fourCC = 'Tfoc',
+            tree = "Lunar",
+            column = 4,
+            row = 3,
+            maxPoints = 3,
+            requirement = "Starfall",
+            values = {
+                reduction = 0.3,
+                duration = 5
+            }
+        })
+
+        --Trueshot Aura
+        CTT.RegisterTalent({
+            name = "Trueshot Aura",
+            tooltip = "An aura that gives friendly nearby units a !damage,\x25! bonus damage to their ranged attacks.",
+            icon = "TalentIcons\\TrueshotAura.blp",
+            tree = "Archery",
+            column = 2,
+            row = 1,
+            maxPoints = 5,
+            ability = "AEar",
+            values = {
+                damage = "Ear1"
+            },
+            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
+                if newRank == 1 then
+                    UnitAddAbility(HeroOfPlayer[whichPlayer], FourCC "AEar")
+                elseif newRank > 1 then
+                    SetUnitAbilityLevel(HeroOfPlayer[whichPlayer], FourCC "AEar", newRank)
+                else
+                    UnitRemoveAbility(HeroOfPlayer[whichPlayer], FourCC "AEar")
+                end
+            end,
+        })
+
+        --Tenacity
+        CTT.RegisterTalent({
+            fourCC = 'Tten',
+            tree = "Survival",
+            column = 2,
+            row = 1,
+            maxPoints = 5,
+            values = {
+                health = 25
+            },
+            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
+                if newRank > oldRank then
+                    SetPlayerTechResearched(whichPlayer, FourCC "Rtnc", newRank)
+                else
+                    BlzDecPlayerTechResearched(whichPlayer, FourCC "Rtnc", oldRank - newRank)
+                end
+            end
+        })
     end)
 end
 if Debug then Debug.endFile() end

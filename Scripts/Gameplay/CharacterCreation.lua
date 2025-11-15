@@ -118,6 +118,8 @@ end
 
         
         ALICE_Create(hero, actorData.identifier, actorData.interactions)
+
+       -- ALICE_SetFlag(CAT_Camera.identifier, "anchor", hero)
         print("Hero actor added to unit.")
     end
 

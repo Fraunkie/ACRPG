@@ -1,15 +1,18 @@
 if Debug and Debug.beginFile then Debug.beginFile("SoulEnergy.lua") end
 --==================================================
--- SoulEnergy.lua (adapter over SoulEnergyLogic)
+-- SoulEnergy.lua  (Adapter → SoulEnergyLogic)
 --==================================================
 
 if not SoulEnergy then SoulEnergy = {} end
 _G.SoulEnergy = SoulEnergy
 
 do
-    --------------------------------------------------
-    -- helpers
-    --------------------------------------------------
+    local function dprint(msg)
+        if _G.DevMode and DevMode.IsOn and DevMode.IsOn(0) then
+            DisplayTextToPlayer(Player(0), 0, 0, "[SoulEnergy] " .. tostring(msg))
+        end
+    end
+
     local function setLevelLabel(pid, lvl)
         local B = _G.SpiritPowerLabelBridge
         if B and B.SetSoulLevel then
@@ -38,7 +41,7 @@ do
     end
 
     --------------------------------------------------
-    -- read
+    -- Public API
     --------------------------------------------------
     function SoulEnergy.GetXp(pid)
         local L = logic()
@@ -53,74 +56,76 @@ do
         return 1
     end
 
-    -- next level total (for UI)
-    function SoulEnergy.GetNextXP(pid)
-        local lvl = SoulEnergy.GetLevel(pid)
-        local L = logic()
-        if L and L.LevelToTotalXp then
-            return L.LevelToTotalXp(lvl + 1)
-        end
-        return 0
-    end
-
-    --------------------------------------------------
-    -- write
-    --------------------------------------------------
+    -- THIS was broken: it was looking for L.AddXp; logic only has L.Add
     function SoulEnergy.AddXp(pid, delta, reason, meta)
         local L = logic()
-        if not L then
+        if not L then return SoulEnergy.GetXp(pid) end
+
+        -- prefer Add if present
+        local addFn = L.Add or L.AddXp
+        if not addFn then
             return SoulEnergy.GetXp(pid)
         end
 
-        -- LOGIC HAS: Add(...)  (not AddXp)
-        local before = SoulEnergy.GetXp(pid)
-        local ret
-
-        if L.Add then
-            ret = L.Add(pid, delta or 0, reason, meta)
-        elseif L.AddXp then
-            -- fallback in case logic ever exposes AddXp
-            ret = L.AddXp(pid, delta or 0, reason, meta)
-        else
-            return before
-        end
+        local beforeXp = (L.GetXP and L.GetXP(pid)) or (L.Get and L.Get(pid)) or 0
+        local retXp = addFn(pid, delta or 0, reason, meta)
 
         if (delta or 0) > 0 then
             pingGain(pid, delta or 0)
         end
 
-        setXpLabel(pid, ret)
+        setXpLabel(pid, retXp)
         setLevelLabel(pid, SoulEnergy.GetLevel(pid))
 
-        DisplayTextToPlayer(Player(pid), 0, 0,
-            "Soul XP: " .. tostring(ret) .. " / " .. tostring(SoulEnergy.GetNextXP(pid)) ..
-            "  —  Soul Level: " .. tostring(SoulEnergy.GetLevel(pid)))
+        dprint("AddXp pid=" .. tostring(pid) ..
+               " delta=" .. tostring(delta or 0) ..
+               " before=" .. tostring(beforeXp) ..
+               " after=" .. tostring(retXp))
 
-        return ret
+        return retXp
     end
 
     function SoulEnergy.SetXp(pid, value)
         local L = logic()
-        if not (L and L.Set) and not (L and L.SetXp) then
-            return SoulEnergy.GetXp(pid)
-        end
-
-        local xp
-        if L.Set then
-            xp = L.Set(pid, value or 0)
-        else
-            xp = L.SetXp(pid, value or 0)
-        end
-
+        if not L then return SoulEnergy.GetXp(pid) end
+        local setFn = L.Set or L.SetXp
+        if not setFn then return SoulEnergy.GetXp(pid) end
+        local xp = setFn(pid, value or 0)
         setXpLabel(pid, xp)
         setLevelLabel(pid, SoulEnergy.GetLevel(pid))
+        dprint("SetXp pid=" .. tostring(pid) .. " xp=" .. tostring(xp))
         return xp
     end
 
+    function SoulEnergy.GetNextXP(pid)
+        local L = logic()
+        if not L then return 0 end
+        local lvl = (L.GetLevel and L.GetLevel(pid)) or 1
+        local nxt = (L.LevelToTotalXp and L.LevelToTotalXp(lvl + 1)) or 0
+        return nxt
+    end
+
     --------------------------------------------------
-    -- init
+    -- Events
     --------------------------------------------------
+    local function wireEvents()
+        local PB = rawget(_G, "ProcBus")
+        if not (PB and PB.On) then return end
+
+        PB.On("OnSoulXpChanged", function(e)
+            if not e or e.pid == nil then return end
+            setXpLabel(e.pid, e.xp or 0)
+        end)
+
+        PB.On("OnSoulLevelUp", function(e)
+            if not e or e.pid == nil then return end
+            setLevelLabel(e.pid, e.level or 1)
+            pingGain(e.pid, 0)
+        end)
+    end
+
     OnInit.final(function()
+        wireEvents()
         for pid = 0, bj_MAX_PLAYERS - 1 do
             if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
                 setXpLabel(pid, SoulEnergy.GetXp(pid))

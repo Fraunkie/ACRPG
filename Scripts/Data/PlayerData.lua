@@ -32,6 +32,11 @@ do
             soulXP     = 0,
             soulNextXP = 200,
             spiritDrive = 0,
+            talentpoints = 0,
+            spellpoints = 1,
+            spellranks = {},
+            talentranks = {},
+            knownspells = {},
 
             -- basic stats mirror
             stats = {
@@ -39,9 +44,9 @@ do
                 defense = 0,
                 speed = 0,
                 crit = 0,
-                basestr = 0, -- base strength
-                baseagi = 0, -- base agility
-                baseint = 0, -- base intelligence
+                basestr = 10, -- base strength
+                baseagi = 10, -- base agility
+                baseint = 10, -- base intelligence
                 strmulti = 1.0,
                 agimulti = 1.0,
                 intmulti = 1.0,
@@ -57,6 +62,14 @@ do
             -- currency
             fragments   = 0,
             ownedShards = {},
+
+            -- per-fragment-type currency (dummy pickup items)
+            fragmentsByKind = {
+                db     = 0,   -- Dragon Ball Fragment (I00U)
+                digi   = 0,   -- Digi Fragment (I012)
+                poke   = 0,   -- Poké Fragment (I00Z)
+                chakra = 0,   -- Chakra Fragment (I00Y)
+            },
 
             -- UX flags
             lootChatEnabled = true,

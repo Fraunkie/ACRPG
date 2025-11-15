@@ -1,9 +1,3 @@
---==================================================
--- HFILQuests.lua
--- See original .wct for full comments and implementation details
---==================================================
-
--- ...existing code from the extracted HFILQuests block...
 if Debug and Debug.beginFile then Debug.beginFile("HFILQuests.lua") end
 --==================================================
 -- HFILQuests.lua
@@ -35,24 +29,51 @@ do
     --------------------------------------------------
     -- Minimal RNG wrappers
     --------------------------------------------------
-    local function rnd(lo, hi)
-        return GetRandomInt(lo, hi)
+    local function rnd(lo, hi) return GetRandomInt(lo, hi) end
+
+    --------------------------------------------------
+    -- Internal helpers for power-scaled goals & rewards
+    --------------------------------------------------
+    local function clamp(v, lo, hi)
+        if v < lo then return lo elseif v > hi then return hi else return v end
+    end
+    local function lerp(a, b, t) return a + (b - a) * t end
+    local function pf(pid)
+        local pd = PD(pid)
+        local power = (pd.powerLevel or 0)
+        local GB = GameBalance or {}
+        local HR = GB.HFIL_TASK_REWARDS or {}
+        local cap = HR.P_CAP or (GB.POWERLEVEL_CAP or 20)
+        local t = power / cap
+        if t < 0 then
+            t = 0
+        elseif t > 1 then
+            t = 1
+        end
+        return t
+    end
+    local function rewardScaled(kind, goal, pid)
+        local GB = GameBalance or {}
+        local HR = GB.HFIL_TASK_REWARDS or {}
+        local K  = (kind == "collect") and HR.COLLECT or HR.KILL
+        local M  = HR.MULTS or {}
+        local party = M.party or 1.0
+        local difficulty = M.difficulty or 1.0
+        local t  = pf(pid)
+        local base  = (K.base or 1)
+        local alpha = (K.alpha or 0)
+        local soul  = math.floor((goal or 0) * base * (1 + alpha * t) * party * difficulty + 0.5)
+        local frags = (K.fragsOnComplete or 0)
+        return soul, frags
     end
 
     --------------------------------------------------
     -- Task handler pools
-    -- Add your own entries following the same shape.
     -- Fields:
-    --  id       unique key
-    --  title    display name
-    --  typeTag  common or special or rare
-    --  eligible(pid) -> bool
-    --  make(pid) -> table with task data fields like goal, target, etc
-    --  reward(pid, task) -> { soul = n, frags = m }
-    --==================================================
-
+    --  id, title, typeTag, eligible(pid), make(pid) -> data, reward(pid, task) -> { soul, frags }
+    --------------------------------------------------
     HFILQuests._POOL_REGULAR = HFILQuests._POOL_REGULAR or {
-        {
+       --[[ {
             id = "cull_restless",
             title = "Cull the Restless",
             typeTag = "common",
@@ -87,8 +108,8 @@ do
             reward = function(pid, task)
                 return { soul = 12, frags = 1 }
             end,
-        },
-    }
+        },--]]
+    } 
 
     HFILQuests._POOL_SPECIAL = HFILQuests._POOL_SPECIAL or {
         {
@@ -157,6 +178,66 @@ do
     }
 
     --------------------------------------------------
+    -- New HFIL tasks (power-scaled goals)
+    --------------------------------------------------
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+        id = "cull_n001",
+        title = "Cull Wandering Spirits",
+        typeTag = "common",
+        eligible = function(pid) return true end,
+        make = function(pid)
+            local t = pf(pid)
+            local minG = math.floor(lerp(6, 18, t))
+            local maxG = math.floor(lerp(12, 30, t))
+            local goal = rnd(minG, maxG)
+            goal = clamp(goal, 1, 30)
+            return { kind = "kill", raw = "n001", goal = goal }
+        end,
+        reward = function(pid, task)
+            -- Base per kill (you can tweak these later)
+            local baseSoulPerKill  = 10
+            local baseFragsPerKill = 10
+
+            local goal  = (task and task.goal) or 0
+            local soul  = baseSoulPerKill  * goal
+            local frags = baseFragsPerKill * goal
+
+            return { soul = soul, frags = frags }
+        end,
+    }
+
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+        id = "collect_spirit_fragments",
+        title = "Gather Spirit Fragments",
+        typeTag = "common",
+        eligible = function(pid) return true end,
+        make = function(pid)
+            local t = pf(pid)
+            local minG = math.floor(lerp(8, 16, t))
+            local maxG = math.floor(lerp(12, 24, t))
+            local goal = rnd(minG, maxG)
+            goal = clamp(goal, 1, 24)
+            return {
+                kind     = "collect",
+                item     = "spirit_fragment",
+                sourceRaw = "n001",
+                goal     = goal,
+            }
+        end,
+        reward = function(pid, task)
+            -- Base per collected fragment
+            local baseSoulPerFrag  = 10
+            local baseFragsPerFrag = 10
+
+            local goal  = (task and task.goal) or 0
+            local soul  = baseSoulPerFrag  * goal
+            local frags = baseFragsPerFrag * goal
+
+            return { soul = soul, frags = frags }
+        end,
+    }
+
+    --------------------------------------------------
     -- Internal pick helper
     --------------------------------------------------
     local function pickFrom(pool, pid, avoidId)
@@ -170,7 +251,12 @@ do
         if #cands == 0 then return nil end
         local i = rnd(1, #cands)
         local h = cands[i]
-        return { id = h.id, title = h.title or h.id, typeTag = h.typeTag or "common", _handler = h }
+        return {
+            id       = h.id,
+            title    = h.title or h.id,
+            typeTag  = h.typeTag or "common",
+            _handler = h,
+        }
     end
 
     --------------------------------------------------
@@ -211,18 +297,21 @@ do
         local made = {}
         if choice._handler.make then
             local ok, res = pcall(choice._handler.make, pid)
-            if ok and type(res) == "table" then made = res end
+            if ok and type(res) == "table" then
+                made = res
+            end
         end
 
         local pd = PD(pid)
         pd.currentTask = {
-            id = choice.id,
-            title = choice.title or choice.id,
-            typeTag = choice.typeTag or "common",
-            data = made,
+            id       = choice.id,
+            title    = choice.title or choice.id,
+            typeTag  = choice.typeTag or "common",
+            data     = made,
             progress = 0,
-            goal = made.goal or 0,
+            goal     = made.goal or 0,
         }
+        TaskDisplay.ShowTask(pid, choice)
         return pd.currentTask
     end
 
@@ -249,7 +338,9 @@ do
         local p = t.progress or 0
         local g = t.goal or 0
         p = p + (n or 0)
-        if g > 0 and p > g then p = g end
+        if g > 0 and p > g then
+            p = g
+        end
         t.progress = p
         return p, g
     end
@@ -268,10 +359,13 @@ do
     --------------------------------------------------
     local function resolveHandlerById(pool, id)
         for i = 1, #pool do
-            if pool[i].id == id then return pool[i] end
+            if pool[i].id == id then
+                return pool[i]
+            end
         end
         return nil
     end
+
     local function findHandler(id)
         local h = resolveHandlerById(HFILQuests._POOL_REGULAR, id)
         if h then return h end
@@ -295,17 +389,61 @@ do
 
         local h = findHandler(t.id)
         local soul, frags = 0, 0
+
         if h and h.reward then
             local ok, r = pcall(h.reward, pid, t)
             if ok and r then
-                soul = r.soul or 0
+                soul  = r.soul or 0
                 frags = r.frags or 0
             end
         end
 
-        pd.soulEnergy = (pd.soulEnergy or 0) + soul
-        pd.fragments  = (pd.fragments or 0) + frags
+        --------------------------------------------------
+        -- Soul Energy (XP)
+        --------------------------------------------------
+        if soul > 0 then
+            if _G.SoulEnergy and SoulEnergy.AddXp then
+                SoulEnergy.AddXp(pid, soul, "QuestTurnIn", { taskId = t.id })
+            else
+                pd.soulEnergy = (pd.soulEnergy or 0) + soul
+            end
+        end
 
+        --------------------------------------------------
+        -- Fragment currency + physical fragment items
+        --------------------------------------------------
+        if frags > 0 then
+            -- numeric currency mirror
+            pd.fragments = (pd.fragments or 0) + frags
+
+            -- physical items: random among 4 fragment item ids
+            local fragmentItemIds = {
+                FourCC("I00U"), -- Dragon Ball Fragment
+                FourCC("I012"), -- Digi Fragment
+                FourCC("I00Z"), -- Poké Fragment
+                FourCC("I00Y"), -- Chakra Fragment
+            }
+
+            local hero = nil
+            if _G.PlayerData and PlayerData.GetHero then
+                hero = PlayerData.GetHero(pid)
+            end
+
+            if hero and GetUnitTypeId(hero) ~= 0 then
+                local hx = GetUnitX(hero)
+                local hy = GetUnitY(hero)
+                for i = 1, frags do
+                    local idx = GetRandomInt(1, #fragmentItemIds)
+                    local itId = fragmentItemIds[idx]
+                    local item = CreateItem(itId, hx, hy)
+                    UnitAddItem(hero, item)
+                end
+            end
+        end
+
+        --------------------------------------------------
+        -- Feedback
+        --------------------------------------------------
         DisplayTextToPlayer(Player(pid), 0, 0, "Task turned in")
         if soul > 0 then
             DisplayTextToPlayer(Player(pid), 0, 0, "Soul Energy gained " .. tostring(soul))
@@ -340,6 +478,73 @@ do
 
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("HFILQuests")
+        end
+    end)
+
+    --------------------------------------------------
+    -- Virtual Spirit Fragment drop + task progress on n001 kills
+    --------------------------------------------------
+    local function ensureInv(pid)
+        local pd = PD(pid)
+        pd.inv = pd.inv or {}
+        pd.inv.spirit_fragment = pd.inv.spirit_fragment or 0
+        return pd.inv
+    end
+
+    local function isN001(u)
+        if not u or GetUnitTypeId(u) == 0 then return false end
+        local ok, id = pcall(FourCC, "n001")
+        if not ok or not id then return false end
+        return GetUnitTypeId(u) == id
+    end
+
+    local function getDropChance()
+        local GB = GameBalance or {}
+        local HR = GB.HFIL_TASK_REWARDS or {}
+        local C = HR.COLLECT or {}
+        local p = C.dropChance or 0.35
+        if p < 0 then
+            p = 0
+        elseif p > 1 then
+            p = 1
+        end
+        return p
+    end
+
+    local function onKillN001(e)
+        -- e.pid = killer pid, e.target = killed unit
+        if not e or e.pid == nil or not isN001(e.target) then return end
+        local pid = e.pid
+
+        -- 1) Kill task progress (cull_n001)
+        local t = HFILQuests.GetCurrent(pid)
+        if t and t.id == "cull_n001"
+            and t.data and t.data.kind == "kill"
+            and (t.data.raw == "n001") then
+            HFILQuests.AddProgress(pid, 1)
+        end
+
+        -- 2) Virtual fragment drop + collect task progress
+        local chance = getDropChance()
+        if GetRandomReal(0.0, 1.0) <= chance then
+            local inv = ensureInv(pid)
+            inv.spirit_fragment = (inv.spirit_fragment or 0) + 1
+
+            local cur = HFILQuests.GetCurrent(pid)
+            if cur
+                and cur.id == "collect_spirit_fragments"
+                and cur.data and cur.data.kind == "collect"
+                and (cur.data.item == "spirit_fragment") then
+                HFILQuests.AddProgress(pid, 1)
+            end
+        end
+    end
+
+    OnInit.final(function()
+        local PB = rawget(_G, "ProcBus")
+        if PB and (PB.On or PB.Subscribe) then
+            local on = PB.On or PB.Subscribe
+            on("OnKill", onKillN001)
         end
     end)
 end

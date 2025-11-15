@@ -137,7 +137,7 @@ end
         local d = tonumber(delta) or 0
         if d <= 0 then
             -- show we got called but ignored
-            DisplayTextToPlayer(Player(pid), 0, 0, "[SoulLogic] Add called but delta <= 0 (" .. tostring(d) .. ")")
+           -- DisplayTextToPlayer(Player(pid), 0, 0, "[SoulLogic] Add called but delta <= 0 (" .. tostring(d) .. ")")
             return PD(pid).soulXP or 0
         end
 
@@ -152,11 +152,11 @@ end
         emit("OnSoulPing",      { pid = pid, delta = d })
 
         -- DIAG: show actual write
-        DisplayTextToPlayer(Player(pid), 0, 0,
-            "[SoulLogic] pid=" .. tostring(pid) ..
-            " before=" .. tostring(before) ..
-            " + " .. tostring(d) ..
-            " => " .. tostring(pd.soulXP))
+       -- DisplayTextToPlayer(Player(pid), 0, 0,
+           -- "[SoulLogic] pid=" .. tostring(pid) ..
+          --  " before=" .. tostring(before) ..
+          --  " + " .. tostring(d) ..
+          --  " => " .. tostring(pd.soulXP))
 
         return pd.soulXP
     end
@@ -184,10 +184,10 @@ function AwardXPFromHFILUnitConfig(kpid, dead)
 
     -- If baseXP is greater than 0, apply XP to the player
     if baseXP > 0 and kpid and _G.SoulEnergy and SoulEnergy.AddXp then
-        print("Adding XP to player:", kpid, "XP:", baseXP)  -- Debug log
+       -- print("Adding XP to player:", kpid, "XP:", baseXP)  -- Debug log
         pcall(SoulEnergy.AddXp, kpid, baseXP)
     else
-        print("No XP to add for player:", kpid)
+     --   print("No XP to add for player:", kpid)
     end
 end
 

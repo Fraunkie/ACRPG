@@ -209,6 +209,17 @@ do
         DisplayTextToPlayer(p, 0, 0, "Base INT: " .. tostring(baseInt) .. "   (hero: " .. tostring(heroInt) .. ")")
     end)
 
+
+	-- Adds a chat command to replenish a player's hero health to maximum
+registerChat("-replenish", function(p, pid)
+    local hero = PlayerData.GetHero(pid)  -- Get the hero unit
+    if hero and GetUnitTypeId(hero) ~= 0 then
+        SetUnitHealth(hero, GetUnitState(hero, UNIT_STATE_MAX_HEALTH))  -- Set hero health to max
+        DisplayTextToPlayer(p, 0, 0, "Hero health replenished to full!")
+    else
+        DisplayTextToPlayer(p, 0, 0, "No hero found for this player.")
+    end
+end)
     --------------------------------------------------
     -- Console Debug Commands
     --------------------------------------------------

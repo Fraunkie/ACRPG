@@ -21,7 +21,7 @@ do
     local POLL_DT      = 0.05
 
     -- Textures
-    local TEX_BACK     = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
+    local TEX_BACK     = "ui\\HealthBar.blp"
     local TEX_FILL     = "ReplaceableTextures\\TeamColor\\TeamColor00"  -- 00 = red
 
     --------------------------------------------------
@@ -50,7 +50,7 @@ do
         local parent = uiWorld()
         local r = BlzCreateFrameByType("FRAME", "HPRoot"..pid, parent, "", 0)
         root[pid] = r
-        BlzFrameSetLevel(r, LEVEL)
+        BlzFrameSetLevel(r, 1)
         BlzFrameSetSize(r, wantWidth(), wantHeight())
         -- center bottom
         BlzFrameSetPoint(r, FRAMEPOINT_BOTTOM, parent, FRAMEPOINT_BOTTOM, 0.0, BOTTOM_Y)
@@ -61,15 +61,17 @@ do
         BlzFrameSetAllPoints(bg, r)
         BlzFrameSetTexture(bg, TEX_BACK, 0, true)
         BlzFrameSetAlpha(bg, 180)
+        BlzFrameSetLevel(bg, 15)
 
         -- Fill bar
-        local sb = BlzCreateFrameByType("SIMPLESTATUSBAR", "HPFill"..pid, r, "", 0)
+        local sb = BlzCreateFrameByType("SIMPLESTATUSBAR", "HPFill"..pid, bg, "", 0)
         bar[pid] = sb
         BlzFrameSetPoint(sb, FRAMEPOINT_TOPLEFT,     r, FRAMEPOINT_TOPLEFT,     FILL_PAD, -FILL_PAD)
         BlzFrameSetPoint(sb, FRAMEPOINT_BOTTOMRIGHT, r, FRAMEPOINT_BOTTOMRIGHT, -FILL_PAD,  FILL_PAD)
         BlzFrameSetTexture(sb, TEX_FILL, 0, false)      -- solid red
         BlzFrameSetMinMaxValue(sb, 0, 1)                -- will set to real HP each tick
         BlzFrameSetValue(sb, 0)
+        BlzFrameSetLevel(bg, 2)
 
         -- Text
         local t = BlzCreateFrameByType("TEXT", "HPText"..pid, uiRoot(), "", 0)

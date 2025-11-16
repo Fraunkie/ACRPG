@@ -17,6 +17,7 @@ do
         SPAWN = { x = 28802.9, y = 27926.3, z = nil, facing = 270.0 },
         HFIL  = { x = 28546.5, y = -21148.4, z = 564.0, facing = 180.0 },
         YEMMA = { x = 28856.0, y = 28929.0, z = 597.2, facing = 180.0 },
+        NEO_CAPSULE_CITY   = { x = -24130.5, y = -17751.8, z = 196.5, facing = 180.0 },
     }
 
     --------------------------------------------------
@@ -59,6 +60,7 @@ do
     --------------------------------------------------
     GameBalance.TELEPORT_NODE_IDS = GameBalance.TELEPORT_NODE_IDS or {
         YEMMA        = "YEMMA",
+        NEO_CAPSULE_CITY          = "NEO_CAPSULE_CITY",
         KAMI_LOOKOUT = "KAMI_LOOKOUT",
         HFIL         = "HFIL",
         RADITZ       = "RADITZ",
@@ -71,9 +73,10 @@ do
     }
 
     GameBalance.NODE_PRETTY = GameBalance.NODE_PRETTY or {
-        YEMMA        = "King Yemma's Desk",
-        KAMI_LOOKOUT = "Kami's Lookout",
-        HFIL         = "HFIL",
+        YEMMA         = "King Yemma's Desk",
+        NEO_CAPSULE_CITY           = "Neo Capsule City",
+        KAMI_LOOKOUT  = "Kami's Lookout",
+        HFIL          = "HFIL",
         RADITZ        = "Raditz Landing",
         VIRIDIAN      = "Viridian Forest",
         FILE_ISLAND   = "File Island",
@@ -87,6 +90,7 @@ do
     -- Travel requirements
     --------------------------------------------------
     GameBalance.NODE_REQS = GameBalance.NODE_REQS or {
+        NEO_CAPSULE_CITY ={pl_min = 0},
         KAMI_LOOKOUT = { pl_min = 250 },
         VIRIDIAN     = { pl_min = 600 },
         FILE_ISLAND  = { pl_min = 950 },

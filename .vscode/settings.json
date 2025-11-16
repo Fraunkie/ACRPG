@@ -22,7 +22,8 @@
         "SetHeroAgi",
         "SetHeroInt",
         "Player",
-        "DisplayTextToPlayer"
+        "DisplayTextToPlayer",
+        "label"
     ],
     "Lua.runtime.nonstandardSymbol": [
         "+",

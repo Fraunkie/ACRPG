@@ -93,7 +93,7 @@ end
         CustomSpellBar.BindHero(pid, hero)
         HeroStatSystem.InitializeStats(pid, hero)
         HeroStatSystem.Recalculate(pid)
-        CTT.SetTrees(Player(pid),"Lost Soul")
+        CustomHealthBar.BindHero(pid, hero)
 
         DisplayTextToPlayer(Player(pid), 0, 0, "Soul successfully created.")
 

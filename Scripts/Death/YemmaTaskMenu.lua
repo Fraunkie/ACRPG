@@ -1,4 +1,5 @@
 if Debug and Debug.beginFile then Debug.beginFile("YemmaTaskMenu.lua") end
+--@@debug
 --==================================================
 -- YemmaTaskMenu.lua
 -- Task pick / active task panel (embedded-first).
@@ -168,7 +169,7 @@ do
                 desc = "Escort the target safely."
             end
         end
-        setBody(inst, desc)
+        setBody(inst, task.desc)
         setProg(inst, task.progress, task.goal)
 
         -- Bottom buttons: hide New, show TurnIn

@@ -1,5 +1,5 @@
 if Debug and Debug.beginFile then Debug.beginFile("TaskAcceptanceDisplay.lua") end
-
+--@@debug
 --==================================================
 -- Task Acceptance Display Script
 -- This script will display task information when accepted
@@ -13,25 +13,33 @@ do
     local LeaderboardCache = {}
 
     -- Style Constants (Adjust these for positioning)
-    local BG_TEX = "ReplaceableTextures\\CameraMasks\\Black_mask.blp"
-    local TITLE_SCALE = 1.2  -- Title size (adjust as needed)
-    local TEXT_SCALE = 0.75  -- Text size (adjust as needed)
+    local BG_TEX = "ui\\TaskPanelmenu.blp"
+    local TITLE_SCALE = 1  -- Title size (adjust as needed)
+    local TEXT_SCALE = 0.8  -- Text size (adjust as needed)
     local GOLD_COLOR = "|cFFFFD700"  -- Gold text color for title
     local WHITE_COLOR = "|cFFFFFFFF"  -- White text color for objective and progress
-    local PAD = 0.010
-    local BODY_Y = -0.050
-    local PROG_Y = -0.090
+
 
     -- Dynamic positioning constants (adjust for task menu placement)
-    local LETTER_POS_X = 0.35  -- Starting X position for the task menu
-    local LETTER_POS_Y = 0.12  -- Starting Y position for the task menu
+    local LETTER_POS_X = 0.52  -- Starting X position for the task menu
+    local LETTER_POS_Y = 0.15  -- Starting Y position for the task menu
 
+    -- Adjustable positions for Header, Body, and Progress text
+    local HEADER_X = 0.035  -- X position for Header
+    local HEADER_Y = -0.04  -- Y position for Header
+
+    -- Adjusted Y values to position the Body and Progress below the Header
+    local BODY_X = 0.035  -- X position for Body
+    local BODY_Y = -0.08  -- Y position for Body (below the Header)
+
+    local PROG_X = 0.035  -- X position for Progress
+    local PROG_Y = -0.12  -- Y position for Progress (further below the Body)
     -- Panel size constants
     local PANEL_WIDTH = 0.18  -- Panel width (adjust as needed)
     local PANEL_HEIGHT = 0.14  -- Panel height (adjust as needed)
 
     -- State (per player instance)
-    local EMBED = {}
+    local TASKMENU = {}
 
     -- UI Helper Functions
     local function mkBackdrop(parent, w, h, tex, a)
@@ -79,9 +87,9 @@ do
         return parent
     end
 
-    -- Embed Lifecycle (per player)
-    local function destroyEmbed(pid)
-        local inst = EMBED[pid]
+    -- TASKMENU Lifecycle (per player)
+    local function destroyTASKMENU(pid)
+        local inst = TASKMENU[pid]
         if not inst then return end
         local fields = {
             "panel", "header", "body", "prog"
@@ -90,34 +98,34 @@ do
             local f = inst[fields[i]]
             if f then BlzDestroyFrame(f) end
         end
-        EMBED[pid] = nil
+        TASKMENU[pid] = nil
     end
 
-    local function ensureEmbed(pid, parent)
-        local inst = EMBED[pid]
+    local function ensureTASKMENU(pid, parent)
+        local inst = TASKMENU[pid]
         if inst and inst.parent == parent then return inst end
-        destroyEmbed(pid)
+        destroyTASKMENU(pid)
 
         -- Create an invisible leaderboard as an anchor
         local leaderboard = SetupLeaderboardFrame(pid)
 
         -- Create content panel for task info with adjusted size and position
-        local panel = mkBackdrop(leaderboard, PANEL_WIDTH, PANEL_HEIGHT, BG_TEX, 200)
+        local panel = mkBackdrop(leaderboard, PANEL_WIDTH, PANEL_HEIGHT, BG_TEX, 255)
 
         -- Set the position based on dynamic coordinates (using Game UI position)
         BlzFrameSetPoint(panel, FRAMEPOINT_TOPRIGHT, BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0), FRAMEPOINT_CENTER, LETTER_POS_X, LETTER_POS_Y)
 
         -- Static text placeholders for task title, objective, and progress
         local header = mkText(panel, "", TITLE_SCALE, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_MIDDLE)
-        BlzFrameSetPoint(header, FRAMEPOINT_TOPLEFT, panel, FRAMEPOINT_TOPLEFT, PAD, -PAD)
+        BlzFrameSetPoint(header, FRAMEPOINT_TOPLEFT, panel, FRAMEPOINT_TOPLEFT, HEADER_X, HEADER_Y)
 
         local body = mkText(panel, "", TEXT_SCALE)
-        BlzFrameSetPoint(body, FRAMEPOINT_TOPLEFT, panel, FRAMEPOINT_TOPLEFT, PAD, BODY_Y)
+        BlzFrameSetPoint(body, FRAMEPOINT_TOPLEFT, panel, FRAMEPOINT_TOPLEFT, BODY_X, BODY_Y)
 
         local prog = mkText(panel, "", TEXT_SCALE)
-        BlzFrameSetPoint(prog, FRAMEPOINT_TOPLEFT, panel, FRAMEPOINT_TOPLEFT, PAD, PROG_Y)
+        BlzFrameSetPoint(prog, FRAMEPOINT_TOPLEFT, panel, FRAMEPOINT_TOPLEFT, PROG_X, PROG_Y)
 
-        EMBED[pid] = {
+        TASKMENU[pid] = {
             parent = parent,
             panel = panel,
             header = header,
@@ -125,7 +133,7 @@ do
             prog = prog,
             _mode = "idle",
         }
-        return EMBED[pid]
+        return TASKMENU[pid]
     end
 
     -- Set Task Information (Title, Objective, Progress)
@@ -143,17 +151,17 @@ do
 
     -- Display Task Information for the Player
     function TaskDisplay.ShowTask(pid)
-        local inst = ensureEmbed(pid, BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0))  -- Attach to UI
+        local inst = ensureTASKMENU(pid, BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0))  -- Attach to UI
 
         -- Retrieve the current task
         local task = HFILQuests.GetCurrent(pid)
 
         -- Ensure task description is set (fallback to title if missing)
-        local description = task.description or "Complete the objective"
+        local description = task.desc
 
         -- Only set the title once in the header (do not repeat in body)
         setHeader(inst, task.title or "Task")  -- Set title in header
-        setBody(inst, description)  -- Set description in body
+        setBody(inst, description or "No Description Set")  -- Set description in body
 
         -- Update progress based on task data (this is where progress comes from HFILQuests)
         setProg(inst, task.progress or 0, task.goal or 0)
@@ -161,7 +169,7 @@ do
 
     -- Update Progress Dynamically
     function TaskDisplay.UpdateProgress(pid)
-        local inst = EMBED[pid]
+        local inst = TASKMENU[pid]
         local task = HFILQuests.GetCurrent(pid)  -- Retrieve the current task from HFILQuests
         if inst and task then
             -- Ensure we are updating the correct progress from HFILQuests data
@@ -171,7 +179,7 @@ do
 
     -- Task Completion and Cleanup
     function TaskDisplay.CompleteTask(pid)
-        local inst = EMBED[pid]
+        local inst = TASKMENU[pid]
         if inst then
             setHeader(inst, "Task Complete")
             setBody(inst, "Well done! You have completed the task.")
@@ -183,13 +191,13 @@ do
 
     -- Refresh Function (Call this to update task information)
     function TaskDisplay.Refresh(pid)
-        local inst = EMBED[pid]
+        local inst = TASKMENU[pid]
         local curTask = HFILQuests.GetCurrent(pid)  -- Get current task data
 
         if curTask then
             -- Update the task display with current task data
             setHeader(inst, curTask.title or "Task")  -- Set title
-            setBody(inst, curTask.description or "Complete the objective")  -- Set description
+            setBody(inst, curTask.description or "Description was not set")  -- Set description
             setProg(inst, curTask.progress or 0, curTask.goal or 0)  -- Update progress
         else
             -- No active task, reset UI
@@ -215,9 +223,6 @@ do
     -- Initialization (Trigger Setup)
     OnInit.final(function()
         -- Debug message
-        if Debug then
-            Debug.Print("Task Display initialized globally and Task info is being shown!")
-        end
     end)
 
 end

@@ -1,4 +1,5 @@
 if Debug and Debug.beginFile then Debug.beginFile("CustomSEBar.lua") end
+--@debug
 --==================================================
 -- CustomSEBar.lua  (Soul Energy XP Bar)
 -- Bottom-centered SE bar (WORLD_FRAME; not clipped by console)
@@ -13,17 +14,18 @@ do
     --------------------------------------------------
     -- TUNABLES
     --------------------------------------------------
-    local BAR_W        = 0.22      -- overall width
-    local BAR_H        = 0.030     -- overall height
+    local BAR_W        = 0.25      -- overall width
+    local BAR_H        = 0.040     -- overall height
+    local FILL_W_PAD   = 0.04     -- padding for width of the fill
+    local FILL_H_PAD   = 0.011     -- padding for height of the fill
     local FILL_PAD     = 0.006     -- inner padding from backdrop to fill
-    local BOTTOM_Y     = 0.030     -- distance from bottom of screen
-    local LEVEL        = 12        -- z-order of the container frame
+    local BOTTOM_Y     = 0.030     -- distance from bottom of screen       -- z-order of the container frame
 
     local TEXT_SCALE   = 0.90
     local POLL_DT      = 0.05
 
     -- Textures
-    local TEX_BACK     = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
+    local TEX_BACK     = "ui\\SoulEnergyBar.blp"
     local TEX_FILL     = "ReplaceableTextures\\TeamColor\\TeamColor01"  -- 01 = blue
 
     --------------------------------------------------
@@ -100,26 +102,29 @@ do
         local parent = uiWorld()
         local r = BlzCreateFrameByType("FRAME", "SEBarRoot"..pid, parent, "", 0)
         root[pid] = r
-        BlzFrameSetLevel(r, LEVEL)
+        BlzFrameSetLevel(r, 1)
         BlzFrameSetSize(r, BAR_W, BAR_H)
         -- center bottom
         BlzFrameSetPoint(r, FRAMEPOINT_BOTTOM, parent, FRAMEPOINT_BOTTOM, 0.0, BOTTOM_Y)
 
         -- Backdrop
-        local bg = BlzCreateFrameByType("BACKDROP", "SEBarBg"..pid, r, "", 0)
+        local bg = BlzCreateFrameByType("BACKDROP", "SEBarBg"..pid, uiRoot(), "", 0)
         back[pid] = bg
         BlzFrameSetAllPoints(bg, r)
         BlzFrameSetTexture(bg, TEX_BACK, 0, true)
         BlzFrameSetAlpha(bg, 180)
+        BlzFrameSetLevel(bg, 15)
 
         -- Fill
         local sb = BlzCreateFrameByType("SIMPLESTATUSBAR", "SEBarFill"..pid, r, "", 0)
         bar[pid] = sb
-        BlzFrameSetPoint(sb, FRAMEPOINT_TOPLEFT,     r, FRAMEPOINT_TOPLEFT,     FILL_PAD, -FILL_PAD)
-        BlzFrameSetPoint(sb, FRAMEPOINT_BOTTOMRIGHT, r, FRAMEPOINT_BOTTOMRIGHT, -FILL_PAD,  FILL_PAD)
+        BlzFrameSetPoint(sb, FRAMEPOINT_TOPLEFT, r, FRAMEPOINT_TOPLEFT, FILL_W_PAD, -FILL_H_PAD)
+        BlzFrameSetPoint(sb, FRAMEPOINT_BOTTOMRIGHT, r, FRAMEPOINT_BOTTOMRIGHT, -FILL_W_PAD, FILL_H_PAD)
+        BlzFrameSetSize(sb, FILL_W_PAD, FILL_H_PAD)
         BlzFrameSetTexture(sb, TEX_FILL, 0, false)
         BlzFrameSetMinMaxValue(sb, 0, 1)
         BlzFrameSetValue(sb, 0)
+        BlzFrameSetLevel(sb, 3)
 
         -- Text (parented to GAME_UI so it renders crisp)
         local t = BlzCreateFrameByType("TEXT", "SEBarText"..pid, uiRoot(), "", 0)

@@ -1,10 +1,11 @@
 if Debug and Debug.beginFile then Debug.beginFile("ShardChargeSystem.lua") end
 --==================================================
--- ShardChargeSystem.lua (per-shard conditions)
--- • CURRENT: only Goku shard (I00W)
--- • Cond: player has it in CUSTOM inventory AND Spirit Drive hits 100
--- • Effect: mark charged in PLAYER_DATA and tell the player
--- • No WC3 item charges, no fragment cost
+-- ShardChargeSystem.lua  (v0.5 — SD-first, custom inventory)
+-- • Goku shard only (I00W)
+-- • Triggers on SpiritDrive full event OR poll
+-- • Reads SpiritDrive.Get(...) FIRST
+-- • Falls back to PLAYER_DATA[pid].spiritDrive
+-- • Debug gated at top
 --==================================================
 
 if not ShardChargeSystem then ShardChargeSystem = {} end
@@ -12,28 +13,103 @@ _G.ShardChargeSystem = ShardChargeSystem
 
 do
     --------------------------------------------------
-    -- CONFIG
+    -- Toggle
+    --------------------------------------------------
+    local DEBUG_SHARD = false
+
+    --------------------------------------------------
+    -- Config
     --------------------------------------------------
     local GOKU_SHARD_ID = FourCC("I00W")
+    local POLL_PERIOD   = 0.40
 
-    -- later we can add more:
-    -- [FourCC("I0XY")] = { id=FourCC("I0XY"), cond="boss_killed:garlicjr" },
     local SHARD_RULES = {
         [GOKU_SHARD_ID] = {
             id   = GOKU_SHARD_ID,
-            name = "Goku Ascension Shard",
-            mode = "spirit_full",  -- current mode
+            name = "Goku Ascension Shard (Uncharged)",
+            mode = "spirit_full",
         },
     }
 
     --------------------------------------------------
-    -- INTERNAL HELPERS
+    -- Debug
     --------------------------------------------------
-    local function dprint(s)
-        if Debug and Debug.printf then Debug.printf("[ShardCharge] " .. tostring(s)) end
+    local lastPollDebug = 0
+
+    local function dbg0(msg)
+        if not DEBUG_SHARD then return end
+        DisplayTextToPlayer(Player(0), 0, 0, "[ShardDebug] " .. tostring(msg))
     end
 
-    local function PD(pid)
+    local function dbgTo(pid, msg)
+        if not DEBUG_SHARD then return end
+        DisplayTextToPlayer(Player(pid), 0, 0, "[ShardDebug] " .. tostring(msg))
+    end
+
+    local function log(msg)
+        if not DEBUG_SHARD then return end
+        if Debug and Debug.printf then
+            Debug.printf("[ShardCharge] " .. tostring(msg))
+        end
+    end
+
+    --------------------------------------------------
+    -- Helpers
+    --------------------------------------------------
+    local function getSpiritDrive(pid)
+        if _G.SpiritDrive and SpiritDrive.Get then
+            local v = SpiritDrive.Get(pid) or 0
+            return v
+        end
+        if _G.PLAYER_DATA and PLAYER_DATA[pid] and PLAYER_DATA[pid].spiritDrive then
+            return PLAYER_DATA[pid].spiritDrive
+        end
+        return 0
+    end
+
+    local function hasInCustomInv(pid, itemId)
+        -- UI module first
+        if _G.PlayerMenu_InventoryModule and PlayerMenu_InventoryModule.HasItem then
+            local ok, res = pcall(PlayerMenu_InventoryModule.HasItem, pid, itemId)
+            if ok and res == true then
+                return true
+            end
+        end
+        if _G.PlayerMenu_InventoryModule and PlayerMenu_InventoryModule.GetItemCount then
+            local ok2, cnt = pcall(PlayerMenu_InventoryModule.GetItemCount, pid, itemId)
+            if ok2 and type(cnt) == "number" and cnt > 0 then
+                return true
+            end
+        end
+
+        -- InventoryService fallback
+        if _G.InventoryService and InventoryService.List then
+            local list = InventoryService.List(pid)
+            if list then
+                local cap = 0
+                if InventoryService.Capacity then
+                    cap = InventoryService.Capacity(pid) or 0
+                else
+                    for k, _ in pairs(list) do
+                        if type(k) == "number" and k > cap then
+                            cap = k
+                        end
+                    end
+                end
+                local i = 1
+                while i <= cap do
+                    if list[i] == itemId then
+                        return true
+                    end
+                    i = i + 1
+                end
+            end
+        end
+
+        return false
+    end
+
+    local function ensurePD(pid)
         PLAYER_DATA = PLAYER_DATA or {}
         PLAYER_DATA[pid] = PLAYER_DATA[pid] or {}
         local pd = PLAYER_DATA[pid]
@@ -41,78 +117,80 @@ do
         return pd
     end
 
-    -- read custom inventory (NOT WC3 inventory)
-    local function listCustomInv(pid)
-        if _G.InventoryService and InventoryService.List then
-            local ok, list = pcall(InventoryService.List, pid)
-            if ok and type(list) == "table" then
-                return list
-            end
-        end
-        return {}
-    end
-
-    -- does player have this itemId in custom inv?
-    local function hasCustomItem(pid, itemId)
-        local list = listCustomInv(pid)
-        for _, v in ipairs(list) do
-            if v == itemId then
+    -- This is the new HasChargedShard function
+    function ShardChargeSystem.HasChargedShard(pid)
+        local pd = ensurePD(pid)
+        for itemId, charged in pairs(pd.chargedShards) do
+            if charged then
                 return true
             end
         end
         return false
     end
 
-    -- mark charged + notify + tell UI (if exists)
-    local function markCharged(pid, itemId, niceName)
-        local pd = PD(pid)
-        pd.chargedShards[itemId] = true
+    local function isCharged(pid, itemId)
+        local pd = ensurePD(pid)
+        return pd.chargedShards[itemId] == true
+    end
 
-        local p = Player(pid)
-        if niceName and niceName ~= "" then
-            DisplayTextToPlayer(p, 0, 0, niceName .. " (Charged)")
-        else
-            DisplayTextToPlayer(p, 0, 0, "Shard charged.")
+    local function renameItemToCharged(itemId)
+        if not _G.ItemDatabase or not ItemDatabase.GetData then
+            return
         end
+        local rec = ItemDatabase.GetData(itemId)
+        if not rec then
+            return
+        end
+        local name = rec.name or "Shard"
+        local unSuffix = " (Uncharged)"
+        local chSuffix = " (Charged)"
+        local newName
+        if string.len(name) >= string.len(unSuffix) and string.sub(name, string.len(name) - string.len(unSuffix) + 1) == unSuffix then
+            local base = string.sub(name, 1, string.len(name) - string.len(unSuffix))
+            newName = base .. chSuffix
+        else
+            newName = name .. chSuffix
+        end
+        rec.name = newName
+    end
 
-        -- if your inventory UI has a refresh, call it
+    local function refreshInv(pid)
         if _G.PlayerMenu_InventoryModule and PlayerMenu_InventoryModule.Render then
             pcall(PlayerMenu_InventoryModule.Render, pid)
         end
+    end
 
-        -- let other systems know
+    local function markCharged(pid, itemId, niceName)
+        local pd = ensurePD(pid)
+        pd.chargedShards[itemId] = true
+
+        renameItemToCharged(itemId)
+        refreshInv(pid)
+
+        DisplayTextToPlayer(Player(pid), 0, 0, (niceName or "Shard") .. " is now CHARGED!")
+
         local PB = rawget(_G, "ProcBus")
         if PB and PB.Emit then
             PB.Emit("OnShardCharged", { pid = pid, itemId = itemId })
         end
 
-        dprint("charged shard " .. tostring(itemId) .. " for p" .. tostring(pid))
+        log("charged shard " .. tostring(itemId) .. " for pid " .. tostring(pid))
     end
 
     --------------------------------------------------
-    -- PUBLIC QUERY (so UI can check)
+    -- Core check
     --------------------------------------------------
-    function ShardChargeSystem.IsCharged(pid, itemId)
-        local pd = PD(pid)
-        return pd.chargedShards[itemId] == true
-    end
-
-    --------------------------------------------------
-    -- CORE: handle spirit-drive-full
-    --------------------------------------------------
-    local function onSpiritDriveFull(e)
-        if not e or e.pid == nil then return end
-        local pid = e.pid
-
-        -- scan all defined shards
+    local function tryCharge(pid, sdVal)
         for itemId, rule in pairs(SHARD_RULES) do
-            -- only process spirit-full ones here
             if rule.mode == "spirit_full" then
-                -- must own the shard in CUSTOM inventory
-                if hasCustomItem(pid, itemId) then
-                    -- must NOT be already charged
-                    if not ShardChargeSystem.IsCharged(pid, itemId) then
-                        markCharged(pid, itemId, rule.name)
+                if hasInCustomInv(pid, itemId) then
+                    if not isCharged(pid, itemId) then
+                        if sdVal >= 100 then
+                            markCharged(pid, itemId, rule.name)
+                        else
+                            -- still useful to know
+                            dbgTo(pid, "has shard, SD=" .. tostring(sdVal) .. " need 100")
+                        end
                     end
                 end
             end
@@ -120,22 +198,64 @@ do
     end
 
     --------------------------------------------------
-    -- INIT
+    -- Init / wiring
     --------------------------------------------------
-    OnInit.final(function()
-        -- hook into ProcBus
+    local function initShard()
+        dbg0("ShardChargeSystem init, Goku shard=" .. tostring(GOKU_SHARD_ID))
+
+        -- listen to SD events
         local PB = rawget(_G, "ProcBus")
         if PB and PB.On then
-            PB.On("OnSpiritDriveFull", onSpiritDriveFull)
-            dprint("wired to ProcBus.OnSpiritDriveFull")
+            PB.On("OnSpiritDriveFull", function(e)
+                if not e or e.pid == nil then return end
+                local sdVal = getSpiritDrive(e.pid)
+                dbgTo(e.pid, "OnSpiritDriveFull (bus) SD=" .. tostring(sdVal))
+                tryCharge(e.pid, sdVal)
+            end)
+            PB.On("SpiritDriveFull", function(e)
+                if not e or e.pid == nil then return end
+                local sdVal = getSpiritDrive(e.pid)
+                dbgTo(e.pid, "SpiritDriveFull (bus) SD=" .. tostring(sdVal))
+                tryCharge(e.pid, sdVal)
+            end)
+            log("wired to ProcBus")
         else
-            dprint("WARNING: ProcBus missing, shard auto-charge will not run.")
+            log("ProcBus not found, poll only")
         end
+
+        -- safety poll
+        TimerStart(CreateTimer(), POLL_PERIOD, true, function()
+            local t = 0
+            if os and os.clock then
+                t = os.clock()
+            end
+            for pid = 0, bj_MAX_PLAYER_SLOTS - 1 do
+                if GetPlayerController(Player(pid)) == MAP_CONTROL_USER then
+                    local sdVal = getSpiritDrive(pid)
+                    if sdVal >= 100 then
+                        tryCharge(pid, sdVal)
+                    end
+                    -- print SD every ~2s so you SEE it
+                    if DEBUG_SHARD and pid == 0 and (t - lastPollDebug) > 2.0 then
+                        dbg0("poll p0: SD=" .. tostring(sdVal))
+                        lastPollDebug = t
+                    end
+                end
+            end
+        end)
 
         if rawget(_G, "InitBroker") and InitBroker.SystemReady then
             InitBroker.SystemReady("ShardChargeSystem")
         end
-    end)
+    end
+
+    if OnInit and OnInit.final then
+        OnInit.final(initShard)
+    else
+        local trig = CreateTrigger()
+        TriggerRegisterTimerEvent(trig, 3.00, false)
+        TriggerAddAction(trig, initShard)
+    end
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

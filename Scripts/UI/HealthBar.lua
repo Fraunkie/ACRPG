@@ -1,5 +1,6 @@
 if Debug and Debug.beginFile then Debug.beginFile("CustomHealthBar.lua") end
 --==================================================
+--@@debug
 -- CustomHealthBar.lua
 -- Bottom-centered red HP bar (WORLD_FRAME; not clipped by console)
 --==================================================
@@ -11,11 +12,13 @@ do
     --------------------------------------------------
     -- Tunables
     --------------------------------------------------
-    local BAR_W        = 0.11      -- overall width
-    local BAR_H        = 0.030     -- overall height
+    local BAR_W        = 0.25      -- overall width
+    local BAR_H        = 0.040     -- overall height
+    local FILL_W_PAD   = 0.04     -- padding for width of the fill
+    local FILL_H_PAD   = 0.011     -- padding for height of the fill
     local FILL_PAD     = 0.006     -- inner padding from backdrop to fill
-    local BOTTOM_Y     = 0.05     -- distance from bottom of screen
-    local LEVEL        = 12        -- z-order of the container frame
+    local BOTTOM_Y     = 0.06     -- distance from bottom of screen
+
 
     local TEXT_SCALE   = 0.90
     local POLL_DT      = 0.05
@@ -56,7 +59,7 @@ do
         BlzFrameSetPoint(r, FRAMEPOINT_BOTTOM, parent, FRAMEPOINT_BOTTOM, 0.0, BOTTOM_Y)
 
         -- Backdrop sits under the simple status bar
-        local bg = BlzCreateFrameByType("BACKDROP", "HPBg"..pid, r, "", 0)
+        local bg = BlzCreateFrameByType("BACKDROP", "HPBg"..pid, uiRoot(), "", 0)
         back[pid] = bg
         BlzFrameSetAllPoints(bg, r)
         BlzFrameSetTexture(bg, TEX_BACK, 0, true)
@@ -66,12 +69,13 @@ do
         -- Fill bar
         local sb = BlzCreateFrameByType("SIMPLESTATUSBAR", "HPFill"..pid, bg, "", 0)
         bar[pid] = sb
-        BlzFrameSetPoint(sb, FRAMEPOINT_TOPLEFT,     r, FRAMEPOINT_TOPLEFT,     FILL_PAD, -FILL_PAD)
-        BlzFrameSetPoint(sb, FRAMEPOINT_BOTTOMRIGHT, r, FRAMEPOINT_BOTTOMRIGHT, -FILL_PAD,  FILL_PAD)
-        BlzFrameSetTexture(sb, TEX_FILL, 0, false)      -- solid red
-        BlzFrameSetMinMaxValue(sb, 0, 1)                -- will set to real HP each tick
-        BlzFrameSetValue(sb, 0)
-        BlzFrameSetLevel(bg, 2)
+        BlzFrameSetPoint(sb, FRAMEPOINT_TOPLEFT, r, FRAMEPOINT_TOPLEFT, FILL_W_PAD, -FILL_H_PAD)
+        BlzFrameSetPoint(sb, FRAMEPOINT_BOTTOMRIGHT, r, FRAMEPOINT_BOTTOMRIGHT, -FILL_W_PAD, FILL_H_PAD)
+        BlzFrameSetSize(sb, FILL_W_PAD, FILL_H_PAD)
+        BlzFrameSetTexture(sb, TEX_FILL, 0, false)  -- Apply the red fill texture
+        BlzFrameSetMinMaxValue(sb, 0, 1)  -- Min/max values (will be updated later)
+        BlzFrameSetValue(sb, 0)  -- Initial fill value (0)
+        BlzFrameSetLevel(sb, 3)  -- Set the fill level (highest, on top)
 
         -- Text
         local t = BlzCreateFrameByType("TEXT", "HPText"..pid, uiRoot(), "", 0)

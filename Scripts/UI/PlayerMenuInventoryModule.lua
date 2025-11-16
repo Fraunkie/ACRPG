@@ -1,365 +1,504 @@
-if Debug and Debug.beginFile then Debug.beginFile("PlayerMenu_SpellbookModule.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("PlayerMenu_InventoryModule.lua") end
 --==================================================
--- PlayerMenu_SpellbookModule.lua (v3.3)
--- Mirrors Inventory module lifecycle EXACTLY:
--- • ShowInto: build once per open (per toggle), or just re-show + rebuild
--- • Hide: hide all spellbook frames, hide root, then UI[pid] = nil
--- • Uses PlayerMenu contentFrame as root; does NOT destroy contentFrame
--- • No percent symbols anywhere
+-- PlayerMenu_InventoryModule.lua  (Click to Equip, WC3 safe)
+-- Uses InventoryService for data logic
+-- Hands maps to Bracers slot
+-- Restores AddItem and IsFull delegates for ItemPickupBridge
+-- Center overlay shows aggregated stats from equipped items
+-- Overlays are disabled for hit-tests so buttons remain clickable
+-- No use of the percent character anywhere
 --==================================================
 
 do
-  PlayerMenu_SpellbookModule = PlayerMenu_SpellbookModule or {}
-  _G.PlayerMenu_SpellbookModule = PlayerMenu_SpellbookModule
+  PlayerMenu_InventoryModule = PlayerMenu_InventoryModule or {}
+  _G.PlayerMenu_InventoryModule = PlayerMenu_InventoryModule
 
   --------------------------------------------------
-  -- Constants
+  -- Config
   --------------------------------------------------
-  local TEX_PANEL_DARK = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background.blp"
-  local TEX_PANEL_ALT  = "UI\\Widgets\\EscMenu\\NightElf\\nightelf-options-menu-background.blp"
-  local TEX_BTN        = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller.blp"
-  local TEX_LOCK       = "ReplaceableTextures\\CommandButtons\\BTNHoldPosition.blp"
-  local TEX_FALLBACK   = "ReplaceableTextures\\CommandButtons\\BTNInnerFire.blp"
+  local TEX_PANEL_DARK = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background"
+  local TEX_SLOT       = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller"
+  local TEX_EMPTY_EQ   = "ReplaceableTextures\\CommandButtons\\PASEmptyEQSlot.blp"
+  local TEX_EMPTY_INV  = "ReplaceableTextures\\CommandButtons\\PASEmptyInvSlot.blp"
+  local TEX_PAPER      = "war3mapImported\\EquipmentScreen.blp"
 
-  local PAD            = 0.012
-  local TOP_W          = 0.160
-  local TOP_H          = 0.028
-  local TOP_GAP        = 0.010
+  local GRID_ROWS, GRID_COLS = 4, 6
+  local SLOT_W,   SLOT_H     = 0.028, 0.028
+  local GAP                  = 0.006
 
-  local GRID_COLS      = 5
-  local GRID_ROWS      = 3
-  local CELL_W         = 0.090
-  local CELL_H         = 0.078
-  local CELL_GAP_X     = 0.016
-  local CELL_GAP_Y     = 0.014
-  local ICON_W         = 0.036
-  local ICON_H         = 0.036
+  local EQUIP_W, EQUIP_H     = 0.036, 0.036
+  local EQUIP_GAP            = 0.010   -- ↑ was 0.008 (more breathing room)
+  local EQUIP_START_Y        = 0.105   -- ↑ was 0.08  (raises the strip)
+
+  local PAPER_W, PAPER_H     = 0.22,  0.22
+  local PAPER_OFF_X, PAPER_OFF_Y = 0.00, -0.02
+
+  local GRID_BOTTOM_OFFSET   = 0.010   -- ↓ was 0.019 (moves grid down)
+
+  -- UI visible slots (added Belt on the left)
+  local EQUIP_SLOTS_LEFT  = { "Weapon", "Belt", "Offhand", "Head", "Necklace" }
+  local EQUIP_SLOTS_RIGHT = { "Chest", "Legs", "Boots", "Accessory", "Hands" }
+
+  local CATEGORY_TO_SLOT = {
+    WEAPON   = "Weapon",
+    OFFHAND  = "Offhand",
+    HEAD     = "Head",
+    NECKLACE = "Necklace",
+    CHEST    = "Chest",
+    LEGS     = "Legs",
+    BOOTS    = "Boots",
+    ACCESSORY= "Accessory",
+    RING     = "Accessory",
+    HANDS    = "Hands",
+    CAPE     = "Belt",
+  }
+
+  -- Map UI names to service names
+  local function toServiceSlot(uiSlot)
+    if uiSlot == "Offhand"  then return "Shield"  end
+    if uiSlot == "Necklace" then return "Amulet"  end
+    if uiSlot == "Hands"    then return "Bracers" end
+    return uiSlot
+  end
 
   --------------------------------------------------
-  -- State (per player)
+  -- State (UI only)
   --------------------------------------------------
-  -- UI[pid] = { root, bg, overlay, tabSpells, tabTalents, toggleBtn, tSpells, tTalents, tToggle, showLocked, tiles={}, tipBox, tipText }
+  -- UI[pid] = { root, paper, statsText, equipSlots={}, gridHolder, grid={}, tip={box,text} }
   local UI = {}
+  local ItemIcons = rawget(_G, "ItemIcons")
 
   --------------------------------------------------
   -- Helpers
   --------------------------------------------------
-  local function four(v) return type(v)=="string" and FourCC(v) or v end
-  local function validUnit(u) return u and GetUnitTypeId(u) ~= 0 end
-
-  local function heroOf(pid)
-    if _G.PlayerData and PlayerData[pid] and validUnit(PlayerData[pid].hero) then return PlayerData[pid].hero end
-    if _G.PlayerHero and validUnit(PlayerHero[pid]) then return PlayerHero[pid] end
-    return nil
+  local function debounce(btn)
+    BlzFrameSetEnable(btn, false)
+    BlzFrameSetEnable(btn, true)
   end
 
-  local function getUnlocksForUnit(unitTypeId)
-    local GB = rawget(_G,"GameBalance")
-    if not GB then return {} end
-    local map = (GB.GetSpellUnlocksByUnit and GB.GetSpellUnlocksByUnit()) or GB.SPELL_UNLOCKS_BY_UNIT or {}
-    return map[unitTypeId] or {}
+  local function idxWrap(n, k)
+    if n <= 0 then return 1 end
+    local v = k
+    while v > n do v = v - n end
+    while v <= 0 do v = v + n end
+    return v
   end
 
-  local function isPassiveEntry(entry)
-    if not entry then return false end
-    if entry.passive == true then return true end
-    if entry.type == "passive" then return true end
-    if entry.kind == "passive" then return true end
-    if entry.category == "passive" then return true end
-    if entry.behavior == "passive" then return true end
-    if entry.flags and type(entry.flags)=="table" then
-      for _,f in ipairs(entry.flags) do if f == "passive" then return true end end
+  local function iconForItemId(id, pick)
+    if _G.ItemDatabase and ItemDatabase.GetData then
+      local d = ItemDatabase.GetData(id)
+      if d and d.iconpath and d.iconpath ~= "" then return d.iconpath end
     end
-    local GB = rawget(_G,"GameBalance")
-    if GB and GB.IsPassiveAbility and entry.abil then
-      local ok, res = pcall(GB.IsPassiveAbility, entry.abil)
-      if ok and res then return true end
+    if ItemIcons and ItemIcons.Get then
+      local ok, tex = pcall(ItemIcons.Get, id)
+      if ok and type(tex) == "string" and tex ~= "" then return tex end
     end
-    return false
+    local samples = {
+      "ReplaceableTextures\\CommandButtons\\BTNClawsOfAttack.blp",
+      "ReplaceableTextures\\CommandButtons\\BTNHumanArmorUpTwo.blp",
+      "ReplaceableTextures\\CommandButtons\\BTNPotionGreenSmall.blp",
+      "ReplaceableTextures\\CommandButtons\\BTNGloves.blp",
+      "ReplaceableTextures\\CommandButtons\\BTNStone.blp",
+      "ReplaceableTextures\\CommandButtons\\BTNThunderClap.blp",
+    }
+    return samples[idxWrap(#samples, math.abs(pick or id or 1))]
   end
 
-  local function meetsNeed(pid, need)
-    need = need or {}
-    if need.pl_min then
-      local pl = 0
-      if PlayerData and PlayerData[pid] and type(PlayerData[pid].powerLevel)=="number" then pl = PlayerData[pid].powerLevel end
-      if pl < need.pl_min then return false end
+  local function round2(x) return math.floor((x or 0) * 100 + 0.5) / 100 end
+
+  --------------------------------------------------
+  -- Colored stat formatting (shared by tooltip + overlay)
+  --------------------------------------------------
+  local ORDERED_COLORS = {
+    { key="hp",      label="HP",           color="|cffff5555" },
+    { key="attack",  label="Attack",       color="|cffffaa00" },
+    { key="defense", label="Defense",      color="|cff00ffaa" },
+    { key="str",     label="Strength",     color="|cffcc33ff" },
+    { key="agi",     label="Agility",      color="|cff33ff66" },
+    { key="int",     label="Intelligence", color="|cff3399ff" },
+    { key="armor",   label="Armor",        color="|cff88ccff" },
+  }
+
+  local function buildColoredStatLines(totals, mults)
+    local lines, seen = {}, {}
+    local function add(label, val, color) lines[#lines+1] = color..label.."|r: |cffffffff"..tostring(val).."|r" end
+    for i=1,#ORDERED_COLORS do
+      local o = ORDERED_COLORS[i]; if totals[o.key] then add(o.label, totals[o.key], o.color); seen[o.key]=true end
     end
-    if need.sl_min then
-      local sl = 0
-      if PlayerData and PlayerData[pid] and type(PlayerData[pid].soulLevel)=="number" then sl = PlayerData[pid].soulLevel end
-      if sl < need.sl_min then return false end
+    for k,v in pairs(totals) do if not seen[k] then add(k, v, "|cff88ccff") end end
+    if mults and mults.physPowerPct and mults.physPowerPct ~= 0 then
+      add("Physical Power", "x"..tostring(round2(1 + mults.physPowerPct)), "|cffffcc00")
+    end
+    if mults and mults.spellPowerPct and mults.spellPowerPct ~= 0 then
+      add("Spell Power", "x"..tostring(round2(1 + mults.spellPowerPct)), "|cffffcc00")
+    end
+    return lines
+  end
+
+  --------------------------------------------------
+  -- Tooltip text
+  --------------------------------------------------
+  local function makeItemTooltip(id)
+    if not id then return "|cffaaaaaaEmpty|r\nNo details." end
+
+    -- Prefer building a colored tooltip from DB data (so it matches overlay)
+    if _G.ItemDatabase and ItemDatabase.GetData then
+      local d = ItemDatabase.GetData(id)
+      if d then
+        local title = d.name and ("|cffffee88"..d.name.."|r") or "|cffffee88Item|r"
+        local totals, mults = {}, { spellPowerPct=0.0, physPowerPct=0.0 }
+        if type(d.stats) == "table" then
+          for k,v in pairs(d.stats) do
+            if k == "spellPowerPct" then mults.spellPowerPct = (mults.spellPowerPct or 0.0) + (v or 0)
+            elseif k == "physPowerPct" then mults.physPowerPct = (mults.physPowerPct or 0.0) + (v or 0)
+            elseif type(v) == "number" then totals[k] = (totals[k] or 0) + v end
+          end
+        end
+        local lines = buildColoredStatLines(totals, mults)
+        local desc  = d.description and ("\n|cffbbbbbb"..d.description.."|r") or ""
+        return title..desc..(#lines>0 and ("\n"..table.concat(lines, "\n")) or "\n|cffaaaaaaNo stats|r")
+      end
+    end
+
+    -- Fallback
+    return "|cffffee88Item|r "..tostring(id)
+  end
+
+  --------------------------------------------------
+  -- Tooltip UI
+  --------------------------------------------------
+  local function ensureTooltip(pid, parent)
+    local ui = UI[pid]; if not ui then return end
+    if ui.tip then return ui.tip end
+    local box = BlzCreateFrameByType("BACKDROP", "PM_TooltipBox", parent, "", 0)
+    BlzFrameSetSize(box, 0.26, 0.14)
+    BlzFrameSetTexture(box, TEX_PANEL_DARK, 0, true)
+    BlzFrameSetAlpha(box, 230)
+    BlzFrameSetLevel(box, 50)
+    BlzFrameSetEnable(box, false) -- never eat mouse
+
+    local txt = BlzCreateFrameByType("TEXT", "PM_TooltipText", box, "", 0)
+    BlzFrameSetPoint(txt, FRAMEPOINT_TOPLEFT,     box, FRAMEPOINT_TOPLEFT,     0.008, -0.008)
+    BlzFrameSetPoint(txt, FRAMEPOINT_BOTTOMRIGHT, box, FRAMEPOINT_BOTTOMRIGHT, -0.008,  0.008)
+    BlzFrameSetTextAlignment(txt, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
+    BlzFrameSetEnable(txt, false) -- never eat mouse
+    BlzFrameSetVisible(box, false)
+
+    local tipObj = { box = box, text = txt }
+    ui.tip = tipObj
+    return tipObj
+  end
+
+  local function tooltipShow(pid, anchor, text)
+    local ui = UI[pid]; if not ui then return end
+    local tip = ensureTooltip(pid, ui.root)
+    BlzFrameSetText(tip.text, text or "")
+    BlzFrameClearAllPoints(tip.box)
+    BlzFrameSetPoint(tip.box, FRAMEPOINT_LEFT, anchor, FRAMEPOINT_RIGHT, 0.010, 0.0)
+    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(tip.box, true) end
+  end
+
+  local function tooltipHide(pid)
+    local ui = UI[pid]; if not ui or not ui.tip then return end
+    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(ui.tip.box, false) end
+  end
+
+  --------------------------------------------------
+  -- UI Builders
+  --------------------------------------------------
+  local function buildPaperAnchor(parent)
+    local paper = BlzCreateFrameByType("BACKDROP", "PM_InvPaperAnchor", parent, "", 0)
+    BlzFrameSetSize(paper, PAPER_W, PAPER_H)
+    BlzFrameSetPoint(paper, FRAMEPOINT_TOP, parent, FRAMEPOINT_TOP, PAPER_OFF_X, PAPER_OFF_Y)
+    BlzFrameSetTexture(paper, TEX_PANEL_DARK, 0, true)
+    BlzFrameSetAlpha(paper, 1)
+    BlzFrameSetEnable(paper, false) -- click-through!
+    return paper
+  end
+
+  local function buildEquipStrip(pid, parent, paper)
+    local slots = {}
+
+    local function makeSlot(name, point, relPoint, dx, rowIndex)
+      local btn = BlzCreateFrameByType("BUTTON", "PM_Equip_" .. name, parent, "", 0)
+      BlzFrameSetSize(btn, EQUIP_W, EQUIP_H)
+      local yoff = EQUIP_START_Y - (rowIndex - 1) * (EQUIP_H + EQUIP_GAP)
+      BlzFrameSetPoint(btn, point, paper, relPoint, dx, yoff)
+
+      local bg = BlzCreateFrameByType("BACKDROP", "", btn, "", 0)
+      BlzFrameSetAllPoints(bg, btn)
+      BlzFrameSetTexture(bg, TEX_SLOT, 0, true)
+      BlzFrameSetEnable(bg, false)
+
+      local icon = BlzCreateFrameByType("BACKDROP", "", btn, "", 0)
+      BlzFrameSetAllPoints(icon, btn)
+      BlzFrameSetTexture(icon, TEX_EMPTY_EQ, 0, true)
+      BlzFrameSetEnable(icon, false)
+
+      local trig = CreateTrigger()
+      BlzTriggerRegisterFrameEvent(trig, btn, FRAMEEVENT_CONTROL_CLICK)
+      TriggerAddAction(trig, function()
+        debounce(btn)
+        local serviceSlot = toServiceSlot(name)
+        local ok = false
+        if _G.InventoryService and InventoryService.Unequip then
+          ok = InventoryService.Unequip(pid, serviceSlot)
+        end
+        if not ok then
+          local list = _G.InventoryService and InventoryService.List and InventoryService.List(pid)
+          local free = 0
+          if list then
+            for i = 1, (GRID_ROWS * GRID_COLS) do
+              if not list[i] then free = 1; break end
+            end
+          end
+          local reason = (free == 0) and "bag is full" or "slot is empty"
+          DisplayTextToPlayer(Player(pid), 0, 0, "[Unequip] " .. name .. " failed: " .. reason)
+        end
+        PlayerMenu_InventoryModule.Render(pid)
+      end)
+
+      local trigIn, trigOut = CreateTrigger(), CreateTrigger()
+      BlzTriggerRegisterFrameEvent(trigIn,  btn, FRAMEEVENT_MOUSE_ENTER)
+      BlzTriggerRegisterFrameEvent(trigOut, btn, FRAMEEVENT_MOUSE_LEAVE)
+      TriggerAddAction(trigIn,  function()
+        local equippedId = nil
+        if _G.InventoryService and InventoryService.GetEquipped then
+          local eq = InventoryService.GetEquipped(pid)
+          equippedId = eq[toServiceSlot(name)]
+        end
+        tooltipShow(pid, btn, makeItemTooltip(equippedId))
+      end)
+      TriggerAddAction(trigOut, function() tooltipHide(pid) end)
+
+      slots[name] = { btn = btn, icon = icon }
+    end
+
+    for i = 1, #EQUIP_SLOTS_LEFT  do makeSlot(EQUIP_SLOTS_LEFT[i],  FRAMEPOINT_RIGHT, FRAMEPOINT_LEFT,  -PAPER_W * 0.05, i) end
+    for i = 1, #EQUIP_SLOTS_RIGHT do makeSlot(EQUIP_SLOTS_RIGHT[i], FRAMEPOINT_LEFT,  FRAMEPOINT_RIGHT,  PAPER_W * 0.05, i) end
+    return slots
+  end
+
+  --------------------------------------------------
+  -- Stats overlay (centered) — parented to root, disabled for hit-tests
+  --------------------------------------------------
+  local function ensureStatsText(pid)
+    local ui = UI[pid]; if not ui or not ui.root then return nil end
+    if ui.statsText then return ui.statsText end
+    local txt = BlzCreateFrameByType("TEXT", "PM_InvStatsText", ui.root, "", 0)
+    -- a centered box in the content area
+    BlzFrameSetSize(txt, 0.32, 0.28)
+    BlzFrameSetPoint(txt, FRAMEPOINT_CENTER, ui.root, FRAMEPOINT_CENTER, 0.09, -0.01)
+    BlzFrameSetTextAlignment(txt, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
+    BlzFrameSetLevel(txt, 40)
+    BlzFrameSetScale(txt, 1.20)
+    BlzFrameSetEnable(txt, false) -- do not intercept mouse
+    ui.statsText = txt
+    return txt
+  end
+
+  local function computeEquippedStats(pid)
+    local totals = {}
+    local mults  = { spellPowerPct = 0.0, physPowerPct = 0.0 }
+    if not (_G.InventoryService and InventoryService.GetEquipped and _G.ItemDatabase and ItemDatabase.GetData) then
+      return totals, mults
+    end
+    local eq = InventoryService.GetEquipped(pid) or {}
+    for _, itemId in pairs(eq) do
+      if itemId then
+        local d = ItemDatabase.GetData(itemId)
+        if d and type(d.stats) == "table" then
+          for k, v in pairs(d.stats) do
+            if k == "spellPowerPct" then
+              mults.spellPowerPct = (mults.spellPowerPct or 0.0) + (v or 0)
+            elseif k == "physPowerPct" then
+              mults.physPowerPct  = (mults.physPowerPct  or 0.0) + (v or 0)
+            elseif type(v) == "number" then
+              totals[k] = (totals[k] or 0) + v
+            end
+          end
+        end
+      end
+    end
+    return totals, mults
+  end
+
+  local function renderStatsPanel(pid)
+    local txt = ensureStatsText(pid); if not txt then return end
+    local totals, mults = computeEquippedStats(pid)
+    local lines = buildColoredStatLines(totals, mults)
+    if #lines == 0 then
+      BlzFrameSetText(txt, "|cffaaaaaaNo item stats equipped|r")
+    else
+      BlzFrameSetText(txt, table.concat(lines, "\n"))
+    end
+  end
+
+  --------------------------------------------------
+  -- Rendering (Service -> UI)
+  --------------------------------------------------
+  local function renderEquipsFromService(pid)
+    local ui = UI[pid]; if not ui then return end
+    local eq = _G.InventoryService and InventoryService.GetEquipped and InventoryService.GetEquipped(pid) or {}
+    for _, name in ipairs(EQUIP_SLOTS_LEFT) do
+      local sid = toServiceSlot(name)
+      local id = eq[sid]
+      BlzFrameSetTexture(ui.equipSlots[name].icon, id and iconForItemId(id, 900) or TEX_EMPTY_EQ, 0, true)
+    end
+    for _, name in ipairs(EQUIP_SLOTS_RIGHT) do
+      local sid = toServiceSlot(name)
+      local id = eq[sid]
+      BlzFrameSetTexture(ui.equipSlots[name].icon, id and iconForItemId(id, 901) or TEX_EMPTY_EQ, 0, true)
+    end
+  end
+
+  local function renderGridFromService(pid)
+    local ui = UI[pid]; if not ui then return end
+    local list = _G.InventoryService and InventoryService.List and InventoryService.List(pid)
+    local total = GRID_ROWS * GRID_COLS
+    for i = 1, total do
+      local id = list and list[i] or nil
+      BlzFrameSetTexture(ui.grid[i].icon, id and iconForItemId(id, i) or TEX_EMPTY_INV, 0, true)
+    end
+  end
+
+  local function rerenderAll(pid)
+    renderEquipsFromService(pid)
+    renderGridFromService(pid)
+    renderStatsPanel(pid)
+  end
+
+  --------------------------------------------------
+  -- Public API (delegates used by ItemPickupBridge)
+  --------------------------------------------------
+  function PlayerMenu_InventoryModule.IsFull(pid)
+    if _G.InventoryService and InventoryService.IsFull then
+      return InventoryService.IsFull(pid)
     end
     return true
   end
 
-  local function heroHasAbility(pid, abilStr)
-    local u = heroOf(pid); if not validUnit(u) then return false end
-    return GetUnitAbilityLevel(u, four(abilStr)) > 0
+  function PlayerMenu_InventoryModule.AddItem(pid, itemId)
+    if not (_G.InventoryService and InventoryService.Add) then return false end
+    local idx = InventoryService.Add(pid, itemId)
+    if UI[pid] then renderGridFromService(pid); renderStatsPanel(pid) end
+    return idx ~= nil
+  end
+
+  function PlayerMenu_InventoryModule.Render(pid)
+    if UI[pid] then rerenderAll(pid) end
   end
 
   --------------------------------------------------
-  -- Tooltip
+  -- Build Grid (with tooltips)
   --------------------------------------------------
-  local uniq = 0
-  local function tipHide(pid)
-    local ui = UI[pid]; if not ui or not ui.tipBox then return end
-    if GetLocalPlayer()==Player(pid) then BlzFrameSetVisible(ui.tipBox,false) end
-  end
-  local function tipShow(pid, anchor, text)
-    local ui = UI[pid]; if not ui then return end
-    if not ui.tipBox then
-      ui.tipBox  = BlzCreateFrameByType("BACKDROP", "SB_TipBox_"..tostring(uniq), ui.root, "", 0)
-      uniq = uniq + 1
-      BlzFrameSetSize(ui.tipBox, 0.26, 0.12)
-      BlzFrameSetTexture(ui.tipBox, TEX_PANEL_DARK, 0, true)
-      BlzFrameSetAlpha(ui.tipBox, 230)
-      BlzFrameSetLevel(ui.tipBox, 98)
-      ui.tipText = BlzCreateFrameByType("TEXT", "", ui.tipBox, "", 0)
-      BlzFrameSetPoint(ui.tipText, FRAMEPOINT_TOPLEFT,     ui.tipBox, FRAMEPOINT_TOPLEFT,     0.008, -0.008)
-      BlzFrameSetPoint(ui.tipText, FRAMEPOINT_BOTTOMRIGHT, ui.tipBox, FRAMEPOINT_BOTTOMRIGHT, -0.008,  0.008)
-      BlzFrameSetTextAlignment(ui.tipText, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-      if GetLocalPlayer()==Player(pid) then BlzFrameSetVisible(ui.tipBox,false) end
-    end
-    BlzFrameClearAllPoints(ui.tipBox)
-    BlzFrameSetPoint(ui.tipBox, FRAMEPOINT_LEFT, anchor, FRAMEPOINT_RIGHT, 0.010, 0.0)
-    BlzFrameSetText(ui.tipText, text or "")
-    if GetLocalPlayer()==Player(pid) then BlzFrameSetVisible(ui.tipBox,true) end
-  end
+  local function buildGrid(pid, parent)
+    local grid = {}
+    local holder = BlzCreateFrameByType("BACKDROP", "PM_InvGridHolder", parent, "", 0)
+    local totalW = GRID_COLS * SLOT_W + (GRID_COLS - 1) * GAP
+    local totalH = GRID_ROWS * SLOT_H + (GRID_ROWS - 1) * GAP
+    BlzFrameSetSize(holder, totalW, totalH)
+    BlzFrameSetPoint(holder, FRAMEPOINT_BOTTOM, parent, FRAMEPOINT_BOTTOM, 0.0, GRID_BOTTOM_OFFSET)
+    BlzFrameSetTexture(holder, TEX_PANEL_DARK, 0, true)
+    BlzFrameSetAlpha(holder, 160)
+    BlzFrameSetEnable(holder, false) -- let buttons take mouse
 
-  --------------------------------------------------
-  -- Tiles
-  --------------------------------------------------
-  local function setTilesVisible(pid, vis)
-    local ui = UI[pid]; if not ui or not ui.tiles then return end
-    if GetLocalPlayer()~=Player(pid) then return end
-    for _,cell in ipairs(ui.tiles) do if cell.root then BlzFrameSetVisible(cell.root, vis) end end
-  end
-  local function clearTiles(pid)
-    local ui = UI[pid]; if not ui or not ui.tiles then return end
-    setTilesVisible(pid, false)
-    ui.tiles = {}
-  end
+    local idx = 1
+    for r = 1, GRID_ROWS do
+      for c = 1, GRID_COLS do
+        local cell = BlzCreateFrameByType("BACKDROP", "", holder, "", 0)
+        BlzFrameSetSize(cell, SLOT_W, SLOT_H)
+        local x = (c - 1) * (SLOT_W + GAP)
+        local y = (r - 1) * (SLOT_H + GAP)
+        BlzFrameSetPoint(cell, FRAMEPOINT_BOTTOMLEFT, holder, FRAMEPOINT_BOTTOMLEFT, x, y)
+        BlzFrameSetTexture(cell, TEX_SLOT, 0, true)
+        BlzFrameSetEnable(cell, false)
 
-  --------------------------------------------------
-  -- Rebuild Spells grid
-  --------------------------------------------------
-  local function rebuildSpells(pid)
-    local ui = UI[pid]; if not ui then return end
-    clearTiles(pid)
-    BlzFrameSetTexture(ui.bg, TEX_PANEL_DARK, 0, true)
+        local btn = BlzCreateFrameByType("BUTTON", "", cell, "", 0)
+        BlzFrameSetAllPoints(btn, cell)
 
-    local u = heroOf(pid); if not validUnit(u) then return end
-    local list = getUnlocksForUnit(GetUnitTypeId(u))
+        local icon = BlzCreateFrameByType("BACKDROP", "", btn, "", 0)
+        BlzFrameSetAllPoints(icon, btn)
+        BlzFrameSetTexture(icon, TEX_EMPTY_INV, 0, true)
+        BlzFrameSetEnable(icon, false)
 
-    local startY = - (TOP_H + PAD + PAD)
-    local idx = 0
+        grid[idx] = { btn = btn, icon = icon }
 
-    for r=1,GRID_ROWS do
-      for c=1,GRID_COLS do
-        idx = idx + 1
-        local entry = list[idx]; if not entry then goto continue end
+        local idxCap = idx
 
-        local abilId  = four(entry.abil or 0)
-        local passive = isPassiveEntry(entry)
-        local hasAbil = heroHasAbility(pid, entry.abil)
-        local reqOk   = meetsNeed(pid, entry.need)
-        local usable  = (not passive) and (hasAbil or reqOk)
-
-        if not UI[pid].showLocked then
-          if passive then goto continue end
-          if not usable then goto continue end
-        end
-
-        local cell = BlzCreateFrameByType("BACKDROP","SB_Cell", ui.root, "", 0)
-        BlzFrameSetSize(cell, CELL_W, CELL_H)
-        BlzFrameSetPoint(
-          cell, FRAMEPOINT_TOPLEFT, ui.root, FRAMEPOINT_TOPLEFT,
-          PAD + (c-1)*(CELL_W + CELL_GAP_X),
-          startY - (r-1)*(CELL_H + CELL_GAP_Y)
-        )
-        BlzFrameSetTexture(cell, TEX_PANEL_DARK, 0, true)
-        BlzFrameSetLevel(cell, 42)
-
-        local iconBtn = BlzCreateFrameByType("BUTTON","", cell, "", 0)
-        BlzFrameSetSize(iconBtn, ICON_W, ICON_H)
-        BlzFrameSetPoint(iconBtn, FRAMEPOINT_TOPLEFT, cell, FRAMEPOINT_TOPLEFT, 0.006, -0.006)
-        BlzFrameSetLevel(iconBtn, 43)
-
-        local icon = BlzCreateFrameByType("BACKDROP","", iconBtn, "", 0)
-        BlzFrameSetAllPoints(icon, iconBtn)
-        local ipath = BlzGetAbilityIcon(abilId); if not ipath or ipath=="" then ipath = TEX_FALLBACK end
-        BlzFrameSetTexture(icon, ipath, 0, true)
-
-        local name = BlzCreateFrameByType("TEXT","", cell, "", 0)
-        BlzFrameSetPoint(name, FRAMEPOINT_TOPLEFT, cell, FRAMEPOINT_TOPLEFT, 0.006, -0.006)
-        BlzFrameSetTextAlignment(name, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-        BlzFrameSetText(name, entry.name or "Ability")
-        BlzFrameSetLevel(name, 44)
-
-        local lbl = BlzCreateFrameByType("TEXT","", cell, "", 0)
-        BlzFrameSetPoint(lbl, FRAMEPOINT_BOTTOMLEFT, cell, FRAMEPOINT_BOTTOMLEFT, 0.006, 0.006)
-        BlzFrameSetTextAlignment(lbl, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_BOTTOM)
-        if passive then BlzFrameSetText(lbl, "Passive") else BlzFrameSetText(lbl, usable and "Active" or "Active (locked)") end
-        BlzFrameSetLevel(lbl, 44)
-
-        local lock = BlzCreateFrameByType("BACKDROP","", cell, "", 0)
-        BlzFrameSetPoint(lock, FRAMEPOINT_CENTER, cell, FRAMEPOINT_CENTER, 0, 0)
-        BlzFrameSetSize(lock, 0.020, 0.020)
-        BlzFrameSetTexture(lock, TEX_LOCK, 0, true)
-        BlzFrameSetVisible(lock, (not passive) and (not usable) and UI[pid].showLocked)
-
-        local parts = {}
-        if entry.need then
-          if entry.need.pl_min then parts[#parts+1] = "PL "..tostring(entry.need.pl_min) end
-          if entry.need.sl_min then parts[#parts+1] = "Soul Lv "..tostring(entry.need.sl_min) end
-        end
-        local tip = entry.name or "Ability"
-        if #parts>0 then tip = tip.."  ["..table.concat(parts, ", ").."]" end
-        if passive then tip = tip.."\nPassive ability" end
-
-        local tIn, tOut = CreateTrigger(), CreateTrigger()
-        BlzTriggerRegisterFrameEvent(tIn,  iconBtn, FRAMEEVENT_MOUSE_ENTER)
-        BlzTriggerRegisterFrameEvent(tOut, iconBtn, FRAMEEVENT_MOUSE_LEAVE)
-        TriggerAddAction(tIn,  function() tipShow(pid, cell, tip) end)
-        TriggerAddAction(tOut, function() tipHide(pid) end)
+        -- Tooltip handlers for bag items
+        local trigIn, trigOut = CreateTrigger(), CreateTrigger()
+        BlzTriggerRegisterFrameEvent(trigIn,  btn, FRAMEEVENT_MOUSE_ENTER)
+        BlzTriggerRegisterFrameEvent(trigOut, btn, FRAMEEVENT_MOUSE_LEAVE)
+        TriggerAddAction(trigIn, function()
+          local list = _G.InventoryService and InventoryService.List and InventoryService.List(pid) or nil
+          local id = list and list[idxCap] or nil
+          tooltipShow(pid, btn, makeItemTooltip(id))
+        end)
+        TriggerAddAction(trigOut, function() tooltipHide(pid) end)
 
         local trigClick = CreateTrigger()
-        BlzTriggerRegisterFrameEvent(trigClick, iconBtn, FRAMEEVENT_CONTROL_CLICK)
+        BlzTriggerRegisterFrameEvent(trigClick, btn, FRAMEEVENT_CONTROL_CLICK)
         TriggerAddAction(trigClick, function()
-          if passive then
-            DisplayTextToPlayer(Player(pid), 0, 0, "Passive ability — cannot assign to bar.")
-            return
+          debounce(btn)
+          local ok = false
+          if _G.InventoryService and InventoryService.Equip then
+            ok = InventoryService.Equip(pid, idxCap)
           end
-          if not usable then
-            DisplayTextToPlayer(Player(pid), 0, 0, "Ability is locked — meet requirements first.")
-            return
+          if not ok then
+            DisplayTextToPlayer(Player(pid), 0, 0, "Cannot equip this item")
           end
-          local parentForPicker = ui.root
-          if parentForPicker and _G.SlotPicker and SlotPicker.Show then
-            SlotPicker.Show(pid, parentForPicker, cell, function(slotIdx)
-              if _G.CustomSpellBar and CustomSpellBar.SetSlot then
-                CustomSpellBar.SetSlot(pid, slotIdx, abilId)
-              end
-              PlayerData[pid] = PlayerData[pid] or {}
-              PlayerData[pid].loadout = PlayerData[pid].loadout or {}
-              PlayerData[pid].loadout[slotIdx] = abilId
-              DisplayTextToPlayer(Player(pid), 0, 0, "Assigned "..tostring(abilId).." to slot "..tostring(slotIdx))
-            end)
-          else
-            DisplayTextToPlayer(Player(pid), 0, 0, "[Spellbook] SlotPicker unavailable.")
-          end
+          PlayerMenu_InventoryModule.Render(pid)
         end)
 
-        UI[pid].tiles[#UI[pid].tiles+1] = { root = cell }
-        ::continue::
+        idx = idx + 1
       end
     end
+    return holder, grid
   end
 
   --------------------------------------------------
-  -- Chrome
+  -- Show / Hide
   --------------------------------------------------
-  local function ensureChrome(pid)
-    local ui = UI[pid]; if not ui then return end
-    if ui.bg then return end
-
-    ui.bg = BlzCreateFrameByType("BACKDROP","SB_BG", ui.root, "", 0)
-    BlzFrameSetAllPoints(ui.bg, ui.root)
-    BlzFrameSetTexture(ui.bg, TEX_PANEL_DARK, 0, true)
-    BlzFrameSetLevel(ui.bg, 40)
-
-    -- top buttons
-    local function makeTop(label, xOff)
-      local b = BlzCreateFrameByType("BUTTON", "", ui.root, "", 0)
-      BlzFrameSetSize(b, TOP_W, TOP_H)
-      BlzFrameSetPoint(b, FRAMEPOINT_TOPLEFT, ui.root, FRAMEPOINT_TOPLEFT, PAD + xOff, -PAD)
-      local bg = BlzCreateFrameByType("BACKDROP", "", b, "", 0)
-      BlzFrameSetAllPoints(bg, b)
-      BlzFrameSetTexture(bg, TEX_BTN, 0, true)
-      local t = BlzCreateFrameByType("TEXT","", b, "", 0)
-      BlzFrameSetPoint(t, FRAMEPOINT_CENTER, b, FRAMEPOINT_CENTER, 0, 0)
-      BlzFrameSetText(t, label)
-      return b, t
-    end
-
-    ui.tabSpells,  ui.tSpells  = makeTop("Spells", 0.0)
-    ui.tabTalents, ui.tTalents = makeTop("Talents", TOP_W + TOP_GAP)
-    ui.toggleBtn,  ui.tToggle  = makeTop("Show Locked: ON", (TOP_W + TOP_GAP) * 2)
-
-    local trigS = CreateTrigger()
-    BlzTriggerRegisterFrameEvent(trigS, ui.tabSpells, FRAMEEVENT_CONTROL_CLICK)
-    TriggerAddAction(trigS, function()
-      tipHide(pid)
-      BlzFrameSetTexture(ui.bg, TEX_PANEL_DARK, 0, true)
-      rebuildSpells(pid)
-      setTilesVisible(pid, true)
-    end)
-
-    local trigT = CreateTrigger()
-    BlzTriggerRegisterFrameEvent(trigT, ui.tabTalents, FRAMEEVENT_CONTROL_CLICK)
-    TriggerAddAction(trigT, function()
-      tipHide(pid)
-      BlzFrameSetTexture(ui.bg, TEX_PANEL_ALT, 0, true)
-      clearTiles(pid)
-      local text = BlzCreateFrameByType("TEXT","SB_TalentsText", ui.root, "", 0)
-      BlzFrameSetPoint(text, FRAMEPOINT_TOPLEFT, ui.root, FRAMEPOINT_TOPLEFT, PAD, - (TOP_H + PAD + PAD))
-      BlzFrameSetText(text, "Talents placeholder\nComing soon")
-      UI[pid].tiles[#UI[pid].tiles+1] = { root = text }
-      setTilesVisible(pid, true)
-    end)
-
-    local trigToggle = CreateTrigger()
-    BlzTriggerRegisterFrameEvent(trigToggle, ui.toggleBtn, FRAMEEVENT_CONTROL_CLICK)
-    TriggerAddAction(trigToggle, function()
-      UI[pid].showLocked = not UI[pid].showLocked
-      BlzFrameSetText(UI[pid].tToggle, UI[pid].showLocked and "Show Locked: ON" or "Show Locked: OFF")
-      rebuildSpells(pid)
-      setTilesVisible(pid, true)
-    end)
-  end
-
-  --------------------------------------------------
-  -- Public API (Inventory pattern)
-  --------------------------------------------------
-  function PlayerMenu_SpellbookModule.ShowInto(pid, contentFrame)
+  function PlayerMenu_InventoryModule.ShowInto(pid, contentFrame)
     if UI[pid] then
-      if GetLocalPlayer()==Player(pid) then BlzFrameSetVisible(UI[pid].root, true) end
-      -- refresh chrome text and tiles
-      if UI[pid].tToggle then
-        BlzFrameSetText(UI[pid].tToggle, UI[pid].showLocked and "Show Locked: ON" or "Show Locked: OFF")
-      end
-      rebuildSpells(pid)
-      setTilesVisible(pid, true)
+      if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(UI[pid].root, true) end
+      rerenderAll(pid)
       return
     end
 
-    -- build fresh (per-open)
-    UI[pid] = { root = contentFrame, showLocked = true, tiles = {} }
-    local ui = UI[pid]
-    if GetLocalPlayer()==Player(pid) then BlzFrameSetVisible(contentFrame, true) end
-    BlzFrameSetTexture(contentFrame, TEX_PANEL_DARK, 0, true)
-    BlzFrameSetEnable(contentFrame, false)
+    local ui = { root = contentFrame }
+    UI[pid] = ui
+    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(contentFrame, true) end
+    BlzFrameSetTexture(contentFrame, TEX_PAPER, 0, true)
+    BlzFrameSetEnable(contentFrame, false) -- background only
 
-    ensureChrome(pid)
-    BlzFrameSetText(ui.tToggle, "Show Locked: ON")
-    rebuildSpells(pid)
-    setTilesVisible(pid, true)
+    ui.paper = buildPaperAnchor(contentFrame)
+    ui.equipSlots = buildEquipStrip(pid, contentFrame, ui.paper)
+
+    local holder, grid = buildGrid(pid, contentFrame)
+    ui.gridHolder = holder
+    ui.grid = grid
+
+    -- Create text overlay once (centered)
+    ensureStatsText(pid)
+
+    rerenderAll(pid)
   end
 
-  function PlayerMenu_SpellbookModule.Hide(pid)
+  function PlayerMenu_InventoryModule.Hide(pid)
     local ui = UI[pid]; if not ui then return end
-    tipHide(pid)
-    setTilesVisible(pid, false)
-    if GetLocalPlayer()==Player(pid) then
-      if ui.bg then BlzFrameSetVisible(ui.bg, false) end
-      if ui.tabSpells then BlzFrameSetVisible(ui.tabSpells, false) end
-      if ui.tabTalents then BlzFrameSetVisible(ui.tabTalents, false) end
-      if ui.toggleBtn then BlzFrameSetVisible(ui.toggleBtn, false) end
-      if ui.tipBox then BlzFrameSetVisible(ui.tipBox, false) end
-      BlzFrameSetVisible(ui.root, false)  -- exactly like Inventory.Hide
+    if GetLocalPlayer() == Player(pid) then
+      if ui.paper then BlzFrameSetVisible(ui.paper, false) end
+      if ui.gridHolder then BlzFrameSetVisible(ui.gridHolder, false) end
+      if ui.equipSlots then
+        for _, slot in pairs(ui.equipSlots) do BlzFrameSetVisible(slot.btn, false) end
+      end
+      if ui.tip then BlzFrameSetVisible(ui.tip.box, false) end
+      if ui.statsText then BlzFrameSetVisible(ui.statsText, false) end
+      BlzFrameSetVisible(ui.root, false)
     end
-    UI[pid] = nil -- exactly like Inventory.Hide
+    UI[pid] = nil
   end
 end
 

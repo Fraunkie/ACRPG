@@ -35,6 +35,7 @@ do
 
     local S = {}
 
+	local function validUnit(u) return u and GetUnitTypeId(u) ~= 0 end
     local function emit(name, payload)
         local PB = rawget(_G, "ProcBus")
         if PB and PB.Emit then PB.Emit(name, payload) end
@@ -170,6 +171,46 @@ do
         if SS and SS.RemoveSource then SS.RemoveSource(pid, "equip:" .. slot) end
     end
 
+    -- The new ConsumeFood function (Healing Herb logic)
+    function InventoryService.ConsumeFood(pid, idx)
+    local t = ensure(pid)
+    if idx < 1 or idx > t.cap then return false end
+    local itemId = t.items[idx]
+    if not itemId then return false end
+
+    local data = getItemData(itemId)
+    if not data or data.category ~= "FOOD" then return false end
+
+    -- Check if the item is a Healing Herb
+    if data.name == "Healing Herb" then
+        -- Get the current hero unit for the player
+        local u = PlayerData.GetHero(pid)
+        if validUnit(u) then
+            -- Apply the Healing Herb buff
+            -- Apply buff from ItemBuffs (Healing Herb buff)
+            local buffValues = ItemBuffs[FourCC("I00F")]  -- The key for Healing Herb in ItemBuffs
+            BuffBot.SetMainUnit(Player(pid),u)
+            BuffBot.Apply(u, buffValues)
+
+            -- You can use the healing function as well if you want direct healing, but the buff system handles it.
+            -- Local cur = math.max(0, R2I(GetWidgetLife(u)))
+            -- Local max = math.max(1, BlzGetUnitMaxHP(u))
+            -- local healAmount = max * 0.1  -- Heals 10% of max HP
+            -- SetWidgetLife(u, cur + healAmount)  -- Heal the unit directly
+            
+            -- Display the healing message to the player
+            DisplayTextToPlayer(Player(pid), 0, 0, "HEALED for " .. tostring(buffValues.values.health) .. " HP!")
+        end
+    end
+
+    -- Remove the food item from inventory
+    t.items[idx] = nil
+    emit("OnInvItemRemoved", { pid = pid, idx = idx, itemId = itemId })
+
+    return true
+end
+
+
     function InventoryService.Add(pid, itemId)
         if type(itemId) ~= "number" then return nil end
         local t = ensure(pid)
@@ -192,8 +233,21 @@ do
         if idx < 1 or idx > t.cap then return false end
         local itemId = t.items[idx]; if not itemId then return false end
 
+        -- Get item data
         local data = getItemData(itemId); if not data then return false end
 
+        -- Check if the item is food and consume it if true
+        if data.category == "FOOD" then
+            -- Consume the food item
+            InventoryService.ConsumeFood(pid, idx)
+            DisplayTextToPlayer(Player(pid), 0, 0, data.name .. " has been used!")
+            -- Remove item from inventory
+            t.items[idx] = nil
+            emit("OnInvItemRemoved", { pid = pid, idx = idx, itemId = itemId })
+            return true
+        end
+
+        -- Regular equip logic for non-food items
         local heroType = getHeroType(pid)
         if not itemAllowsHeroType(data, heroType) then
             emit("InvServiceChanged", { pid=pid, action="equip_denied", reason="hero_type", itemId=itemId })

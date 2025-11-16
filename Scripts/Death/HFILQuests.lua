@@ -70,12 +70,13 @@ do
     --------------------------------------------------
     -- Task handler pools
     -- Fields:
-    --  id, title, typeTag, eligible(pid), make(pid) -> data, reward(pid, task) -> { soul, frags }
+    --  id, title, desc, typeTag, eligible(pid), make(pid) -> data, reward(pid, task) -> { soul, frags }
     --------------------------------------------------
     HFILQuests._POOL_REGULAR = HFILQuests._POOL_REGULAR or {
-       --[[ {
+        {
             id = "cull_restless",
             title = "Cull the Restless",
+            desc = "Kill Wandering Spirits",
             typeTag = "common",
             eligible = function(pid) return true end,
             make = function(pid)
@@ -88,6 +89,7 @@ do
         {
             id = "gather_soulshards",
             title = "Gather Shards",
+            desc = "Kill Wandering Spirits",
             typeTag = "common",
             eligible = function(pid) return true end,
             make = function(pid)
@@ -100,6 +102,7 @@ do
         {
             id = "clean_up",
             title = "Clean Up Stragglers",
+            desc = "Kill Wandering Spirits",
             typeTag = "common",
             eligible = function(pid) return true end,
             make = function(pid)
@@ -108,13 +111,14 @@ do
             reward = function(pid, task)
                 return { soul = 12, frags = 1 }
             end,
-        },--]]
+        },
     } 
 
     HFILQuests._POOL_SPECIAL = HFILQuests._POOL_SPECIAL or {
         {
             id = "cleanse_shrine",
             title = "Cleanse a Shrine",
+            desc = "Kill Wandering Spirits",
             typeTag = "special",
             eligible = function(pid)
                 local pow = PD(pid).powerLevel or 0
@@ -130,6 +134,7 @@ do
         {
             id = "escort_spirit",
             title = "Guide a Lost Spirit",
+            desc = "Kill Wandering Spirits",
             typeTag = "special",
             eligible = function(pid)
                 local pow = PD(pid).powerLevel or 0
@@ -148,6 +153,7 @@ do
         {
             id = "ancient_echo",
             title = "Answer the Ancient Echo",
+            desc = "Kill Wandering Spirits",
             typeTag = "rare",
             eligible = function(pid)
                 local pow = PD(pid).powerLevel or 0
@@ -163,6 +169,7 @@ do
         {
             id = "rift_seal",
             title = "Seal a Minor Rift",
+            desc = "Kill Wandering Spirits",
             typeTag = "rare",
             eligible = function(pid)
                 local pow = PD(pid).powerLevel or 0
@@ -183,6 +190,7 @@ do
     HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
         id = "cull_n001",
         title = "Cull Wandering Spirits",
+        desc = "Kill Wandering Spirits",
         typeTag = "common",
         eligible = function(pid) return true end,
         make = function(pid)
@@ -196,7 +204,7 @@ do
         reward = function(pid, task)
             -- Base per kill (you can tweak these later)
             local baseSoulPerKill  = 10
-            local baseFragsPerKill = 10
+            local baseFragsPerKill = 1
 
             local goal  = (task and task.goal) or 0
             local soul  = baseSoulPerKill  * goal
@@ -209,6 +217,7 @@ do
     HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
         id = "collect_spirit_fragments",
         title = "Gather Spirit Fragments",
+        desc = "Kill Wandering Spirits",
         typeTag = "common",
         eligible = function(pid) return true end,
         make = function(pid)
@@ -306,12 +315,13 @@ do
         pd.currentTask = {
             id       = choice.id,
             title    = choice.title or choice.id,
+            desc     = choice.desc or "Did not load Description",
             typeTag  = choice.typeTag or "common",
             data     = made,
             progress = 0,
             goal     = made.goal or 0,
         }
-        TaskDisplay.ShowTask(pid, choice)
+        TaskDisplay.ShowTask(pid)
         return pd.currentTask
     end
 

@@ -1,15 +1,8 @@
 if Debug and Debug.beginFile then Debug.beginFile("items_register.lua") end
 --==================================================
 -- items_register.lua
--- Registers the three core items from your current ItemDatabase:
---   • Goz's Gloves (I00G)
---   • Mez's Hammer (I00D)
---   • Old Armor    (I004)
---
--- Notes:
--- - Uses RegisterEx (table form) for clarity.
--- - Includes category/slot and the stats we’re using everywhere else.
--- - Safe to run multiple times; entries are replaced idempotently.
+-- Registers the items from your current ItemDatabase:
+-- Defines Buffs
 --==================================================
 
 OnInit.final(function()
@@ -27,7 +20,6 @@ OnInit.final(function()
       category    = "HANDS",
       slot        = "Bracers",           -- UI slot that matches your equip board
       stats       = { defense = 2, attackspeed = 0.05 },
-      -- allowedHeroTypes / required fields can be added later if needed
     },
 
     [FourCC("I00H")] = {
@@ -60,8 +52,57 @@ OnInit.final(function()
       description = "Shard used to change your hero.",
       iconpath = "ReplaceableTextures\\CommandButtons\\BTNTatteredSoulcloth.blp",
       category = "MISC",
-    }
+    },
+
+    -- New Food Items
+    [FourCC("I00F")] = {  -- Food Item: Healing Herb
+      name        = "Healing Herb",
+      description = "A herb that restores health.",
+      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNHealingHerb.blp",
+      category    = "FOOD",
+      stackable   = true,  -- Mark as stackable
+      stats       = { hp = 50 },  -- Healing amount
+    },
+
+    [FourCC("I00B")] = {  -- Food Item: Mystic Elixir
+      name        = "Mystic Elixir",
+      description = "A magical drink that boosts strength temporarily.",
+      iconpath    = "ReplaceableTextures\\CommandButtons\\BTNElixir.blp",
+      category    = "FOOD",
+      stats       = { attack = 10 },  -- Temporary attack boost
+    },
   })
 end)
+--------------------------------------------------
+---ItemBuffs
+--------------------------------------------------
+ItemBuffs = ItemBuffs or {}
+-- Buff for Healing Herb
+ItemBuffs[FourCC("I00F")] = {
+    name = "Healing Herb",
+    tooltip = "Heals for !health! of the target's max health.",
+    icon = "ReplaceableTextures\\CommandButtons\\BTNHealingHerb.blp",  -- Same as Healing Herb item icon
+    type = "Magic",  -- Type of the buff
+    duration = 0,  -- Instant heal, no duration
+    color = "|cff00ff00",  -- Green color for healing
+    effect = "Abilities\\Spells\\NightElf\\Rejuvenation\\RejuvenationTarget.mdl",  -- Rejuvenation effect
+    attachPoint = "chest",  -- Attach the effect to the chest
+    values = {
+        health = function(target, source, level, stacks)
+            -- Heal 10 of max HP
+            local maxHealth = math.max(1, BlzGetUnitMaxHP(target))
+            return maxHealth * 0.1  -- 10 of max HP
+        end,
+        duration = 0  -- No duration for instant heal
+    },
+    onApply = function(target, source, values, level, stacks)
+        -- Apply the heal
+        local healAmount = values.health  -- This is 10 of max HP
+        local currentHealth = math.max(0, R2I(GetWidgetLife(target)))  -- Current HP
+        SetWidgetLife(target, currentHealth + healAmount)  -- Heal the unit
 
+        -- Display message to the player who owns the target unit
+        DisplayTextToPlayer(GetOwningPlayer(target), 0, 0, "Healed " .. tostring(healAmount) .. " HP")
+    end
+}
 if Debug and Debug.endFile then Debug.endFile() end

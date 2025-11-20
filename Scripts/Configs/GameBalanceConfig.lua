@@ -26,6 +26,7 @@ do
     local HUB_RADIUS = 300.0
     GameBalance.HUBS = GameBalance.HUBS or {
         { id = "YEMMA", x = 28856.0, y = 28929.0,z = 597.2, facing = 180.0, radius = HUB_RADIUS, ui = "hub" },
+        { id = "NEO",  x = -25569.3, y = -16780.6, z = 196.5, facing = 180.0 , radius = HUB_RADIUS, ui = "hub" },
     }
 
     --------------------------------------------------
@@ -59,31 +60,28 @@ do
     -- Teleport node ids and names
     --------------------------------------------------
     GameBalance.TELEPORT_NODE_IDS = GameBalance.TELEPORT_NODE_IDS or {
-        YEMMA        = "YEMMA",
+        YEMMA                     = "YEMMA",
         NEO_CAPSULE_CITY          = "NEO_CAPSULE_CITY",
-        KAMI_LOOKOUT = "KAMI_LOOKOUT",
-        HFIL         = "HFIL",
-        RADITZ       = "RADITZ",
-        VIRIDIAN     = "VIRIDIAN",
-        FILE_ISLAND  = "FILE_ISLAND",
-        LAND_OF_FIRE = "LAND_OF_FIRE",
-        VIRIDIAN_BOSS = "VIRIDIAN_BOSS",
-        DARK_DIGI     = "DARK_DIGI",
-        NINE_TAILS    = "NINE_TAILS",
+        KAMI_LOOKOUT              = "KAMI_LOOKOUT",
+        HFIL                      = "HFIL",
+        RADITZ                    = "RADITZ",
+        VIRIDIAN                  = "VIRIDIAN",
+        FILE_ISLAND               = "FILE_ISLAND",
+        LAND_OF_FIRE              = "LAND_OF_FIRE",
+        VIRIDIAN_BOSS             = "VIRIDIAN_BOSS",
+        DARK_DIGI                 = "DARK_DIGI",
+        NINE_TAILS                = "NINE_TAILS",
     }
 
     GameBalance.NODE_PRETTY = GameBalance.NODE_PRETTY or {
-        YEMMA         = "King Yemma's Desk",
+        YEMMA                      = "King Yemma's Desk",
         NEO_CAPSULE_CITY           = "Neo Capsule City",
-        KAMI_LOOKOUT  = "Kami's Lookout",
-        HFIL          = "HFIL",
-        RADITZ        = "Raditz Landing",
-        VIRIDIAN      = "Viridian Forest",
-        FILE_ISLAND   = "File Island",
-        LAND_OF_FIRE  = "Land of Fire",
-        VIRIDIAN_BOSS = "Viridian Guardian",
-        DARK_DIGI     = "Dark Digivolution",
-        NINE_TAILS    = "Nine Tails Rampage",
+        KAMI_LOOKOUT               = "Kami's Lookout",
+        HFIL                       = "HFIL",
+        RADITZ                     = "Raditz Landing",
+        VIRIDIAN                   = "Viridian Forest",
+        FILE_ISLAND                = "File Island",
+        LAND_OF_FIRE               = "Land of Fire",
     }
 
     --------------------------------------------------
@@ -146,7 +144,7 @@ do
     --------------------------------------------------
     -- Power Level cap for task scaling
     --------------------------------------------------
-    GameBalance.POWERLEVEL_CAP = GameBalance.POWERLEVEL_CAP or 20
+    GameBalance.POWERLEVEL_CAP = GameBalance.POWERLEVEL_CAP or 120
 
     --------------------------------------------------
     -- Economy
@@ -160,110 +158,60 @@ do
     GameBalance.DEV_SPAWN_RADIUS = GameBalance.DEV_SPAWN_RADIUS or 200.0
     GameBalance.DEV_SOUL_TEST_ID = GameBalance.DEV_SOUL_TEST_ID or FourCC("n001")
 
+
     --------------------------------------------------
     -- Spell unlocks (define with string keys, normalize to numeric)
     --------------------------------------------------
-    local RAW = function(k)
+     local RAW = function(k)
         if type(k) == "number" then return k end
         if type(k) == "string" and #k == 4 then return FourCC(k) end
         return k
     end
 
     local SPELLS_BY_UNIT_STRKEY = {
-        -- GOKU (H000)
-        H000 = {
-            { name="Kamehameha",          abil="A006", need={ pl_min=1,  sl_min=1 } },
-            { name="Kaioken",             abil="A019", need={ pl_min=3,  sl_min=2 } },
-            { name="Solar Flare",         abil="A02A", need={ pl_min=2,  sl_min=1 } },
-            { name="Earth's Protector",   abil="A018", need={ pl_min=6,  sl_min=2 } },
-            { name="Spirit Bomb",         abil="A001", need={ pl_min=10, sl_min=3, tier_min=1 } },
-            { name="Energy Blast Volley", abil="A01Z", need={ pl_min=4,  sl_min=2 } },
-            { name="Training Focus",      abil="A01J", need={ pl_min=1,  sl_min=0, passive=true } },
-        },
-
-        -- VEGETA (H002)
-        H002 = {
-            { name="Big Bang Attack",       abil="A01X", need={ pl_min=6,  sl_min=2 } },
-            { name="Final Flash",           abil="A020", need={ pl_min=8,  sl_min=2 } },
-            { name="Final Explosion",       abil="A021", need={ pl_min=10, sl_min=3, tier_min=1 } },
-            { name="Galaxy Breaker",        abil="A01W", need={ pl_min=7,  sl_min=2 } },
-            { name="Saiyan Pride",          abil="A01Y", need={ pl_min=3,  sl_min=1, passive=true } },
-            { name="Savage Strike",         abil="A015", need={ pl_min=2,  sl_min=1 } },
-            { name="Energy Blast Volley",   abil="A01Z", need={ pl_min=4 } },
-            { name="Training Focus",        abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- PICCOLO (H008)
-        H008 = {
-            { name="Stretch Limb",       abil="A2PS", need={ pl_min=2,  sl_min=1 } },
-            { name="Demon Wave",         abil="A022", need={ pl_min=3,  sl_min=1 } },
-            { name="Hellzone Grenade",   abil="A026", need={ pl_min=7,  sl_min=2 } },
-            { name="Lightzone Grenade",  abil="A024", need={ pl_min=5,  sl_min=2 } },
-            { name="Multi-Form",         abil="A025", need={ pl_min=6,  sl_min=2 } },
-            { name="Training Focus",     abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- GOHAN (H00B)
-        H00B = {
-            { name="Energy Blast Volley", abil="A01Z", need={ pl_min=2 } },
-            { name="Training Focus",      abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- MAJIN BUU (H009)
-        H009 = {
-            { name="Energy Blast Volley", abil="A01Z", need={ pl_min=2 } },
-            { name="Training Focus",      abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- NARUTO (H00C)
-        H00C = {
-            { name="Training Focus", abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- SAKURA (H00D)
-        H00D = {
-            { name="Cherry Blossom Impact", abil="A02B", need={ pl_min=2, sl_min=1 } },
-            { name="Training Focus",        abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- AGUMON (H00E)
-        H00E = {
-            { name="Claw Attack",   abil="A02D", need={ pl_min=1 } },
-            { name="Pepper Breath", abil="A02C", need={ pl_min=2, sl_min=1 } },
-        },
-
-        -- GABUMON (H00F)
-        H00F = {
-            { name="Training Focus", abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- CHARMANDER (H00H)
-        H00H = {
-            { name="Training Focus", abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- SQUIRTLE (H006)
-        H006 = {
-            { name="Training Focus", abil="A01J", need={ pl_min=1, passive=true } },
-        },
-
-        -- LOST SOUL (H001) 
+        -- LOST SOUL (H001)
         H001 = {
-            { name="Soul Spirit",  abil="A000", need={ sl_min=0, passive=true } },
-            { name="Energy Bounce", abil="A0EB", need={ pl_min=0,  sl_min=0 } },
-            { name="Energy Volley",  abil="A0CE", need={ sl_min=0,} },
-            { name="Spirit Vortex", abil="A0SV", need={ sl_min=4 } },
-            { name="Spirit Burst",  abil="A002", need={ sl_min=8 } },
-            { name="Soul Strike", abil="A003", need={ sl_min=15, passive=true } },
-        },
+            { name="Soul Spirit",   maxlevel = 1,    abil="A000", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
+                 need   =   { sl_min = 1,  checkname = "soulStrike"},       type = "passive", tooltip = {header = "Soul Spirit",
+                                                                                                   title = "Passive",
+                                                                                                   description = "Basic passive that increases soul energy gain."},
+                                                                                                   requirements = " Requires Soul Level 1.",
+                                                                                                   damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"
+},
 
-        -- CAPSULE BAG (H003)
-        H003 = {
-            { name="Training Focus", abil="A01J", need={ pl_min=1, passive=true } },
-        },
+            { name="Phantom Echo", maxlevel = 1,     abil="A0PE", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
+                 need   =   { sl_min = 5,  checkname = "phantomEcho"},      type = "passive", tooltip = {header = "Soul Spirit",
+                                                                                                         title = "Passive",
+                                                                                                         description = "Basic passive that increases soul energy gain."},
+                                                                                                         requirements = " Requires Soul Level 1.",
+                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"
+},                                            
+            { name="Energy Volley", maxlevel = 1,    abil="A0CE", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
+                 need   =   { sl_min = 0,  checkname = "energyVolley" },    type = "active",  tooltip = {header = "Soul Spirit",
+                                                                                                         title = "Passive",
+                                                                                                         description = "Basic passive that increases soul energy gain."},
+                                                                                                         requirements = " Requires Soul Level 1.",
+                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"},  -- Active spell
+            { name="Spirit Vortex", maxlevel = 1,    abil="A0SV", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
+                 need   =   { sl_min = 4,  checkname = "spiritVortex" },    type = "active",  tooltip = {header = "Soul Spirit",
+                                                                                                         title = "Passive",
+                                                                                                         description = "Basic passive that increases soul energy gain."},
+                                                                                                         requirements = " Requires Soul Level 1.",
+                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"},  -- Active spell
+            { name="Spirit Burst", maxlevel = 1,     abil="A002", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
+                 need   =   { sl_min = 8,  checkname = "spiritBurts" },     type = "active",  tooltip = {header = "Soul Spirit",
+                                                                                                         title = "Passive",
+                                                                                                         description = "Basic passive that increases soul energy gain."},
+                                                                                                         requirements = " Requires Soul Level 1.",
+                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"},  -- Active spell
+            { name="Soul Strike", maxlevel = 1,      abil="A003", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
+                 need   =   { sl_min = 15, checkname = "spiritVortex" },    type = "passive", tooltip = {header = "Soul Spirit",
+                                                                                                         title = "Passive",
+                                                                                                         description = "Basic passive that increases soul energy gain."},
+                                                                                                         requirements = " Requires Soul Level 1.",
+                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"},  -- Passive spell
+        }
     }
-
-
     GameBalance.TALENT_TREES = GameBalance.TALENT_TREES or {
         H001 = "LostSoul",  -- Link LostSoul hero to the LostSoul talent tree
         H000 = "Goku",      -- Link Goku hero to the Goku talent tree

@@ -91,9 +91,10 @@ end
         pd.bootflow_active   = false
         pd.yemmaIntroPending = false
         CustomSpellBar.BindHero(pid, hero)
+        CustomHealthBar.BindHero(pid, hero)
+		CustomHealthBar.Refresh(pid)
         HeroStatSystem.InitializeStats(pid, hero)
         HeroStatSystem.Recalculate(pid)
-        CustomHealthBar.BindHero(pid, hero)
 
         DisplayTextToPlayer(Player(pid), 0, 0, "Soul successfully created.")
 
@@ -118,8 +119,6 @@ end
 
         
         ALICE_Create(hero, actorData.identifier, actorData.interactions)
-
-       -- ALICE_SetFlag(CAT_Camera.identifier, "anchor", hero)
         print("Hero actor added to unit.")
     end
 

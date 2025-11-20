@@ -26,14 +26,14 @@ do
   local SLOT_W,   SLOT_H     = 0.028, 0.028
   local GAP                  = 0.006
 
-  local EQUIP_W, EQUIP_H     = 0.036, 0.036
-  local EQUIP_GAP            = 0.010   -- ↑ was 0.008 (more breathing room)
-  local EQUIP_START_Y        = 0.105   -- ↑ was 0.08  (raises the strip)
+  local EQUIP_W, EQUIP_H     = 0.038, 0.038
+  local EQUIP_GAP            = 0.010
+  local EQUIP_START_Y        = 0.08
 
-  local PAPER_W, PAPER_H     = 0.22,  0.22
+  local PAPER_W, PAPER_H     = 0.2,  0.2
   local PAPER_OFF_X, PAPER_OFF_Y = 0.00, -0.02
 
-  local GRID_BOTTOM_OFFSET   = 0.010   -- ↓ was 0.019 (moves grid down)
+  local GRID_BOTTOM_OFFSET   = 0.010
 
   -- UI visible slots (added Belt on the left)
   local EQUIP_SLOTS_LEFT  = { "Weapon", "Belt", "Offhand", "Head", "Necklace" }
@@ -64,7 +64,7 @@ do
   --------------------------------------------------
   -- State (UI only)
   --------------------------------------------------
-  -- UI[pid] = { root, paper, statsText, equipSlots={}, gridHolder, grid={}, tip={box,text} }
+  -- UI[pid] = { root, paper, statsText, equipSlots={}, gridHolder, grid={} }
   local UI = {}
   local ItemIcons = rawget(_G, "ItemIcons")
 
@@ -136,7 +136,103 @@ do
   end
 
   --------------------------------------------------
-  -- Tooltip text
+  -- Tooltip (CustomTooltip.toc, shared for inventory)
+  --------------------------------------------------
+  local function getSharedTooltip()
+    -- we keep our own copy under index 1 so we do not clash with ALICE (which may use 0)
+    if not _G.InvTooltip then
+      BlzLoadTOCFile("CustomTooltip.toc")
+      local parent = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
+      local box   = BlzCreateFrame("CustomTooltip", parent, 0, 1)
+      local title = BlzGetFrameByName("CustomTooltipTitle", 1)
+      local text  = BlzGetFrameByName("CustomTooltipValue", 1)
+
+      -- keep it above most UI
+      BlzFrameSetLevel(box, 10)
+      BlzFrameSetVisible(box, false)
+
+      -- base colors (quotes will use color codes)
+      if title then
+        BlzFrameSetTextColor(title, BlzConvertColor(255, 255, 230, 128)) -- warm gold
+      end
+      if text then
+        BlzFrameSetTextColor(text, BlzConvertColor(255, 255, 180, 80))   -- soft orange
+      end
+
+      _G.InvTooltip = { box = box, title = title, text = text }
+    end
+    return _G.InvTooltip.box,
+           _G.InvTooltip.title,
+           _G.InvTooltip.text
+  end
+
+  -- Title + body + quote + dynamic sizing
+  local function showTooltipFor(pid, headline, body, anchor)
+    if not anchor then return end
+    local box, title, text = getSharedTooltip()
+    if not box or not text then return end
+
+    if GetLocalPlayer() ~= Player(pid) then
+      return
+    end
+
+    headline = headline or ""
+    body     = body or ""
+
+    -- Split off final quote if present (first "—" from the left)
+    local mainBody = body
+    local quote = nil
+    local dashPos = string.find(body, "—", 1, true)
+    if dashPos then
+      mainBody = string.sub(body, 1, dashPos - 1)
+      quote    = string.sub(body, dashPos)
+    end
+
+    -- Compose text with extra spacing and colored quote
+    local finalText
+    if quote then
+      -- two line breaks, quote in green, then a space line so bottom never clips
+      finalText = mainBody .. "\n\n" .. "|cff00ff00" .. quote .. "|r" .. "\n "
+    else
+      finalText = body .. "\n "
+    end
+
+    if title then
+      BlzFrameSetText(title, headline)
+    end
+    BlzFrameSetText(text, finalText)
+
+    -- pick width based on length of composed text
+    local composedLen = string.len(finalText)
+    local textWidth = 0.26
+    if composedLen > 220 then
+      textWidth = 0.34
+    elseif composedLen > 120 then
+      textWidth = 0.30
+    end
+
+    BlzFrameSetSize(text, textWidth, 0.0)
+    local h = BlzFrameGetHeight(text)
+    -- little padding around the text
+    BlzFrameSetSize(box, textWidth + 0.02, h + 0.036)
+
+    BlzFrameClearAllPoints(box)
+    -- hover style: box near the button, below and to the right
+    BlzFrameSetPoint(box, FRAMEPOINT_TOPLEFT, anchor, FRAMEPOINT_BOTTOMRIGHT, 0.004, -0.004)
+
+    BlzFrameSetVisible(box, true)
+  end
+
+  local function hideTooltipFor(pid)
+    local t = _G.InvTooltip
+    if not t or not t.box then return end
+    if GetLocalPlayer() == Player(pid) then
+      BlzFrameSetVisible(t.box, false)
+    end
+  end
+
+  --------------------------------------------------
+  -- Tooltip text (items)
   --------------------------------------------------
   local function makeItemTooltip(id)
     if not id then return "|cffaaaaaaEmpty|r\nNo details." end
@@ -149,9 +245,13 @@ do
         local totals, mults = {}, { spellPowerPct=0.0, physPowerPct=0.0 }
         if type(d.stats) == "table" then
           for k,v in pairs(d.stats) do
-            if k == "spellPowerPct" then mults.spellPowerPct = (mults.spellPowerPct or 0.0) + (v or 0)
-            elseif k == "physPowerPct" then mults.physPowerPct = (mults.physPowerPct or 0.0) + (v or 0)
-            elseif type(v) == "number" then totals[k] = (totals[k] or 0) + v end
+            if k == "spellPowerPct" then
+              mults.spellPowerPct = (mults.spellPowerPct or 0.0) + (v or 0)
+            elseif k == "physPowerPct" then
+              mults.physPowerPct = (mults.physPowerPct or 0.0) + (v or 0)
+            elseif type(v) == "number" then
+              totals[k] = (totals[k] or 0) + v
+            end
           end
         end
         local lines = buildColoredStatLines(totals, mults)
@@ -162,45 +262,6 @@ do
 
     -- Fallback
     return "|cffffee88Item|r "..tostring(id)
-  end
-
-  --------------------------------------------------
-  -- Tooltip UI
-  --------------------------------------------------
-  local function ensureTooltip(pid, parent)
-    local ui = UI[pid]; if not ui then return end
-    if ui.tip then return ui.tip end
-    local box = BlzCreateFrameByType("BACKDROP", "PM_TooltipBox", parent, "", 0)
-    BlzFrameSetSize(box, 0.26, 0.14)
-    BlzFrameSetTexture(box, TEX_PANEL_DARK, 0, true)
-    BlzFrameSetAlpha(box, 230)
-    BlzFrameSetLevel(box, 50)
-    BlzFrameSetEnable(box, false) -- never eat mouse
-
-    local txt = BlzCreateFrameByType("TEXT", "PM_TooltipText", box, "", 0)
-    BlzFrameSetPoint(txt, FRAMEPOINT_TOPLEFT,     box, FRAMEPOINT_TOPLEFT,     0.008, -0.008)
-    BlzFrameSetPoint(txt, FRAMEPOINT_BOTTOMRIGHT, box, FRAMEPOINT_BOTTOMRIGHT, -0.008,  0.008)
-    BlzFrameSetTextAlignment(txt, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-    BlzFrameSetEnable(txt, false) -- never eat mouse
-    BlzFrameSetVisible(box, false)
-
-    local tipObj = { box = box, text = txt }
-    ui.tip = tipObj
-    return tipObj
-  end
-
-  local function tooltipShow(pid, anchor, text)
-    local ui = UI[pid]; if not ui then return end
-    local tip = ensureTooltip(pid, ui.root)
-    BlzFrameSetText(tip.text, text or "")
-    BlzFrameClearAllPoints(tip.box)
-    BlzFrameSetPoint(tip.box, FRAMEPOINT_LEFT, anchor, FRAMEPOINT_RIGHT, 0.010, 0.0)
-    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(tip.box, true) end
-  end
-
-  local function tooltipHide(pid)
-    local ui = UI[pid]; if not ui or not ui.tip then return end
-    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(ui.tip.box, false) end
   end
 
   --------------------------------------------------
@@ -267,9 +328,13 @@ do
           local eq = InventoryService.GetEquipped(pid)
           equippedId = eq[toServiceSlot(name)]
         end
-        tooltipShow(pid, btn, makeItemTooltip(equippedId))
+        local body = makeItemTooltip(equippedId)
+        -- body already contains colored title + stats, so headline can be empty
+        showTooltipFor(pid, "", body, btn)
       end)
-      TriggerAddAction(trigOut, function() tooltipHide(pid) end)
+      TriggerAddAction(trigOut, function()
+        hideTooltipFor(pid)
+      end)
 
       slots[name] = { btn = btn, icon = icon }
     end
@@ -433,9 +498,12 @@ do
         TriggerAddAction(trigIn, function()
           local list = _G.InventoryService and InventoryService.List and InventoryService.List(pid) or nil
           local id = list and list[idxCap] or nil
-          tooltipShow(pid, btn, makeItemTooltip(id))
+          local body = makeItemTooltip(id)
+          showTooltipFor(pid, "", body, btn)
         end)
-        TriggerAddAction(trigOut, function() tooltipHide(pid) end)
+        TriggerAddAction(trigOut, function()
+          hideTooltipFor(pid)
+        end)
 
         local trigClick = CreateTrigger()
         BlzTriggerRegisterFrameEvent(trigClick, btn, FRAMEEVENT_CONTROL_CLICK)
@@ -488,13 +556,13 @@ do
 
   function PlayerMenu_InventoryModule.Hide(pid)
     local ui = UI[pid]; if not ui then return end
+    hideTooltipFor(pid)
     if GetLocalPlayer() == Player(pid) then
       if ui.paper then BlzFrameSetVisible(ui.paper, false) end
       if ui.gridHolder then BlzFrameSetVisible(ui.gridHolder, false) end
       if ui.equipSlots then
         for _, slot in pairs(ui.equipSlots) do BlzFrameSetVisible(slot.btn, false) end
       end
-      if ui.tip then BlzFrameSetVisible(ui.tip.box, false) end
       if ui.statsText then BlzFrameSetVisible(ui.statsText, false) end
       BlzFrameSetVisible(ui.root, false)
     end

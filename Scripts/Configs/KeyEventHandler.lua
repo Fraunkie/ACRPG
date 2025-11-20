@@ -190,7 +190,7 @@ do
     --------------------------------------------------
     local function closeAll(pid)
         if _G.YemmaHub and YemmaHub.Close then pcall(YemmaHub.Close, pid) end
-        if _G.TeleportHub and TeleportHub.Hide then pcall(TeleportHub.Hide, pid) end
+        if _G.YemmaTravel and YemmaTravel.Hide then pcall(YemmaTravel.Hide, pid) end
         if _G.PlayerMenu and PlayerMenu.Hide then pcall(PlayerMenu.Hide, pid) end
         if _G.CombatThreatHUD and CombatThreatHUD.Hide then pcall(CombatThreatHUD.Hide, pid) end
         setUiFocus(pid, false)

@@ -27,19 +27,33 @@ do
             hasStarted = false,
 
             -- power/progression mirrors
-            powerLevel = 0,
             soulLevel  = 1,
+            powerLevel = 0,
             soulXP     = 0,
             soulNextXP = 200,
             spiritDrive = 0,
             talentpoints = 0,
             spellpoints = 1,
-            spellranks = {},
+            spellranks = {
+                passives = {
+
+                },
+                actives = {
+
+                },
+            },
             talentranks = {},
-            knownspells = {},
+            knownspells = {
+                passives ={
+                    phantomEcho = false, soulStrike = false,},
+                actives = {
+
+                }
+            },
 
             -- basic stats mirror
             stats = {
+                powerLevel = 0,
                 power = 0,
                 defense = 0,
                 speed = 0,
@@ -54,14 +68,18 @@ do
 
             -- combat stats mirror
             combat = {
-                armor = 0, energyResist = 0, dodge = 0, parry = 0, block = 0,
-                critChance = 0, critMult = 1.5,
+                armor = 0, damage = 0, energyDamage = 0, energyResist = 0.0, dodge = 0.0, parry = 0.0, block = 0.0,
+                critChance = 0.0, critMult = 150.0,
                 spellBonusPct = 0.0, physicalBonusPct = 0.0,
             },
 
             -- currency
-            fragments   = 0,
-            ownedShards = {},
+            ownedShards             = {},
+
+            currency = {
+            capsuleCoins            = 0,
+            oldZeni                 = 0,
+            },
 
             -- per-fragment-type currency (dummy pickup items)
             fragmentsByKind = {
@@ -69,6 +87,18 @@ do
                 digi   = 0,   -- Digi Fragment (I012)
                 poke   = 0,   -- Poké Fragment (I00Z)
                 chakra = 0,   -- Chakra Fragment (I00Y)
+            },
+
+            resources = { 
+                mining                  = { dragonstoneore = 0, chakracrystals = 0, digimetal = 0, mysticslate = 0, saiyancorefragments = 0, electrosand = 0,
+                                            biometal = 0, soulstoneshards = 0, vortexgemstone = 0, neonite = 0, },
+                woodcutting             = {digilog = 0, chakrawood = 0, kiroot = 0,soulbark = 0, firevine = 0, elderleaf = 0, shinobibranch = 0, mimicsprout = 0,
+                                            digitalsap = 0, sacredbranch = 0, },
+                herblore                = {healingfruits = 0, mysticfern = 0, spiritbloom = 0, chakraherb = 0, digiflareleaf = 0, rebirthvine = 0, soulflower = 0,
+                                            phoenixpetal = 0, vitalroot = 0, etherblossom = 0,},
+                fishing                 = {spiritfish = 0, digishimmerfish = 0, chakraeel = 0, dragonfin = 0, rebirthjellyfish = 0, crystalcarp = 0, digimantaray = 0,
+                                            saiyanseaserpent = 0, healingstarfish = 0, oceanicbubbles = 0,},
+                
             },
 
             -- UX flags
@@ -87,7 +117,7 @@ do
             teleports = {},
 
             -- optional misc bonuses
-            xpBonusPercent = 0,
+            xpBonusPercent = 0.00,
             statChanceBonusPermil = 0,
             dropLuckBonusPermil = 0,
 
@@ -141,6 +171,7 @@ do
     --------------------------------------------------
     -- Accessors
     --------------------------------------------------
+---@diagnostic disable-next-line: duplicate-set-field
     function PlayerData.Get(pid)
         local t = PLAYER_DATA[pid]
         if t == nil then
@@ -150,6 +181,7 @@ do
         return t
     end
 
+---@diagnostic disable-next-line: duplicate-set-field
     function PlayerData.GetField(pid, key, defaultValue)
         local t = PlayerData.Get(pid)
         local v = t[key]
@@ -239,6 +271,48 @@ do
     --------------------------------------------------
     -- Hero / Stats
     --------------------------------------------------
+    
+    function PlayerData.GetCurrency(pid, currencyType)
+        local pd = PlayerData.Get(pid)
+        -- Check if the currency type exists
+        if pd.currency and pd.currency[currencyType] then
+            return pd.currency[currencyType]
+        end
+        return nil  -- Return nil if the currency type doesn't exist
+    end
+
+    function PlayerData.AddCurrency(pid, currencyType, amount)
+        local pd = PlayerData.Get(pid)
+        -- Check if the currency type exists
+        if pd.currency and pd.currency[currencyType] then
+            pd.currency[currencyType] = math.max(0, (pd.currency[currencyType] or 0) + (amount or 0))  -- Add and prevent negative values
+            return pd.currency[currencyType]
+        end
+        return nil  -- Return nil if the currency type doesn't exist
+    end
+
+    function PlayerData.GetResource(pid, category, resource)
+        local pd = PlayerData.Get(pid)
+        -- Check if category and resource exist
+        if pd.resources and pd.resources[category] and pd.resources[category][resource] ~= nil then
+            return pd.resources[category][resource]
+        end
+        return nil  -- Return nil if the resource doesn't exist
+    end
+
+    function PlayerData.SetResource(pid, category, resource, amount)
+        local pd = PlayerData.Get(pid)
+        -- Check if category exists
+        if pd.resources and pd.resources[category] then
+            -- Check if the resource exists within the category
+            if pd.resources[category][resource] ~= nil then
+                pd.resources[category][resource] = amount  -- Update the resource value
+                return pd.resources[category][resource]
+            end
+        end
+        return nil  -- Return nil if the resource/category doesn't exist
+    end
+
     function PlayerData.SetHero(pid, unit)
         local pd = PlayerData.Get(pid)
         pd.hero = unit
@@ -265,13 +339,24 @@ do
         local str = (pd.stats.basestr or 0) * (pd.stats.strmulti or 1.0)
         local agi = (pd.stats.baseagi or 0) * (pd.stats.agimulti or 1.0)
         local int = (pd.stats.baseint or 0) * (pd.stats.intmulti or 1.0)
-        pd.powerLevel = math.max(0, math.floor((str + agi + int) / 3))
+        pd.powerLevel = math.max(0, math.floor(str + agi + int))
         return pd.powerLevel
     end
 
     function PlayerData.GetPowerLevel(pid)
         return (PlayerData.Get(pid).powerLevel or 0)
     end
+
+    function PlayerData.GetEnergyDamage(pid, hero, base, multi)
+        local pd = PlayerData.Get(pid)  -- Get player data
+        local int = GetHeroInt(hero, true)  -- Get hero's intelligence
+        local spb = pd.stats.spellBonusPct  -- Get the player's spell bonus percentage
+        local energyDamage = base + (int * multi)
+            energyDamage = energyDamage * (1.00 + spb)
+
+
+        return energyDamage
+    end 
 
     function PlayerData.GetSoulEnergy(pid)
         return (PlayerData.Get(pid).soulXP or 0)
@@ -306,10 +391,16 @@ do
     function PlayerData.SetStats(pid, tbl)
         local pd = PlayerData.Get(pid)
         local s = pd.stats or {}
-        s.power   = (tbl and tbl.power)   or s.power   or 0
-        s.defense = (tbl and tbl.defense) or s.defense or 0
-        s.speed   = (tbl and tbl.speed)   or s.speed   or 0
-        s.crit    = (tbl and tbl.crit)    or s.crit    or 0
+        s.power                         = (tbl and tbl.power)           or s.power          or 0
+        s.defense                       = (tbl and tbl.defense)         or s.defense        or 0
+        s.damage                        = (tbl and tbl.damage)          or s.damage        or 0
+        s.speed                         = (tbl and tbl.speed)           or s.speed          or 0
+        s.basestr                       = (tbl and tbl.basestr)         or s.basestr        or 0
+        s.baseagi                       = (tbl and tbl.baseagi)         or s.baseagi        or 0
+        s.baseint                       = (tbl and tbl.baseint)         or s.baseint        or 0
+        s.strmulti                      = (tbl and tbl.strmulti)        or s.strmulti        or 0.0
+        s.agimulti                      = (tbl and tbl.agimulti)        or s.agimulti        or 0.0
+        s.intmulti                      = (tbl and tbl.intmulti)        or s.intmulti        or 0.0
         pd.stats = s
         return s
     end
@@ -318,7 +409,7 @@ do
         local pd = PlayerData.Get(pid)
         if not pd.stats then
             pd.stats = {
-                power = 0, defense = 0, speed = 0, crit = 0,
+                power = 0, defense = 0, speed = 0, damage = 0,
                 basestr = 0, baseagi = 0, baseint = 0,
                 strmulti = 1.0, agimulti = 1.0, intmulti = 1.0,
             }
@@ -330,12 +421,14 @@ do
         local pd = PlayerData.Get(pid)
         local c = pd.combat or {}
         c.armor        = (tbl and tbl.armor)        or c.armor        or 0
-        c.energyResist = (tbl and tbl.energyResist) or c.energyResist or 0
-        c.dodge        = (tbl and tbl.dodge)        or c.dodge        or 0
-        c.parry        = (tbl and tbl.parry)        or c.parry        or 0
-        c.block        = (tbl and tbl.block)        or c.block        or 0
-        c.critChance   = (tbl and tbl.critChance)   or c.critChance   or 0
-        c.critMult     = (tbl and tbl.critMult)     or c.critMult     or 1.5
+        c.damage       =(tbl and tbl.damage)        or c.damage       or 0
+        c.energyDamage =(tbl and tbl.energyDamage)  or c.energyDamage or 0
+        c.energyResist = (tbl and tbl.energyResist) or c.energyResist or 0.0
+        c.dodge        = (tbl and tbl.dodge)        or c.dodge        or 0.0
+        c.parry        = (tbl and tbl.parry)        or c.parry        or 0.0
+        c.block        = (tbl and tbl.block)        or c.block        or 0.0
+        c.critChance   = (tbl and tbl.critChance)   or c.critChance   or 0.0
+        c.critMult     = (tbl and tbl.critMult)     or c.critMult     or 150.0
         if tbl and tbl.spellBonusPct     ~= nil then c.spellBonusPct     = tbl.spellBonusPct end
         if tbl and tbl.physicalBonusPct  ~= nil then c.physicalBonusPct  = tbl.physicalBonusPct end
         pd.combat = c
@@ -346,8 +439,8 @@ do
         local pd = PlayerData.Get(pid)
         if not pd.combat then
             pd.combat = {
-                armor = 0, energyResist = 0, dodge = 0, parry = 0, block = 0,
-                critChance = 0, critMult = 1.5,
+                armor = 0, damage = 0, energyDamage = 0, energyResist = 0.0, dodge = 0.0, parry = 0.0, block = 0.0,
+                critChance = 0.0, critMult = 150.0,
                 spellBonusPct = 0.0, physicalBonusPct = 0.0,
             }
         end

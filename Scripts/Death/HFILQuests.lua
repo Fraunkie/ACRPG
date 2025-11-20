@@ -187,61 +187,116 @@ do
     --------------------------------------------------
     -- New HFIL tasks (power-scaled goals)
     --------------------------------------------------
+    ---kills task
+    ------------------------------------------------
     HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
-        id = "cull_n001",
-        title = "Cull Wandering Spirits",
-        desc = "Kill Wandering Spirits",
+    id = "cull_n00G",
+    title = "Cull Vengeful Wraith",
+    desc = "Kill Vengeful Wraith",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n00G")  -- Use IsEligible to check for Vengeful Wraith
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(6, 18, t))
+        local maxG = math.floor(lerp(12, 30, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 30)
+        return { kind = "kill", raw = "n00G", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 15
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,
+}
+
+HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "cull_n001",
+    title = "Cull Wandering Spirits",
+    desc = "Kill Wandering Spirits",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n001")  -- Use IsEligible to check for Wandering Spirits
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(6, 18, t))
+        local maxG = math.floor(lerp(12, 30, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 30)
+        return { kind = "kill", raw = "n001", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 10
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,
+}
+
+HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "collect_spirit_fragments",
+    title = "Gather Spirit Fragments",
+    desc = "Kill Wandering Spirits",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n001")  -- Use IsEligible to check for Wandering Spirits
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(8, 16, t))
+        local maxG = math.floor(lerp(12, 24, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 24)
+        return {
+            kind     = "collect",
+            item     = "spirit_fragment",  -- Use "spirit_fragment" or your custom item
+            sourceRaw = "n001",  -- You can change the raw ID as needed
+            goal     = goal,
+        }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerFrag  = 10
+        local baseFragsPerFrag = 10
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerFrag  * goal
+        local frags = baseFragsPerFrag * goal
+        return { soul = soul, frags = frags }
+    end,
+}
+ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+        id = "collect_vengeful_shards",
+        title = "Gather Vengeful Shards",
+        desc = "Collect Vengeful Shards from the Vengeful Wraith",
         typeTag = "common",
-        eligible = function(pid) return true end,
+        eligible = function(pid)
+            return HFILUnitConfig.IsEligible(pid, "n00G")  -- Use IsEligible to check for Wandering Spirits
+        end,
         make = function(pid)
             local t = pf(pid)
             local minG = math.floor(lerp(6, 18, t))
             local maxG = math.floor(lerp(12, 30, t))
             local goal = rnd(minG, maxG)
             goal = clamp(goal, 1, 30)
-            return { kind = "kill", raw = "n001", goal = goal }
-        end,
-        reward = function(pid, task)
-            -- Base per kill (you can tweak these later)
-            local baseSoulPerKill  = 10
-            local baseFragsPerKill = 1
-
-            local goal  = (task and task.goal) or 0
-            local soul  = baseSoulPerKill  * goal
-            local frags = baseFragsPerKill * goal
-
-            return { soul = soul, frags = frags }
-        end,
-    }
-
-    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
-        id = "collect_spirit_fragments",
-        title = "Gather Spirit Fragments",
-        desc = "Kill Wandering Spirits",
-        typeTag = "common",
-        eligible = function(pid) return true end,
-        make = function(pid)
-            local t = pf(pid)
-            local minG = math.floor(lerp(8, 16, t))
-            local maxG = math.floor(lerp(12, 24, t))
-            local goal = rnd(minG, maxG)
-            goal = clamp(goal, 1, 24)
             return {
-                kind     = "collect",
-                item     = "spirit_fragment",
-                sourceRaw = "n001",
-                goal     = goal,
+                kind = "collect",
+                item = "vengeful_shard",  -- Custom item name for collection
+                goal = goal,
             }
         end,
         reward = function(pid, task)
-            -- Base per collected fragment
-            local baseSoulPerFrag  = 10
-            local baseFragsPerFrag = 10
-
+            local baseSoulPerFrag  = 12
+            local baseFragsPerFrag = 8
             local goal  = (task and task.goal) or 0
             local soul  = baseSoulPerFrag  * goal
             local frags = baseFragsPerFrag * goal
-
             return { soul = soul, frags = frags }
         end,
     }
@@ -493,15 +548,22 @@ do
 
     --------------------------------------------------
     -- Virtual Spirit Fragment drop + task progress on n001 kills
-    --------------------------------------------------
-    local function ensureInv(pid)
+        --------------------------------------------------
+    local function ensureInv(pid, item)
         local pd = PD(pid)
         pd.inv = pd.inv or {}
-        pd.inv.spirit_fragment = pd.inv.spirit_fragment or 0
+        pd.inv[item] = pd.inv[item] or 0  -- Dynamically update based on the item parameter
         return pd.inv
     end
 
-    local function isN001(u)
+    local function isN00G(u)
+        if not u or GetUnitTypeId(u) == 0 then return false end
+        local ok, id = pcall(FourCC, "n00G")
+        if not ok or not id then return false end
+        return GetUnitTypeId(u) == id
+    end
+
+        local function isN001(u)
         if not u or GetUnitTypeId(u) == 0 then return false end
         local ok, id = pcall(FourCC, "n001")
         if not ok or not id then return false end
@@ -520,41 +582,79 @@ do
         end
         return p
     end
+    ------------------------------------------------
+---Wandering Spirit
+------------------------------------------------
+local function onKillN001(e)
+    -- e.pid = killer pid, e.target = killed unit
+    if not e or e.pid == nil or not isN001(e.target) then return end
+    local pid = e.pid
 
-    local function onKillN001(e)
-        -- e.pid = killer pid, e.target = killed unit
-        if not e or e.pid == nil or not isN001(e.target) then return end
-        local pid = e.pid
+    -- 1) Kill task progress (cull_n001)
+    local t = HFILQuests.GetCurrent(pid)
+    if t and t.id == "cull_n001"
+        and t.data and t.data.kind == "kill"
+        and (t.data.raw == "n001") then
+        HFILQuests.AddProgress(pid, 1)
+    end
 
-        -- 1) Kill task progress (cull_n001)
-        local t = HFILQuests.GetCurrent(pid)
-        if t and t.id == "cull_n001"
-            and t.data and t.data.kind == "kill"
-            and (t.data.raw == "n001") then
+    -- 2) Virtual fragment drop + collect task progress
+    local chance = getDropChance()
+    if GetRandomReal(0.0, 1.0) <= chance then
+        local inv = ensureInv(pid, "spirit_fragment")  -- Pass the correct item name
+        inv.spirit_fragment = (inv.spirit_fragment or 0) + 1
+
+        local cur = HFILQuests.GetCurrent(pid)
+        if cur
+            and cur.id == "collect_spirit_fragments"
+            and cur.data and cur.data.kind == "collect"
+            and (cur.data.item == "spirit_fragment") then
             HFILQuests.AddProgress(pid, 1)
         end
+    end
+end
 
-        -- 2) Virtual fragment drop + collect task progress
-        local chance = getDropChance()
-        if GetRandomReal(0.0, 1.0) <= chance then
-            local inv = ensureInv(pid)
-            inv.spirit_fragment = (inv.spirit_fragment or 0) + 1
+------------------------------------------------
+---Vengeful Spirit
+------------------------------------------------
+local function onKillN00G(e)
+    -- e.pid = killer pid, e.target = killed unit
+    if not e or e.pid == nil or not isN00G(e.target) then return end
+    local pid = e.pid
 
-            local cur = HFILQuests.GetCurrent(pid)
-            if cur
-                and cur.id == "collect_spirit_fragments"
-                and cur.data and cur.data.kind == "collect"
-                and (cur.data.item == "spirit_fragment") then
-                HFILQuests.AddProgress(pid, 1)
-            end
+    -- 1) Kill task progress (cull_n00G)
+    local t = HFILQuests.GetCurrent(pid)
+    if t and t.id == "cull_n00G"
+        and t.data and t.data.kind == "kill"
+        and (t.data.raw == "n00G") then
+        HFILQuests.AddProgress(pid, 1)
+    end
+
+    -- 2) Virtual fragment drop + collect task progress
+    local chance = getDropChance()
+    if GetRandomReal(0.0, 1.0) <= chance then
+        local inv = ensureInv(pid, "vengeful_shard")  -- Pass the correct item name
+        inv.vengeful_shard = (inv.vengeful_shard or 0) + 1
+
+        local cur = HFILQuests.GetCurrent(pid)
+        if cur
+            and cur.id == "collect_vengeful_shards"
+            and cur.data and cur.data.kind == "collect"
+            and (cur.data.item == "vengeful_shard") then
+            HFILQuests.AddProgress(pid, 1)
         end
     end
+end
+
+
+
 
     OnInit.final(function()
         local PB = rawget(_G, "ProcBus")
         if PB and (PB.On or PB.Subscribe) then
             local on = PB.On or PB.Subscribe
             on("OnKill", onKillN001)
+            on("OnKill", onKillN00G)
         end
     end)
 end

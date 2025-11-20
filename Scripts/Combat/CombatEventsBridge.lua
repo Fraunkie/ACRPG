@@ -52,12 +52,7 @@ do
         if not ValidUnit(u) then
             return false
         end
-        if _G.BagIgnore and BagIgnore.IsBag then
-            local ok, res = pcall(BagIgnore.IsBag, u)
-            if ok and res then
-                return true
-            end
-        end
+
         return false
     end
 

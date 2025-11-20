@@ -333,7 +333,7 @@ do
             end
             return false
         end
-        RUNNER[FourCC('A0SV')] = function(caster)
+        RUNNER["FourCC('A0SV')"] = function(caster)
             if _G.Spell_SpiritVortex and Spell_SpiritVortex.Cast then
                 Spell_SpiritVortex.Cast(caster)
                 return true

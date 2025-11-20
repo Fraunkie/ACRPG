@@ -53,23 +53,22 @@ do
     SetPlayerState(Player(pid), PLAYER_STATE_RESOURCE_GOLD, math.max(0, getGold(pid) + (delta or 0)))
   end
 
+  -- Get Fragments (adjusted to use fragmentsByKind)
   local function getFragments(pid)
     local PD = rawget(_G, "PlayerData")
     if PD and PD.GetField then
-      return PD.GetField(pid, "fragments", 0) or 0
+      return PD.GetField(pid, "fragmentsByKind", {})
     end
-    -- fallback mirror for known structure
-    local P = rawget(_G, "PLAYER_DATA")
-    if P and P[pid] and type(P[pid].fragments) == "number" then return P[pid].fragments end
-    return 0
+    return {}
   end
-  local function addFragments(pid, delta)
+
+  -- Add fragments for each type
+  local function addFragments(pid, fragType, delta)
     local PD = rawget(_G, "PlayerData")
-    if PD and PD.AddFragments then
-      PD.AddFragments(pid, delta or 0)
+    if PD and PD.AddFragmentsByType then
+      PD.AddFragmentsByType(pid, fragType, delta or 0)
       return
     end
-    -- fallback: no-op if service missing
   end
 
   local function getSouls(pid)
@@ -222,19 +221,34 @@ do
   local function canAfford(pid, price)
     price = price or {}
     local needGold      = price.gold      or 0
-    local needFragments = price.fragments or 0
+    local needFragments = price.fragments or {}
     local needSouls     = price.souls     or 0
-    if getGold(pid)      < needGold      then return false, "Not enough gold" end
-    if getFragments(pid) < needFragments then return false, "Not enough fragments" end
-    if getSouls(pid)     < needSouls     then return false, "Not enough souls" end
+
+    -- Check for Gold
+    if getGold(pid) < needGold then return false, "Not enough gold" end
+
+    -- Check for each fragment type in the fragmentsByKind table
+    for fragType, fragAmount in pairs(needFragments) do
+      if getFragments(pid)[fragType] < fragAmount then
+        return false, "Not enough " .. fragType
+      end
+    end
+
+    -- Check for Souls
+    if getSouls(pid) < needSouls then return false, "Not enough souls" end
+
     return true, nil
   end
 
   local function pay(pid, price)
     price = price or {}
     if (price.gold or 0) > 0 then addGold(pid, -price.gold) end
-    if (price.fragments or 0) > 0 then addFragments(pid, -(price.fragments)) end
-    if (price.souls or 0) > 0 then addSouls(pid, -(price.souls)) end
+    if (price.fragments or {}) then
+      for fragType, fragAmount in pairs(price.fragments) do
+        addFragments(pid, fragType, -fragAmount)
+      end
+    end
+    if (price.souls or 0) > 0 then addSouls(pid, -price.souls) end
   end
 
   --------------------------------------------------
@@ -321,7 +335,11 @@ do
       -- Refund on failure
       local pr = entry.price or {}
       if (pr.gold or 0) > 0 then addGold(pid, pr.gold) end
-      if (pr.fragments or 0) > 0 then addFragments(pid, pr.fragments) end
+      if (pr.fragments or {}) then
+        for fragType, fragAmount in pairs(pr.fragments) do
+          addFragments(pid, fragType, fragAmount)
+        end
+      end
       if (pr.souls or 0) > 0 then addSouls(pid, pr.souls) end
       return false, whyDeliv or "Delivery failed"
     end

@@ -54,9 +54,15 @@ do
   --------------------------------------------------
   -- Style (using FDF-based borders and backgrounds)
   --------------------------------------------------
-  local TEX_BG_LIGHT   = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background.blp"  -- Background texture for main menu
+  local TEX_BG_LIGHT   = "ReplaceableTextures\\CameraMasks\\Black_mask.blp"  -- Background texture for main menu
   local TEX_PANEL_DARK = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"  -- Dark panel texture for content
-  local TEX_BTN        = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller.blp"  -- Button texture
+  local TEX_BTN        = "ui\\Button.blp"  -- Button texture
+  local TEX_BLANK      = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
+  local TEX_STATS      = "ui\\StatsButton.blp"
+  local TEX_INV        = "ui\\InventoryButton.blp"
+  local TEX_LOAD       = "ui\\LoadandSaveButton.blp"
+  local TEX_COMPS      = "ui\\CompanionsButton.blp"
+  local TEX_SB         = "ui\\SpellbookButton.blp"
 
   -- Border Textures (replace these with your border textures)
 local TEX_BORDER_LEFT = "war3mapImported\\SideMenuBorder.blp"
@@ -66,7 +72,7 @@ local TEX_BORDER_BOTTOM = "war3mapImported\\BottomMenuBorder.blp"
 
   local W_OUT, H_OUT   = 0.48, 0.42
   local RAIL_W         = 0.12
-  local PAD            = 0.012
+  local PAD            = 0.013
   local BTN_H          = 0.030
   local BTN_GAP        = 0.012
 
@@ -86,7 +92,7 @@ local TEX_BORDER_BOTTOM = "war3mapImported\\BottomMenuBorder.blp"
     -- root frame (outer light bg with border)
     local root = BlzCreateFrameByType("BACKDROP", "PM_Root", parent, "", 0)
     BlzFrameSetSize(root, W_OUT, H_OUT)
-    BlzFrameSetPoint(root, FRAMEPOINT_CENTER, parent, FRAMEPOINT_CENTER, 0, 0.12)
+    BlzFrameSetPoint(root, FRAMEPOINT_CENTER, parent, FRAMEPOINT_CENTER, 0, 0)
     BlzFrameSetTexture(root, TEX_BG_LIGHT, 0, true)
     BlzFrameSetEnable(root, false)
     BlzFrameSetVisible(root, false)
@@ -131,7 +137,7 @@ local TEX_BORDER_BOTTOM = "war3mapImported\\BottomMenuBorder.blp"
     local content = BlzCreateFrameByType("BACKDROP", "PM_Content", root, "", 0)
     BlzFrameSetSize(content, W_OUT - RAIL_W - PAD * 3, H_OUT - PAD * 2)
     BlzFrameSetPoint(content, FRAMEPOINT_TOPLEFT, rail, FRAMEPOINT_TOPRIGHT, PAD, 0)
-    BlzFrameSetTexture(content, TEX_PANEL_DARK, 0, true)
+    BlzFrameSetTexture(content, TEX_BLANK, 0, true)
     BlzFrameSetEnable(content, false)
     BlzFrameSetLevel(content, 7)
     t.content = content
@@ -140,12 +146,12 @@ local TEX_BORDER_BOTTOM = "war3mapImported\\BottomMenuBorder.blp"
     local titleMenu = BlzCreateFrameByType("TEXT", "", root, "", 0)
     BlzFrameSetPoint(titleMenu, FRAMEPOINT_TOPLEFT, rail, FRAMEPOINT_TOPLEFT, 0.012, -0.012)
     BlzFrameSetTextAlignment(titleMenu, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-    BlzFrameSetText(titleMenu, "Menu")
+   
 
     local titleInfo = BlzCreateFrameByType("TEXT", "", root, "", 0)
     BlzFrameSetPoint(titleInfo, FRAMEPOINT_TOPLEFT, content, FRAMEPOINT_TOPLEFT, 0.012, -0.012)
     BlzFrameSetTextAlignment(titleInfo, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-    BlzFrameSetText(titleInfo, "Info")
+
 
     local function makeButton(yOff, label, onClick)
       local b = BlzCreateFrameByType("BUTTON", "", rail, "IconButtonTemplate", 0)

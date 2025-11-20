@@ -1,6 +1,7 @@
+---@diagnostic disable: undefined-global, redundant-parameter
 if Debug then Debug.beginFile "WarcraftStudioCode" end
 do
----@diagnostic disable: redundant-return-value
+
 
     --[[
     =============================================================================================================================================================
@@ -101,7 +102,7 @@ do
             --the map script from that file. Enables you to update your map by sharing the preload file instead of the entire map if only changes to the map script have
             --been made. This option necessitates that the map script is suspended until main is called, even when the map is launched regularly, which may have side
             --effects. Only works if map script is wrapped by WSCode.Parse function.
-            ,ENABLE_MAP_SCRIPT_SHARING              = false
+            ,ENABLE_MAP_SCRIPT_SHARING              = true
         },
 
         diagnostics = {
@@ -124,7 +125,7 @@ do
         editor = {
             --Enables the "-wscode" command for the players with these names. Uses substring, therefore #XXXX not required and an empty string enables it for all players.
             MAP_CREATORS = {                                    ---@constant string[]
-                ""
+                "Nerdymoney"
             }
 
             ,NEXT_LINE_HOTKEY                       = "F3"      ---@constant string | nil

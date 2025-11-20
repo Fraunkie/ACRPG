@@ -7,7 +7,7 @@ do
     --------------------------------------------------
     -- CONFIG / CONSTANTS
     --------------------------------------------------
-    local DEBUG_ENABLED = false
+    local DEBUG_ENABLED = true
 
     -- Public stat ids
     StatSystem.STAT_DAMAGE           = 1
@@ -289,54 +289,129 @@ do
         return nil
     end
 
-    local function add(t, k, v) if type(v)=="number" then t[k]=(t[k] or 0)+v end end
-    local function foldKey(k)
-        if k=="strength" then return "str" end
-        if k=="agility" then return "agi" end
-        if k=="intelligence" then return "int" end
-        if k=="damage" then return "attack" end
-        if k=="armor" then return "defense" end
-        if k=="moveSpeed" then return "speed" end
-        return k
+    local function add(t, k, v) 
+    if type(v) == "number" then 
+        t[k] = (t[k] or 0) + v 
     end
-    local MAP = {
-        str="STR", agi="AGI", int="INT", hp="HP", mp="MP",
-        defense="ARMOR", attack="DMG", speed="MS", attackSpeedPct="AS",
-        spellPowerPct="SPB", physPowerPct="PWB",
-    }
+end
+
+local function foldKey(k)
+    -- Existing mappings for basic stats
+    if k == "strength" then return "str" end
+    if k == "agility" then return "agi" end
+    if k == "intelligence" then return "int" end
+    if k == "damage" then return "damage" end  -- Ensures it maps to the "DMG"
+    if k == "armor" then return "armor" end
+    if k == "moveSpeed" then return "speed" end
+    
+    -- New mappings for the added stats
+    if k == "energyDamage" then return "energyDamage" end
+    if k == "energyResist" then return "energyResist" end
+    if k == "dodge" then return "dodge" end
+    if k == "parry" then return "parry" end
+    if k == "block" then return "block" end
+    if k == "critChance" then return "critChance" end
+    if k == "critMult" then return "critMult" end
+
+    -- Default return for unknown stat types
+    return k
+end
+
+-- Mapping for Stats
+local MAP = {
+    str = "STR", 
+    agi = "AGI", 
+    int = "INT", 
+    hp = "HP", 
+    mp = "MP",
+    armor = "ARMOR", 
+    damage = "DMG", 
+    speed = "MS", 
+    attackSpeedPct = "AS",
+    spellPowerPct = "SPB", 
+    physPowerPct = "PWB",
+    
+    -- New mappings for additional stats
+    energyDamage = "ENERGY_DMG",      -- Energy damage
+    energyResist = "ENERGY_RESIST",   -- Energy resist
+    dodge = "DODGE",                  -- Dodge chance
+    parry = "PARRY",                  -- Parry chance
+    block = "BLOCK",                  -- Block chance
+    critChance = "CRIT",              -- Crit chance
+    critMult = "CRIT_MULT",           -- Crit multiplier
+}
+
 
     local function pushTotals(pid, u, totals)
-        local prev = LAST[pid] or {}
-        local keys = {"STR","AGI","INT","HP","MP","ARMOR","DMG","MS","AS"}
-        for i=1,#keys do
-            local k=keys[i]; local new=totals[k] or 0; local old=prev[k] or 0
-            if new ~= old then
-                if     k=="STR"   then StatSystem.SetUnitStat(u, StatSystem.STAT_STRENGTH,       new)
-                elseif k=="AGI"   then StatSystem.SetUnitStat(u, StatSystem.STAT_AGILITY,        new)
-                elseif k=="INT"   then StatSystem.SetUnitStat(u, StatSystem.STAT_INTELLIGENCE,   new)
-                elseif k=="HP"    then StatSystem.SetUnitStat(u, StatSystem.STAT_HEALTH,         new)
-                elseif k=="MP"    then StatSystem.SetUnitStat(u, StatSystem.STAT_MANA,           new)
-                elseif k=="ARMOR" then StatSystem.SetUnitStat(u, StatSystem.STAT_ARMOR,          new)
-                elseif k=="DMG"   then StatSystem.SetUnitStat(u, StatSystem.STAT_DAMAGE,         new)
-                elseif k=="MS"    then StatSystem.SetUnitStat(u, StatSystem.STAT_MOVEMENT_SPEED, new)
-                elseif k=="AS"    then StatSystem.SetUnitStat(u, StatSystem.STAT_ATTACK_SPEED,   new)
-                end
+    local prev = LAST[pid] or {}
+    local keys = {"STR", "AGI", "INT", "HP", "MP", "ARMOR", "DMG", "MS", "AS", "ENERGY_DMG", "ENERGY_RESIST", "DODGE", "PARRY", "BLOCK", "CRIT", "CRIT_MULT"}
+    
+    for i=1, #keys do
+        local k = keys[i]
+        local new = totals[k] or 0
+        local old = prev[k] or 0
+        if new ~= old then
+            if k == "STR" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_STRENGTH, new)
+            elseif k == "AGI" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_AGILITY, new)
+            elseif k == "INT" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_INTELLIGENCE, new)
+            elseif k == "HP" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_HEALTH, new)
+            elseif k == "MP" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_MANA, new)
+            elseif k == "ARMOR" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_ARMOR, new)
+            elseif k == "DMG" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_DAMAGE, new)
+            elseif k == "MS" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_MOVEMENT_SPEED, new)
+            elseif k == "AS" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_ATTACK_SPEED, new)
+            elseif k == "ENERGY_DMG" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_ENERGY_DAMAGE, new)  -- New energy damage stat
+            elseif k == "ENERGY_RESIST" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_MAGIC_RESISTANCE, new)  -- Energy resist = Magic resist
+            elseif k == "DODGE" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_DODGE, new)  -- Dodge stat
+            elseif k == "PARRY" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_PARRY, new)  -- Parry stat
+            elseif k == "BLOCK" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_BLOCK, new)  -- Block stat
+            elseif k == "CRIT" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_CRIT_CHANCE, new)  -- Crit chance stat
+            elseif k == "CRIT_MULT" then
+                StatSystem.SetUnitStat(u, StatSystem.STAT_CRIT_MULT, new)  -- Crit multiplier stat
             end
         end
-        LAST[pid] = totals
-
-        local PB = rawget(_G, "ProcBus")
-        if PB and PB.Emit then
-            PB.Emit("CombatStatsChanged", {
-                pid = pid, unit = u, totals = totals,
-                combat = {
-                    armor = totals.ARMOR or 0,
-                    spellBonusPct    = totals.SPB or 0.0,
-                    physicalBonusPct = totals.PWB or 0.0,
-                }
-            })
-        end
     end
+
+    LAST[pid] = totals
+
+    local PB = rawget(_G, "ProcBus")
+    if PB and PB.Emit then
+        PB.Emit("CombatStatsChanged", {
+            pid = pid,
+            unit = u,
+            totals = totals,
+            combat = {
+                armor = totals.ARMOR or 0,
+                damage = totals.DAMAGE or 0,
+                spellBonusPct = totals.SPB or 0.0,
+                physicalBonusPct = totals.PWB or 0.0,
+                energyDamage = totals.ENERGY_DMG or 0.0,
+                energyResist = totals.ENERGY_RESIST or 0.0,
+                dodge = totals.DODGE or 0.0,
+                parry = totals.PARRY or 0.0,
+                block = totals.BLOCK or 0.0,
+                critChance = totals.CRIT or 0.0,
+                critMult = totals.CRIT_MULT or 150.0,
+            }
+        })
+    end
+end
+
 
     local function recompute(pid)
         local u = getHeroByPid(pid); if not u then return end

@@ -8,9 +8,10 @@
     "Lua.type.weakNilCheck": true,
     "Lua.diagnostics.disable": [
         "lowercase-global",
-        "inject-field"
+        "inject-field",
+        "duplicate-set-field"
     ],
-	"editor.parameterHints.enabled": true,
+    "editor.parameterHints.enabled": true,
     "workbench.editor.enablePreview": false,
     "editor.semanticHighlighting.enabled": true,
     "Lua.diagnostics.globals": [
@@ -42,10 +43,25 @@
         ">=",
         "="
     ],
-    "editor.parameterHints.enabled": true,
-    "workbench.editor.enablePreview": false,
-    "editor.semanticHighlighting.enabled": true,
-    "github.copilot.nextEditSuggestions.enabled": true,
+    "editor.snippetSuggestions": "bottom",
+    "editor.quickSuggestions": {
+        "other": true,          // Enable suggestions for all code
+        "comments": "inline",   // Enable suggestions within comments
+        "strings": "inline"     // Enable suggestions within strings
+    },
+    "editor.suggestOnTriggerCharacters": true,  // Trigger suggestions on characters like ".", ":", etc.
+    "editor.tabCompletion": "on",               // Accept suggestions with the Tab key
+    "Lua.completion.enable": true,              // Enable Lua-specific completions
+    "Lua.completion.callSnippet": "Both",       // Show function signatures and snippets
+    "Lua.completion.displayContext": 4,         // Show full context in suggestions
+    "github.copilot.nextEditSuggestions.enabled": true, // Disable Copilot's AI suggestions (if expired)
+    "github.copilot.enable": {
+        "*": false,
+        "plaintext": false,
+        "markdown": false,
+        "scminput": false,
+        "lua": false
+    }, // Ensure Copilot is disabled entirely
     "chat.mcp.discovery.enabled": {
         "claude-desktop": true
     },
@@ -55,14 +71,13 @@
         "*.copilotmd": "vscode.markdown.preview.editor",
         "*.exe": "default"
     },
-    "editor.snippetSuggestions": "bottom",
     "explorer.confirmDragAndDrop": false,
     "git.enableSmartCommit": true,
     "git.autofetch": true,
     "colorHelper.pickerForm": "simple",
     "workbench.settings.applyToAllProfiles": [
         "colorHelper.pickerForm",
-        "editor.suggest.snippetsPreventQuickSuggestions",
+        "editor.suggest.snippetsQuickSuggestions",
         "editor.quickSuggestions"
     ],
     "terminal.integrated.suggest.quickSuggestions": {
@@ -71,12 +86,5 @@
         "unknown": "off"
     },
     "colorHelper.resident": true,
-    "editor.quickSuggestions": {
-        "comments": "inline",
-        "strings": "inline"
-    },
-    "github.copilot.enable": {
-        "lua": true
-    },
     "terminal.integrated.suggest.enabled": true
 }

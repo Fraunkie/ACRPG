@@ -27,8 +27,12 @@ do
             scale   = 0.20,    -- bonus = powerLevel * 0.20
             magic   = true,    -- apply as magic/energy
         },
-        -- add more like this:
-        -- { abil = FourCC("A0XY"), id = "BURN_PROC", scale = 0.15, magic = true },
+
+        -- Phantom Echo passive
+        {
+            abil    = FourCC("A0PE"),  -- Phantom Echo Ability ID 
+            id      = "PHANTOM_ECHO",
+        }
     }
 
     --------------------------------------------------
@@ -62,9 +66,9 @@ do
     --------------------------------------------------
     local function isPassiveUnlockedFor(pid, abilId)
         -- Dev bypass
-        if _G.DevMode and DevMode.IsOn and DevMode.IsOn(pid) then
-            return true
-        end
+      --  if _G.DevMode and DevMode.IsOn and DevMode.IsOn(pid) then
+      --      return true
+       -- end
 
         local GB = rawget(_G, "GameBalance")
         if not GB then
@@ -198,6 +202,13 @@ do
                 -- apply as magic so we get BLUE tag
                 applyBonusMagic(src, tgt, bonus)
 
+                -- Check if Phantom Echo is unlocked and apply
+                if p.id == "PHANTOM_ECHO" then
+                    if isPassiveUnlockedFor(pid, FourCC("A0PE")) then
+                        -- Apply Phantom Echo buff
+                        Spell_PassivePhantomEcho.AddToUnit(src)
+                    end
+                end
             else
                 if DEBUG then
                     DisplayTextToPlayer(

@@ -1,4 +1,5 @@
 if Debug and Debug.beginFile then Debug.beginFile("DirectControlMotor.lua") end
+--@@debug
 --==================================================
 -- DirectControlMotor.lua  (v1.54)
 -- Movement/camera behavior: same as v1.52
@@ -158,6 +159,53 @@ do
         end
     end
 
+    -- Function to simulate jump by moving the hero up and down
+    local function startJump(pid)
+    local unit = PlayerData.GetHero(pid)  -- Get the player's hero unit
+    if not unit then return end
+
+    local jumpHeight = 225  -- The height to raise the hero (adjust as needed)
+    local jumpDuration = 0.30  -- Duration of the jump in seconds (lower = faster)
+    local fallSpeed = 5.00    -- Speed at which the unit will fall back down (higher = faster)
+    PlayerData.isJumping = true
+
+    -- Add Crow Form to enable flying (required for SetUnitFlyHeight)
+    UnitAddAbility(unit, FourCC('Amrf'))  -- 'Amrf' is the rawcode for Crow Form
+
+    local currentHeight = 0  -- Start from ground level
+    local increment = jumpHeight / (jumpDuration / DT)  -- How much to raise per tick
+
+    -- Use a timer to gradually raise the unit's height
+    local riseTimer = CreateTimer()
+    TimerStart(riseTimer, DT, true, function()
+        -- Increase height incrementally
+        currentHeight = currentHeight + increment
+
+        -- Set the unit's fly height to the current height
+        SetUnitFlyHeight(unit, currentHeight, 0)
+
+        -- Check if the unit has reached the target height
+        if currentHeight >= jumpHeight then
+            -- Once the jump reaches the desired height, start the fall immediately
+            DestroyTimer(riseTimer)  -- Stop the rise timer
+
+            -- Immediately start the fall after the rise completes
+            TimerStart(CreateTimer(), DT, true, function()
+                -- Gradually decrease height for falling
+                currentHeight = currentHeight - fallSpeed
+                SetUnitFlyHeight(unit, currentHeight, 0)
+
+                -- After falling, reset the height back to 0 (ground level)
+                if currentHeight <= 0 then
+                    SetUnitFlyHeight(unit, 0, 0)  -- Return to ground level
+                    UnitRemoveAbility(unit, FourCC('Amrf'))  -- Remove Crow Form after jump
+                    DestroyTimer(GetExpiredTimer())
+                    PlayerData.isJumping = false-- Stop the fall timer
+                end
+            end)
+        end
+    end)
+end
     --------------------------------------------------
     -- INPUT
     --------------------------------------------------
@@ -168,6 +216,31 @@ do
         elseif key == OSKEY_D then holdD[pid] = isDown
         end
     end
+    -- Define the sbpress table
+    local sbpress = {
+        isdown = false,      -- Tracks if spacebar is pressed
+        jumpstart = false    -- Tracks if the jump has started
+    }
+
+    -- Function to handle spacebar press logic
+    local function onSBKey(pid, key, isDown)
+        if key == OSKEY_SPACE then
+            sbpress.isdown = isDown  -- Update spacebar press state
+            
+            if isDown then
+                -- Check if jump has already started
+                if not sbpress.jumpstart then
+                    sbpress.jumpstart = true  -- Mark jump as started
+                        -- Or display a message, etc.
+                    startJump(pid)  -- Call the function to initiate jump
+                end
+            else
+                -- Reset jump start when space is released (if needed)
+                sbpress.jumpstart = false
+            end
+        end
+    end
+
 
     local function onMouse(pid, btn, isDown)
         if btn ~= MOUSE_BUTTON_TYPE_RIGHT then return end
@@ -197,6 +270,7 @@ do
             local vx, vy = 0.0, 0.0
             local movingNow = false
             local moveKind = "idle"
+
 
             -- W/S
             if holdW[pid] then
@@ -310,6 +384,19 @@ do
             TriggerAddAction(k, function()
                 onKey(pid, BlzGetTriggerPlayerKey(), BlzGetTriggerPlayerIsKeyDown())
             end)
+            ------------------------------------------------
+            ---SpaceBar
+            ------------------------------------------------
+            local sb = CreateTrigger()
+
+            BlzTriggerRegisterPlayerKeyEvent(sb, p, OSKEY_SPACE, 0, false)
+            BlzTriggerRegisterPlayerKeyEvent(sb, p, OSKEY_SPACE, 0, true)
+            TriggerAddAction(sb, function()
+                onSBKey(pid, BlzGetTriggerPlayerKey(), BlzGetTriggerPlayerIsKeyDown())
+            end)
+
+
+
 
             -- RMB down/up
             local md = CreateTrigger()

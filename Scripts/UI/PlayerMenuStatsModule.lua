@@ -1,4 +1,5 @@
 if Debug and Debug.beginFile then Debug.beginFile("PlayerMenu_StatsModule.lua") end
+--@@debug
 --==================================================
 -- PlayerMenu_StatsModule.lua
 -- WoW style character sheet inside PlayerMenu content.
@@ -13,15 +14,19 @@ do
     -- Style constants
     --------------------------------------------------
     local TEX_BG_LIGHT = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
-    local TEX_BG_DARK  = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background"
-    local PAD_OUT, PAD_IN, COL_GAP = 0.012, 0.010, 0.016
-    local PANEL_W, PANEL_H, PANEL_H_TALL = 0.27, 0.16, 0.19
+    local TEX_BG_DARK  = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
+    local PAD_OUT, PAD_IN, COL_GAP = 0.012, 0.005, 0.016
+    local PANEL_W, PANEL_H, PANEL_H_TALL = 0.12, 0.12, 0.19
     local ROW_H, TITLE_H = 0.018, 0.020
+    local GOLD_COLOR = "|cFFFFD700"
+    local WHITE_COLOR = "|cFFFFFFFF"
+    local GREEN_COLOR = "|cFF00FF00"
+    local PURPLE_COLOR = "|cFF800080"
 
     --------------------------------------------------
     -- State
     --------------------------------------------------
-    local INST = {}  -- INST[pid] = {root=frame, labels={labelName=frameRef}}
+    local UI = {}  -- UI[pid] = {root=frame, labels={labelName=frameRef}}
 
     --------------------------------------------------
     -- Helpers
@@ -64,7 +69,7 @@ do
     -- Refresh logic
     --------------------------------------------------
     function PlayerMenu_StatsModule.Refresh(pid)
-        local ref = INST[pid]
+        local ref = UI[pid]
         if not ref or not ref.root then return end
         local pd  = getPD(pid)
         local u   = pd.hero
@@ -83,48 +88,69 @@ do
 
         local L = ref.labels
         if not L then return end
-        set(L["Power"],        tostring(st.power or 0))
-        set(L["Defense"],      tostring(st.defense or 0))
-        set(L["Speed"],        tostring(st.speed or 0))
-        set(L["Crit Chance"],  tostring(st.crit or 0))
-        set(L["Health"],       tostring(hpCur) .. " / " .. tostring(hpMax))
-        set(L["Spirit Drive"], tostring(pd.spiritDrive or 0) .. " / 100")
-        set(L["Soul Energy"],  tostring(pd.soulEnergy or 0))
-        set(L["Fragments"],    tostring(pd.fragments or 0))
-        set(L["Lives"],        tostring(pd.lives or 0))
+        set(L["Power Lv"], GREEN_COLOR .. tostring(pd.stats.power or 0) .. "|r")
+        set(L["Endurance"],GREEN_COLOR .. tostring(pd.stats.basestr or 0) .. "|r")
+        set(L["Power"],GREEN_COLOR .. tostring(pd.stats.baseagi or 0) .. "|r")
+        set(L["Ki"],GREEN_COLOR .. tostring(pd.stats.baseint or 0) .. "|r")
+        set(L["Crit Chance"], GREEN_COLOR ..tostring(pd.combat.critChance or 0) .. "|r".."%%")
+        set(L["Crit Multi"], GREEN_COLOR ..tostring(pd.combat.critMult or 0) .. "|r".."%%")
+        set(L["Soul Energy"], GREEN_COLOR ..tostring(pd.soulEnergy or 0) .. "|r")
+        set(L["DB Fragments"], GREEN_COLOR ..tostring(pd.fragmentsByKind.db or 0) .. "|r")
+        set(L["Digi Fragments"], GREEN_COLOR ..tostring(pd.fragmentsByKind.digi or 0) .. "|r")
+        set(L["Poke Fragments"], GREEN_COLOR ..tostring(pd.fragmentsByKind.poke or 0) .. "|r")
+        set(L["Chakra Fragments"], GREEN_COLOR ..tostring(pd.fragmentsByKind.chakra or 0) .. "|r")
+        set(L["Energy Bonus"],GREEN_COLOR..tostring(pd.combat.spellBonusPct or 0) .. "|r".."%%")
+        set(L["Physical Bonus"],GREEN_COLOR..tostring(pd.combat.physicalBonusPct or 0) .. "|r".."%%")
+        set(L["Armor"],GREEN_COLOR..tostring(pd.combat.armor or 0) .. "|r")
+        set(L["Energy Resist"],GREEN_COLOR..tostring(pd.combat.energyResist or 0) .. "|r".."%%")
+        set(L["Parry"],GREEN_COLOR..tostring(pd.combat.parry or 0) .. "|r".."%%")
+        set(L["Block"],GREEN_COLOR..tostring(pd.combat.block or 0) .. "|r".."%%")
+        set(L["Dodge"],GREEN_COLOR..tostring(pd.combat.dodge or 0) .. "|r".."%%")
+        set(L["Physical Damage"],GREEN_COLOR..tostring(pd.stats.damage or 0) .. "|r")
+        set(L["Energy Damage"],GREEN_COLOR..tostring(pd.combat.energyDamage or 0) .. "|r")
+        set(L["Soul Xp Bonus"],GREEN_COLOR..tostring(pd.xpBonusPercent or 0) .. "|r".."%%")
     end
+    local function rerenderAll(pid)
 
+    end
     --------------------------------------------------
     -- Build
     --------------------------------------------------
     function PlayerMenu_StatsModule.ShowInto(pid, contentFrame)
-        -- destroy old instance if present
-        if INST[pid] and INST[pid].root then
-            if GetLocalPlayer() == Player(pid) then
-                BlzFrameSetVisible(INST[pid].root, false)
-            end
-            INST[pid] = nil
-        end
+    if UI[pid] then
+      if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(UI[pid].root, true) end
+      rerenderAll(pid)
+      return
+    end
 
-        local labels = {}
-        local inner = mkBackdrop(contentFrame, 0.001, 0.001, TEX_BG_LIGHT)
+    local ui = { root = contentFrame }
+    local labels = {}
+    UI[pid] = ui
+    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(contentFrame, true) end
+    BlzFrameSetTexture(contentFrame, TEX_BG_DARK, 0, true)
+    BlzFrameSetEnable(contentFrame, true) -- background only
+    local inner = mkBackdrop(contentFrame, 0.001, 0.001, TEX_BG_LIGHT)
         BlzFrameSetPoint(inner, FRAMEPOINT_TOPLEFT, contentFrame, FRAMEPOINT_TOPLEFT, PAD_OUT, -PAD_OUT)
         BlzFrameSetPoint(inner, FRAMEPOINT_BOTTOMRIGHT, contentFrame, FRAMEPOINT_BOTTOMRIGHT, -PAD_OUT, PAD_OUT)
 
-        local pd  = getPD(pid)
-        local u   = pd.hero
-        local name = (u and (GetHeroProperName(u) or GetUnitName(u))) or "Unknown"
-        local role = pd.role or "None"
-        local lvl  = pd.soulLevel or 1
-        local pwr  = pd.powerLevel or 0
-        local zone = pd.zone or "Unknown"
+        local pd            = getPD(pid)
+        local u             = pd.hero
+        local name          = (u and (GetHeroProperName(u) or GetUnitName(u))) or "Unknown"
+        local role          = pd.role or "None"
+        local lvl           = pd.soulLevel or 1
+        local pwrlvl        = pd.powerLevel or 0
+        local zone          = pd.zone or "Unknown"
+        local digi          = pd.fragmentsByKind.digi or 1
+        local poke          = pd.fragmentsByKind.poke or 1
+        local db            = pd.fragmentsByKind.db or 1
+        local chakra        = pd.fragmentsByKind.chakra or 1
 
         local header = mkBackdrop(inner, 0.001, 0.048, TEX_BG_DARK)
         BlzFrameSetPoint(header, FRAMEPOINT_TOPLEFT, inner, FRAMEPOINT_TOPLEFT, PAD_IN, -PAD_IN)
         BlzFrameSetPoint(header, FRAMEPOINT_TOPRIGHT, inner, FRAMEPOINT_TOPRIGHT, -PAD_IN, -PAD_IN)
-        local hdrLeft = mkText(header, "Name: " .. name .. "   Role: " .. role)
+        local hdrLeft = mkText(header, "| Name: " ..PURPLE_COLOR.. name.."|r |")
         BlzFrameSetPoint(hdrLeft, FRAMEPOINT_LEFT, header, FRAMEPOINT_LEFT, PAD_IN, 0)
-        local hdrRight = mkText(header, "Soul Lv " .. tostring(lvl) .. "   Power " .. tostring(pwr) .. "   Zone " .. zone, true)
+        local hdrRight = mkText(header, "| Soul Lv: " .. PURPLE_COLOR.. tostring(lvl)  .."|r |".. "    | Zone: " ..PURPLE_COLOR.. zone.."|r |", true)
         BlzFrameSetPoint(hdrRight, FRAMEPOINT_RIGHT, header, FRAMEPOINT_RIGHT, -PAD_IN, 0)
 
         local colL = mkBackdrop(inner, PANEL_W, 0.001, TEX_BG_DARK)
@@ -137,10 +163,10 @@ do
         BlzFrameSetPoint(pPrimary, FRAMEPOINT_TOPLEFT, colL, FRAMEPOINT_TOPLEFT, 0, 0)
         mkText(pPrimary, "Primary")
         local y = TITLE_H + 0.006
-        for _, key in ipairs({"Power","Defense","Speed","Crit Chance"}) do
-            local l = mkText(pPrimary, key)
+        for _, key in ipairs({"Power Lv","Endurance","Power","Ki", "Physical Damage", "Physical Bonus", "Energy Damage","Energy Bonus"}) do
+            local l = mkText(pPrimary, GOLD_COLOR ..key)
             BlzFrameSetPoint(l, FRAMEPOINT_TOPLEFT, pPrimary, FRAMEPOINT_TOPLEFT, PAD_IN, -y)
-            local r = mkText(pPrimary, "", true)
+            local r = mkText(pPrimary, GREEN_COLOR .."", true)
             BlzFrameSetPoint(r, FRAMEPOINT_TOPRIGHT, pPrimary, FRAMEPOINT_TOPRIGHT, -PAD_IN, -y)
             labels[key] = r
             y = y + ROW_H
@@ -149,10 +175,10 @@ do
         -- Resources
         local pRes = mkBackdrop(colR, PANEL_W, PANEL_H_TALL, TEX_BG_DARK)
         BlzFrameSetPoint(pRes, FRAMEPOINT_TOPLEFT, colR, FRAMEPOINT_TOPLEFT, 0, 0)
-        mkText(pRes, "Resources")
+        mkText(pRes, "Primary")
         y = TITLE_H + 0.006
-        for _, key in ipairs({"Health","Spirit Drive","Soul Energy","Fragments"}) do
-            local l = mkText(pRes, key)
+        for _, key in ipairs({"Crit Chance", "Crit Multi","Armor","Parry", "Block","Dodge", "Energy Resist", "Soul Xp Bonus"}) do
+            local l = mkText(pRes, GOLD_COLOR ..key)
             BlzFrameSetPoint(l, FRAMEPOINT_TOPLEFT, pRes, FRAMEPOINT_TOPLEFT, PAD_IN, -y)
             local r = mkText(pRes, "", true)
             BlzFrameSetPoint(r, FRAMEPOINT_TOPRIGHT, pRes, FRAMEPOINT_TOPRIGHT, -PAD_IN, -y)
@@ -162,11 +188,11 @@ do
 
         -- Progression
         local pProg = mkBackdrop(colR, PANEL_W, PANEL_H, TEX_BG_DARK)
-        BlzFrameSetPoint(pProg, FRAMEPOINT_TOPLEFT, pRes, FRAMEPOINT_BOTTOMLEFT, 0, -PAD_IN)
-        mkText(pProg, "Progression")
+        BlzFrameSetPoint(pProg, FRAMEPOINT_TOPLEFT, pRes, FRAMEPOINT_BOTTOMLEFT, -0.14, -PAD_IN)
+        mkText(pProg, "Currency")
         y = TITLE_H + 0.006
-        for _, key in ipairs({"Lives"}) do
-            local l = mkText(pProg, key)
+        for _, key in ipairs({"DB Fragments","Digi Fragments","Poke Fragments","Chakra Fragments"}) do
+            local l = mkText(pProg, PURPLE_COLOR .. key)
             BlzFrameSetPoint(l, FRAMEPOINT_TOPLEFT, pProg, FRAMEPOINT_TOPLEFT, PAD_IN, -y)
             local r = mkText(pProg, "", true)
             BlzFrameSetPoint(r, FRAMEPOINT_TOPRIGHT, pProg, FRAMEPOINT_TOPRIGHT, -PAD_IN, -y)
@@ -174,20 +200,17 @@ do
             y = y + ROW_H
         end
 
-        INST[pid] = { root = inner, labels = labels }
+        UI[pid] = { root = inner, labels = labels }
         PlayerMenu_StatsModule.Refresh(pid)
-        if GetLocalPlayer() == Player(pid) then
-            BlzFrameSetVisible(inner, true)
-        end
     end
 
     function PlayerMenu_StatsModule.Hide(pid)
-        local ref = INST[pid]
+        local ref = UI[pid]
         if not ref then return end
         if GetLocalPlayer() == Player(pid) then
             BlzFrameSetVisible(ref.root, false)
         end
-        INST[pid] = nil
+        UI[pid] = nil
     end
 
     --------------------------------------------------

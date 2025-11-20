@@ -19,10 +19,17 @@ do
     --------------------------------------------------
     -- Source (string rawcodes only, editor-safe)
     --------------------------------------------------
+    --------------------------------------------------
+    
+    
+    --------------------------------------------------
+    -- HFIL CREEPS
+    --------------------------------------------------
+    
     local SRC = {
         ["n001"] = {
             baseSoul = 12,
-            health   = 200, -- check to see if = to actual unit HP change if not  for testing i have it marked as 175 in editor
+            health   = 200,
             armor    = 5,
             damage   = 10,
             energyResist = 5,
@@ -41,11 +48,56 @@ do
         },
         ["n00G"] = {
             baseSoul = 20,
-            isElite  = false,
+            health = 425,
+            armor = 8,
+            damage = 25,
+            energyResist = 5,
+            dodge = 10,
+            parry = 10,
+            block = 10,
+            crit = 5,
+            critMult = 1.5,
+            isElite  = true,
             abilities = {
                 { order = "bloodlust", castEvery = 10 },
             },
             minSoulLevel = 3,
+            active = true,
+        },
+        ["n00I"] = {
+            baseSoul = 150,
+            health = 4000,
+            armor = 20,
+            damage = 125,
+            energyResist = 15,
+            dodge = 10,
+            parry = 10,
+            block = 10,
+            crit = 5,
+            critMult = 1.5,
+            isElite  = true,
+            abilities = {
+                { order = "bloodlust", castEvery = 10 },
+            },
+            minSoulLevel = 30,
+            active = true,
+        },
+        ["n00H"] = {
+            baseSoul = 150,
+            health = 4000,
+            armor = 20,
+            damage = 125,
+            energyResist = 15,
+            dodge = 10,
+            parry = 10,
+            block = 10,
+            crit = 5,
+            critMult = 1.5,
+            isElite  = true,
+            abilities = {
+                { order = "bloodlust", castEvery = 10 },
+            },
+            minSoulLevel = 30,
             active = true,
         },
     }

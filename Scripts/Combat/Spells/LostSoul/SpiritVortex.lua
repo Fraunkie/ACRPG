@@ -77,20 +77,22 @@ do
         return nil
     end
 
-    local function getPowerLevel(pid)
+    local function getEnergyLevel(pid)
         if _G.PlayerData and PlayerData[pid] and type(PlayerData[pid].powerLevel) == "number" then
-            return PlayerData[pid].powerLevel
+            return PlayerData.GetCombat(pid).energyDamage or 0
         end
         return 0
     end
 
     local function calcDamage(pid)
-        local dmg = BASE_DMG + getPowerLevel(pid) * PL_SCALE
+        local dmg = BASE_DMG + getEnergyLevel(pid)
         if _G.PlayerData and PlayerData[pid]
         and PlayerData[pid].combat
         and type(PlayerData[pid].combat.spellBonusPct) == "number" then
             dmg = dmg * (1.0 + PlayerData[pid].combat.spellBonusPct)
+            print("Spirit Vortex damage after spell bonus: " .. tostring(dmg))
         end
+            print("Spirit Vortex damage before PL: " .. tostring(dmg))
         return dmg
     end
 
@@ -368,16 +370,6 @@ do
     end
 
     OnInit.final(function()
-        local trg = CreateTrigger()
-        for i = 0, bj_MAX_PLAYERS - 1 do
-            TriggerRegisterPlayerUnitEvent(trg, Player(i), EVENT_PLAYER_UNIT_SPELL_EFFECT, nil)
-        end
-        TriggerAddAction(trg, function()
-            local abil = GetSpellAbilityId()
-            if abil == ABIL_ID then
-                Spell_SpiritVortex.Cast(GetTriggerUnit())
-            end
-        end)
     end)
 end
 

@@ -1,11 +1,11 @@
 if Debug and Debug.beginFile then Debug.beginFile("PlayerMenu_CompanionsModule.lua") end
 --==================================================
--- PlayerMenu_CompanionsModule.lua  (v1.1 MAIN)
+-- PlayerMenu_CompanionsModule.lua  (v1.2 MAIN, new tooltip)
 -- Matches Inventory look but uses smaller tiles.
 -- • Gate: requires license item I00H
 -- • Shows ONLY unlocked companions from PlayerData
 -- • 3x6 grid of 0.022 tiles, gap 0.005
--- • Tooltip identical to Inventory behavior
+-- • Tooltip uses shared CustomTooltip (Spellbook/Shop style)
 -- • Summon square button under grid (calls CompanionSystem)
 --==================================================
 
@@ -66,44 +66,90 @@ do
   end
 
   --------------------------------------------------
-  -- Tooltip (identical to Inventory)
+  -- Shared CustomTooltip (TOC-based, global, same as Shop/Spellbook)
   --------------------------------------------------
-  local TIP = {}
+  local function getSharedTooltip()
+    -- we keep our own copy under index 1 so we do not clash with ALICE (which uses 0)
+    if not _G.Tooltip then
+      BlzLoadTOCFile("CustomTooltip.toc")
+      local parent = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
+      local box   = BlzCreateFrame("CustomTooltip", parent, 0, 1)
+      local title = BlzGetFrameByName("CustomTooltipTitle", 1)
+      local text  = BlzGetFrameByName("CustomTooltipValue", 1)
 
-  local function ensureTooltip(pid, parent)
-    local t = TIP[pid]
-    if t then return t end
+      -- keep it above most UI
+      BlzFrameSetLevel(box, 100)
+      BlzFrameSetVisible(box, false)
 
-    local box = BlzCreateFrameByType("BACKDROP", "PM_Comp_TipBox", parent, "", 0)
-    BlzFrameSetSize(box, 0.26, 0.14)
-    BlzFrameSetTexture(box, TEX_PANEL_DARK, 0, true)
-    BlzFrameSetAlpha(box, 230)
-    BlzFrameSetLevel(box, 50)
-    BlzFrameSetEnable(box, false)
-    BlzFrameSetVisible(box, false)
+      -- base colors (quotes / cost block use color codes)
+      if title then
+        BlzFrameSetTextColor(title, BlzConvertColor(255, 255, 230, 128)) -- warm gold
+      end
+      if text then
+        BlzFrameSetTextColor(text, BlzConvertColor(255, 255, 180, 80))   -- soft orange
+      end
 
-    local txt = BlzCreateFrameByType("TEXT", "PM_Comp_TipText", box, "", 0)
-    BlzFrameSetPoint(txt, FRAMEPOINT_TOPLEFT,     box, FRAMEPOINT_TOPLEFT,     0.008, -0.008)
-    BlzFrameSetPoint(txt, FRAMEPOINT_BOTTOMRIGHT, box, FRAMEPOINT_BOTTOMRIGHT, -0.008,  0.008)
-    BlzFrameSetTextAlignment(txt, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-    BlzFrameSetEnable(txt, false)
-
-    t = { box = box, text = txt }
-    TIP[pid] = t
-    return t
+      _G.Tooltip = { box = box, title = title, text = text }
+    end
+    return _G.Tooltip.box,
+           _G.Tooltip.title,
+           _G.Tooltip.text
   end
 
-  local function tooltipShow(pid, anchor, text, parent)
-    local tip = ensureTooltip(pid, parent)
-    BlzFrameSetText(tip.text, text or "")
-    BlzFrameClearAllPoints(tip.box)
-    BlzFrameSetPoint(tip.box, FRAMEPOINT_LEFT, anchor, FRAMEPOINT_RIGHT, 0.010, 0.0)
-    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(tip.box, true) end
+  -- Title + body + optional green cost block + dynamic sizing
+  local function showTooltipFor(pid, headline, body, anchor, costText)
+    if not anchor then return end
+    local box, title, text = getSharedTooltip()
+    if not box or not text then return end
+
+    if GetLocalPlayer() ~= Player(pid) then
+      return
+    end
+
+    headline = headline or ""
+    body     = body or ""
+    costText = costText or ""
+
+    local finalText
+    if costText ~= "" then
+      -- Cost rendered in the "quote" slot as green block
+      finalText = body .. "\n\n" .. "|cff00ff00" .. costText .. "|r" .. "\n "
+    else
+      finalText = body .. "\n "
+    end
+
+    if title then
+      BlzFrameSetText(title, headline)
+    end
+    BlzFrameSetText(text, finalText)
+
+    -- pick width based on length of composed text
+    local composedLen = string.len(finalText)
+    local textWidth = 0.26
+    if composedLen > 220 then
+      textWidth = 0.34
+    elseif composedLen > 120 then
+      textWidth = 0.30
+    end
+
+    BlzFrameSetSize(text, textWidth, 0.0)
+    local h = BlzFrameGetHeight(text)
+    -- little padding around the text
+    BlzFrameSetSize(box, textWidth + 0.02, h + 0.036)
+
+    BlzFrameClearAllPoints(box)
+    -- hover style: box near the button, below and to the right
+    BlzFrameSetPoint(box, FRAMEPOINT_TOPLEFT, anchor, FRAMEPOINT_BOTTOMRIGHT, 0.004, -0.004)
+
+    BlzFrameSetVisible(box, true)
   end
 
-  local function tooltipHide(pid)
-    local t = TIP[pid]; if not t then return end
-    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(t.box, false) end
+  local function hideTooltipFor(pid)
+    local t = _G.Tooltip
+    if not t or not t.box then return end
+    if GetLocalPlayer() == Player(pid) then
+      BlzFrameSetVisible(t.box, false)
+    end
   end
 
   --------------------------------------------------
@@ -124,12 +170,13 @@ do
     return TEX_ICON_FALL
   end
 
-  local function tipFor(id)
+  local function getTooltipParts(id)
     local d = getCompanionData(id)
     local title = (d and d.name) or tostring(id)
     local role  = (d and d.role) and ("Role: "..tostring(d.role)) or "Role: Unknown"
     local desc  = (d and d.desc) or "No details"
-    return "|cffffee88"..title.."|r\n"..role.."\n"..desc
+    local body  = role .. "\n" .. desc
+    return title, body
   end
 
   --------------------------------------------------
@@ -154,6 +201,8 @@ do
     ui.title = t
     return t
   end
+
+  private = private or {}
 
   local function ensureDesc(pid, parent)
     local ui = UI[pid]
@@ -238,11 +287,18 @@ do
       end
     end)
 
+    -- Tooltip for Summon button (Spellbook-style)
+    local head = "Summon"
+    local body = "Summon the selected companion."
     local ti, to = CreateTrigger(), CreateTrigger()
     BlzTriggerRegisterFrameEvent(ti, b, FRAMEEVENT_MOUSE_ENTER)
     BlzTriggerRegisterFrameEvent(to, b, FRAMEEVENT_MOUSE_LEAVE)
-    TriggerAddAction(ti, function() tooltipShow(pid, b, "Summon the selected companion", parent) end)
-    TriggerAddAction(to, function() tooltipHide(pid) end)
+    TriggerAddAction(ti, function()
+      showTooltipFor(pid, head, body, b, "")
+    end)
+    TriggerAddAction(to, function()
+      hideTooltipFor(pid)
+    end)
 
     ui.summonBtn = b
     if GetLocalPlayer() == Player(pid) then BlzFrameSetEnable(b, false) end
@@ -250,6 +306,7 @@ do
   end
 
   private = private or {}
+
   local function buildGrid(pid, parent, unlocked)
     clearGrid(pid)
     local ui = UI[pid]
@@ -288,12 +345,18 @@ do
         ui.tiles[#ui.tiles+1] = rec
 
         if id then
+          local title, body = getTooltipParts(id)
           local ti, to, tc = CreateTrigger(), CreateTrigger(), CreateTrigger()
           BlzTriggerRegisterFrameEvent(ti, btn, FRAMEEVENT_MOUSE_ENTER)
           BlzTriggerRegisterFrameEvent(to, btn, FRAMEEVENT_MOUSE_LEAVE)
           BlzTriggerRegisterFrameEvent(tc, btn, FRAMEEVENT_CONTROL_CLICK)
-          TriggerAddAction(ti, function() tooltipShow(pid, btn, tipFor(id), parent) end)
-          TriggerAddAction(to, function() tooltipHide(pid) end)
+
+          TriggerAddAction(ti, function()
+            showTooltipFor(pid, title, body, btn, "")
+          end)
+          TriggerAddAction(to, function()
+            hideTooltipFor(pid)
+          end)
           TriggerAddAction(tc, function()
             debounce(btn)
             setSelected(pid, id)
@@ -366,7 +429,15 @@ do
 
     local ui = UI[pid]
     if not ui then
-      ui = { root = contentFrame, title = nil, desc = nil, tiles = {}, gridHolder = nil, summonBtn = nil, selectedId = nil }
+      ui = {
+        root       = contentFrame,
+        title      = nil,
+        desc       = nil,
+        tiles      = {},
+        gridHolder = nil,
+        summonBtn  = nil,
+        selectedId = nil
+      }
       UI[pid] = ui
     else
       ui.root = contentFrame
@@ -381,11 +452,11 @@ do
 
   function PlayerMenu_CompanionsModule.Hide(pid)
     local ui = UI[pid]; if not ui then return end
-    tooltipHide(pid)
+    hideTooltipFor(pid)
     clearGrid(pid)
     if GetLocalPlayer() == Player(pid) then
-      if ui.title then BlzFrameSetVisible(ui.title, false) end
-      if ui.desc  then BlzFrameSetVisible(ui.desc,  false) end
+      if ui.title     then BlzFrameSetVisible(ui.title, false) end
+      if ui.desc      then BlzFrameSetVisible(ui.desc,  false) end
       if ui.summonBtn then BlzFrameSetVisible(ui.summonBtn, false) end
       BlzFrameSetVisible(ui.root, false)
     end
@@ -396,7 +467,7 @@ do
     if rawget(_G, "InitBroker") and InitBroker.SystemReady then
       InitBroker.SystemReady("PlayerMenu_CompanionsModule")
     end
-    if Debug and Debug.printf then Debug.printf("[PlayerMenu_CompanionsModule v1.1] ready") end
+    if Debug and Debug.printf then Debug.printf("[PlayerMenu_CompanionsModule v1.2] ready") end
   end)
 end
 

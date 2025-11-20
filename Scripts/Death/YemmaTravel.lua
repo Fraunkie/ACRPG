@@ -373,6 +373,17 @@ local BUTTON_TO_NODE = {
     --------------------------------------------------
     -- Render / Init
     --------------------------------------------------
+    
+    function YemmaTravel.Close(pid)
+    -- Close all frames for the specific player (pid)
+    if grids[pid] then
+        -- Iterate through each button's frame and make them invisible
+        for _, gridElement in ipairs(grids[pid]) do
+            BlzFrameSetVisible(gridElement.frame, false)
+        end
+    end
+    end
+
     function YemmaTravel.RenderIn(pid, parent)
         if not parent then return end
         local bg = makeBackdrop(parent, PANEL_W, PANEL_H, BG_BLACK)

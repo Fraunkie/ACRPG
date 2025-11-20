@@ -1,4 +1,8 @@
-if Debug and Debug.beginFile then Debug.beginFile("PhantomEchoDamageResolver.lua") end
+if Debug and Debug.beginFile then Debug.beginFile("Spell_PassivePhantomEcho.lua") end
+
+-- Make the script globally accessible
+Spell_PassivePhantomEcho = Spell_PassivePhantomEcho or {}
+_G.Spell_PassivePhantomEcho = Spell_PassivePhantomEcho
 
 do
     -- CONFIG
@@ -9,7 +13,7 @@ do
     -- Table to track cooldowns for each player
     local phantomEchoCooldown = {}
 
-    -- Buff Data Structure
+    -- Buff Data Structure (Correct setup like Healing Herb)
     local function applyPhantomEchoBuff(caster)
         local pid = GetPlayerId(GetOwningPlayer(caster))
 
@@ -19,32 +23,40 @@ do
             return false  -- Don't apply the buff if cooldown is active
         end
 
-        -- Buff Data
+        -- Buff Data (same structure as Healing Herb)
         local buffData = {
-            unit = caster, -- The caster is the unit we apply the buff to
-            source = caster, -- The source of the buff (same as unit)
-            name = BUFF_NAME, -- Buff name
-            type = "passive", -- Passive effect
-            duration = 10, -- Lasts for 10 seconds
-            icon = BUFF_ICON, -- Buff icon
-            values = { bonusDamage = 0 }, -- Stores the bonus damage value
-            onApply = function(unit, source, values, level)
-                -- Logic for applying bonus damage when the buff is applied
-                local lostHealthPercent = (GetUnitState(unit, UNIT_STATE_LIFE) / GetUnitState(unit, UNIT_STATE_MAX_LIFE)) * 100
-                values.bonusDamage = math.floor(lostHealthPercent / 10) -- 1% bonus for every 10% health lost
-                -- Apply the bonus damage as a stat modifier (you could hook into StatSystem or PlayerData)
-                -- Example: PlayerData.AddAbilityDamage(unit, values.bonusDamage)
-                DisplayTextToPlayer(GetOwningPlayer(unit), 0, 0, "Phantom Echo: " .. values.bonusDamage .. "% bonus damage.")
+            name = BUFF_NAME,  -- Buff name
+            tooltip = "Increases damage based on lost health",  -- Buff description
+            icon = BUFF_ICON,  -- Buff icon
+            type = "Magic",    -- Buff type
+            duration = 10,     -- Lasts for 10 seconds
+            color = "|cff00ff00",  -- Optional color for display (green in this case)
+            effect = "Abilities\\Spells\\NightElf\\Rejuvenation\\RejuvenationTarget.mdl",  -- Optional effect for visual feedback
+            attachPoint = "chest",  -- Optional attachment point (for the effect)
+            values = {
+                bonusDamage = function(target, source, level, stacks)
+                    -- Calculate bonus damage based on lost health
+                    local lostHealthPercent = (GetUnitState(target, UNIT_STATE_LIFE) / GetUnitState(target, UNIT_STATE_MAX_LIFE)) * 100
+                    return math.floor(lostHealthPercent / 10)  -- 1% bonus damage for every 10% health lost
+                end,
+            },
+            onApply = function(target, source, values, level, stacks)
+                -- Apply the bonus damage when the buff is applied
+                local bonusDamage = values.bonusDamage  -- Bonus damage calculated earlier
+                -- Apply the bonus damage as magic damage (you can hook this into your damage system)
+                
+
+                -- Display message to the player who owns the target unit
+                DisplayTextToPlayer(GetOwningPlayer(target), 0, 0, "Phantom Echo: " .. tostring(bonusDamage) .. "% bonus damage.")
             end,
-            onExpire = function(unit, source, values)
-                -- Reset bonus damage when the buff expires
-                -- You can reset any stat modifications here
-                DisplayTextToPlayer(GetOwningPlayer(unit), 0, 0, "Phantom Echo expired!")
+            onExpire = function(target, source, values)
+                -- Reset any bonus damage or other effects when the buff expires
+                DisplayTextToPlayer(GetOwningPlayer(target), 0, 0, "Phantom Echo expired!")
             end
         }
 
-        -- Apply the buff using BuffBot (or your preferred buff system)
-        BuffBot.Apply(caster, buffData, caster)
+        -- Apply the buff using BuffBot (no need for third 'caster' argument)
+        BuffBot.Apply(caster, buffData)
 
         -- Start the cooldown timer for Phantom Echo
         phantomEchoCooldown[pid] = PHANTOM_ECHO_COOLDOWN
@@ -62,37 +74,12 @@ do
         return true  -- Successfully applied the buff
     end
 
-    -- Hook into the CombatEventsBridge for Dealt Damage event
-    local function onDamageDealt(caster, target, damage)
-        -- Only apply Phantom Echo if the caster is the one taking damage
-        if not caster or GetUnitTypeId(caster) == 0 then return end
-
-        -- Apply or refresh Phantom Echo buff when damage is taken
-        if not BuffBot.HasBuff(caster, BUFF_NAME) then
-            applyPhantomEchoBuff(caster) -- Apply the buff when damage is taken
-        end
-    end
-
-    -- Register the damage event for **all players** in multiplayer
-    local damageResolveTrigger = CreateTrigger()
-    for i = 0, bj_MAX_PLAYER_SLOTS - 1 do
-        TriggerRegisterPlayerUnitEvent(damageResolveTrigger, Player(i), EVENT_PLAYER_UNIT_DAMAGED)
-    end
-    TriggerAddAction(damageResolveTrigger, function()
-        local caster = GetTriggerUnit()  -- Get the unit that took the damage
-        local target = GetEventTargetUnit()  -- Get the target of the damage
-        local damage = GetEventDamage()  -- Get the damage amount
-        
-        -- Call the damage function
-        onDamageDealt(caster, target, damage)
-    end)
-
     -- Function to manually apply the Phantom Echo buff (this is the one you can call)
-    function PhantomEcho.AddToUnit(unit)
+    function Spell_PassivePhantomEcho.AddToUnit(unit)
         if not unit or GetUnitTypeId(unit) == 0 then
             return false
         end
-        return applyPhantomEchoBuff(unit)
+        return applyPhantomEchoBuff(unit)  -- Apply the Phantom Echo buff if valid
     end
 
     -- Initialize and debug setup

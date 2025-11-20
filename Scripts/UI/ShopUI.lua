@@ -70,25 +70,132 @@ do
     return a - q * b
   end
 
-  local function buildTooltipText(entry)
-    local name  = entry.name or entry.id or "Item"
-    local desc  = entry.desc or "No details"
+  --------------------------------------------------
+  -- Shared CustomTooltip (TOC-based, global)
+  --------------------------------------------------
+  local function getSharedTooltip()
+    -- we keep our own copy under index 1 so we do not clash with ALICE (which uses 0)
+    if not _G.Tooltip then
+      BlzLoadTOCFile("CustomTooltip.toc")
+      local parent = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
+      local box   = BlzCreateFrame("CustomTooltip", parent, 0, 1)
+      local title = BlzGetFrameByName("CustomTooltipTitle", 1)
+      local text  = BlzGetFrameByName("CustomTooltipValue", 1)
+
+      -- keep it above most UI
+      BlzFrameSetLevel(box, 10)
+      BlzFrameSetVisible(box, false)
+
+      -- base colors (quotes / cost block use color codes)
+      if title then
+        BlzFrameSetTextColor(title, BlzConvertColor(255, 255, 230, 128)) -- warm gold
+      end
+      if text then
+        BlzFrameSetTextColor(text, BlzConvertColor(255, 255, 180, 80))   -- soft orange
+      end
+
+      _G.Tooltip = { box = box, title = title, text = text }
+    end
+    return _G.Tooltip.box,
+           _G.Tooltip.title,
+           _G.Tooltip.text
+  end
+
+  -- Title + body + optional green cost block + dynamic sizing
+  local function showTooltipFor(pid, headline, body, anchor, costText)
+    if not anchor then return end
+    local box, title, text = getSharedTooltip()
+    if not box or not text then return end
+
+    if GetLocalPlayer() ~= Player(pid) then
+      return
+    end
+
+    headline = headline or ""
+    body     = body or ""
+    costText = costText or ""
+
+    local finalText = body
+    if costText ~= "" then
+      -- Cost rendered in the "quote" slot as green block
+      finalText = body .. "\n\n" .. "|cff00ff00" .. costText .. "|r" .. "\n "
+    else
+      finalText = body .. "\n "
+    end
+
+    if title then
+      BlzFrameSetText(title, headline)
+    end
+    BlzFrameSetText(text, finalText)
+
+    -- pick width based on length of composed text
+    local composedLen = string.len(finalText)
+    local textWidth = 0.26
+    if composedLen > 220 then
+      textWidth = 0.34
+    elseif composedLen > 120 then
+      textWidth = 0.30
+    end
+
+    BlzFrameSetSize(text, textWidth, 0.0)
+    local h = BlzFrameGetHeight(text)
+    -- little padding around the text
+    BlzFrameSetSize(box, textWidth + 0.02, h + 0.036)
+
+    BlzFrameClearAllPoints(box)
+    -- hover style: box near the button, below and to the right
+    BlzFrameSetPoint(box, FRAMEPOINT_TOPLEFT, anchor, FRAMEPOINT_BOTTOMRIGHT, 0.004, -0.004)
+
+    BlzFrameSetVisible(box, true)
+  end
+
+  local function hideTooltipFor(pid)
+    local t = _G.Tooltip
+    if not t or not t.box then return end
+    if GetLocalPlayer() == Player(pid) then
+      BlzFrameSetVisible(t.box, false)
+    end
+  end
+
+  --------------------------------------------------
+  -- Tooltip text helpers (headline handled separately)
+  --------------------------------------------------
+  local function buildTooltipBody(entry)
+    local desc = entry.desc or "No details"
+    return desc
+  end
+
+  -- Updated Tooltip cost builder to handle multi-fragments from ShopCatalog
+  local function buildTooltipCost(entry)
     local price = entry.price or {}
-    local lines = {}
-    lines[#lines+1] = "|cffffee88"..name.."|r"
-    lines[#lines+1] = desc
-    if price.gold or price.fragments or price.souls then
-      lines[#lines+1] = ""
-      lines[#lines+1] = "Cost"
-      if price.gold and price.gold > 0 then lines[#lines+1] = "  Gold "..tostring(price.gold) end
-      if price.fragments and price.fragments > 0 then lines[#lines+1] = "  Fragments "..tostring(price.fragments) end
-      if price.souls and price.souls > 0 then lines[#lines+1] = "  Souls "..tostring(price.souls) end
-      if (not price.gold or price.gold == 0)
-         and (not price.fragments or price.fragments == 0)
-         and (not price.souls or price.souls == 0) then
-        lines[#lines+1] = "  Free"
+    local hasGold      = price.gold and price.gold > 0
+    local hasFragments = false
+    local fragmentTypes = {}
+    local hasSouls     = price.souls and price.souls > 0
+
+    -- Check for each fragment type in the fragmentsByKind table
+    for fragType, fragAmount in pairs(price.fragments or {}) do
+      if fragAmount > 0 then
+        hasFragments = true
+        table.insert(fragmentTypes, fragType .. " " .. tostring(fragAmount))
       end
     end
+
+    -- If no explicit cost: treat as free
+    if not (hasGold or hasFragments or hasSouls) then
+      return "Cost\n  Free"
+    end
+
+    local lines = {}
+    lines[#lines+1] = "Cost"
+    if hasGold then lines[#lines+1] = "  Gold " .. tostring(price.gold) end
+    if hasFragments then
+      for _, frag in ipairs(fragmentTypes) do
+        lines[#lines+1] = "  " .. frag
+      end
+    end
+    if hasSouls then lines[#lines+1] = "  Souls " .. tostring(price.souls) end
+
     return table.concat(lines, "\n")
   end
 
@@ -107,7 +214,7 @@ do
         id      = "merc_healer_unlock",
         name    = "Healer Mercenary",
         desc    = "Unlocks the healer companion",
-        price   = { gold = 0 },
+        price = { gold = 0, fragments = { db = 1, digi = 1, poke = 1, chakra = 1 }, souls = 0 },
         icon    = TEX_SLOT,
         payload = { companionId = "Healer_Default" },
       },
@@ -115,47 +222,11 @@ do
         id      = "merc_tank_unlock",
         name    = "Tank Mercenary",
         desc    = "Unlocks the tank companion",
-        price   = { gold = 0 },
+        price = { gold = 0, fragments = { db = 1, digi = 1, poke = 1, chakra = 1 }, souls = 0 },
         icon    = TEX_SLOT,
         payload = { companionId = "Tank_Default" },
       },
     }
-  end
-
-  local function ensureTooltip(pid, parent)
-    local ui = UI[pid]; if not ui then return nil end
-    if ui.tip then return ui.tip end
-
-    local box = BlzCreateFrameByType("BACKDROP", "Shop_TipBox", parent, "", 0)
-    BlzFrameSetSize(box, 0.30, 0.16)
-    BlzFrameSetTexture(box, TEX_PANEL_DARK, 0, true)
-    BlzFrameSetAlpha(box, 230)
-    BlzFrameSetLevel(box, 60)
-    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(box, false) end
-
-    local text = BlzCreateFrameByType("TEXT", "Shop_TipText", box, "", 0)
-    BlzFrameSetPoint(text, FRAMEPOINT_TOPLEFT, box, FRAMEPOINT_TOPLEFT, 0.008, -0.008)
-    BlzFrameSetPoint(text, FRAMEPOINT_BOTTOMRIGHT, box, FRAMEPOINT_BOTTOMRIGHT, -0.008, 0.008)
-    BlzFrameSetTextAlignment(text, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-    BlzFrameSetEnable(text, false)
-    BlzFrameSetLevel(text, 61)
-
-    ui.tip = { box = box, text = text }
-    return ui.tip
-  end
-
-  local function tipShow(pid, anchor, text)
-    local ui = UI[pid]; if not ui then return end
-    local tip = ensureTooltip(pid, ui.root)
-    BlzFrameClearAllPoints(tip.box)
-    BlzFrameSetPoint(tip.box, FRAMEPOINT_LEFT, anchor, FRAMEPOINT_RIGHT, 0.008, 0)
-    BlzFrameSetText(tip.text, text or "")
-    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(tip.box, true) end
-  end
-
-  local function tipHide(pid)
-    local ui = UI[pid]; if not ui or not ui.tip then return end
-    if GetLocalPlayer() == Player(pid) then BlzFrameSetVisible(ui.tip.box, false) end
   end
 
   local function clear(pid)
@@ -164,7 +235,7 @@ do
       for _, slot in ipairs(ui.icons or {}) do
         if slot.root then BlzFrameSetVisible(slot.root, false) end
       end
-      if ui.tip then BlzFrameSetVisible(ui.tip.box, false) end
+      if ui.tip and ui.tip.box then BlzFrameSetVisible(ui.tip.box, false) end
       if ui.noLabel then BlzFrameSetVisible(ui.noLabel, false) end
       if ui.header then BlzFrameSetVisible(ui.header, false) end
     end
@@ -181,7 +252,6 @@ do
     return h
   end
 
-  private = private or {}
   local function showEmpty(pid)
     local ui = UI[pid]; if not ui then return end
     if not ui.noLabel then
@@ -207,32 +277,42 @@ do
 
   -- Buy action (uses payload.companionId)
   local function doBuy(pid)
-    local ui = UI[pid]; if not ui then return end
-    local entry = getSelectedEntry(ui); if not entry then dbg(pid, "No item selected"); return end
+  local ui = UI[pid]
+  if not ui then return end
 
-    local compId = entry.payload and entry.payload.companionId
-    if not compId or compId == "" then
-      dbg(pid, "Catalog entry missing payload.companionId for "..tostring(entry.id))
-      return
-    end
-
-    if DEV_FREE_BUY or (rawget(_G, "DevMode") and DevMode.IsEnabled and DevMode.IsEnabled(pid)) then
-      if _G.PlayerData and PlayerData.UnlockCompanion then
-        local ok = PlayerData.UnlockCompanion(pid, compId)
-        dbg(pid, ok and ("Unlocked "..compId) or "Already owned")
-      else
-        dbg(pid, "Unlock function missing")
-      end
-      return
-    end
-
-    if _G.ShopService and ShopService.Buy then
-      local ok, why = ShopService.Buy(pid, entry.id)
-      dbg(pid, ok and ("Purchased "..compId) or (why or "Buy failed"))
-    else
-      dbg(pid, "ShopService not available")
-    end
+  local entry = getSelectedEntry(ui)
+  if not entry then 
+    dbg(pid, "No item selected")
+    return
   end
+
+  local compId = entry.payload and entry.payload.companionId
+  if not compId or compId == "" then
+    dbg(pid, "Catalog entry missing payload.companionId for "..tostring(entry.id))
+    return
+  end
+
+  -- Check if the player can afford the item
+  local okFunds, whyFunds = ShopService.CanBuy(pid, entry.id)
+  if not okFunds then
+    dbg(pid, "Cannot afford: " .. (whyFunds or "Insufficient currency"))
+    DisplayTextToPlayer(Player(pid), 0, 0, "Cannot afford: " .. (whyFunds or "Insufficient currency"))
+    return
+  end
+
+  -- Proceed with the purchase
+  if _G.ShopService and ShopService.Buy then
+    local ok, why = ShopService.Buy(pid, entry.id)
+    dbg(pid, ok and ("Purchased " .. compId) or (why or "Buy failed"))
+    if ok then
+      DisplayTextToPlayer(Player(pid), 0, 0, "Purchased " .. (compId or "Item"))
+    else
+      DisplayTextToPlayer(Player(pid), 0, 0, "Purchase failed")
+    end
+  else
+    dbg(pid, "ShopService not available")
+  end
+end
 
   local function buildGrid(pid)
     local ui = UI[pid]; if not ui then return end
@@ -284,11 +364,19 @@ do
       BlzFrameSetTexture(icon, e.icon or TEX_SLOT, 0, true)
       BlzFrameSetEnable(icon, false)
 
+      local bodyText = buildTooltipBody(e)
+      local costText = buildTooltipCost(e)
+      local headline = e.name or e.id or "Item"
+
       local trigIn, trigOut = CreateTrigger(), CreateTrigger()
       BlzTriggerRegisterFrameEvent(trigIn, btn, FRAMEEVENT_MOUSE_ENTER)
       BlzTriggerRegisterFrameEvent(trigOut, btn, FRAMEEVENT_MOUSE_LEAVE)
-      TriggerAddAction(trigIn,  function() tipShow(pid, btn, buildTooltipText(e)) end)
-      TriggerAddAction(trigOut, function() tipHide(pid) end)
+      TriggerAddAction(trigIn,  function()
+        showTooltipFor(pid, headline, bodyText, btn, costText)
+      end)
+      TriggerAddAction(trigOut, function()
+        hideTooltipFor(pid)
+      end)
 
       local trigClick = CreateTrigger()
       BlzTriggerRegisterFrameEvent(trigClick, btn, FRAMEEVENT_CONTROL_CLICK)

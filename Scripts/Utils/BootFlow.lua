@@ -5,14 +5,49 @@ _G.Bootflow = Bootflow
 
 do
     local GB = GameBalance or {}
-    local BG_TEX  = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
-    local BAR_TEX = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-slider"
-    local BTN_TEX = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller"
+    local BG_TEX                = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
+    local BAR_TEX               = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-slider"
+    local BTN_TEX               = "UI\\Widgets\\Console\\Human\\human-inventory-slotfiller"
+    local Create_TEX            = "ui\\CreateButton.blp"
 
     local BAR_DURATION = (GB.STARTUI and GB.STARTUI.BAR_DURATION) or 3.50
     local EXTRA_DELAY  = 2.00          -- wait 2 s after bar completes
     local TICK         = 0.03
     local PANEL_W, PANEL_H, PAD = 0.44, 0.11, 0.010
+
+    -- Color Constants for UI and Effects
+
+-- Text Colors
+local COLOR_GOLD = "|cffffee88"  -- Gold text (for important info)
+local COLOR_RED = "|cffff5555"   -- Red text (for warnings or errors)
+local COLOR_ORANGE = "|cffffaa00" -- Orange text (for general use)
+local COLOR_GREEN = "|cff33ff66"  -- Green text (for success messages)
+local COLOR_BLUE = "|cff3399ff"   -- Blue text (for info or hints)
+local COLOR_PURPLE = "|cffcc33ff" -- Purple text (for special items or titles)
+local COLOR_WHITE = "|cffffffff"  -- White text (for neutral text)
+local COLOR_YELLOW = "|cffffff00" -- Yellow text (for highlights or prompts)
+
+-- Background Colors (for UI frames)
+local BG_COLOR_DARK = "|cff333333" -- Dark background color
+local BG_COLOR_LIGHT = "|cffcccccc" -- Light background color
+local BG_COLOR_BLUE = "|cff99ccff"  -- Light blue background for info panels
+
+-- Button and Border Colors
+local BTN_COLOR_NORMAL = "|cff666666"  -- Default button color (disabled or neutral)
+local BTN_COLOR_HOVER = "|cff00ccff"   -- Button color on hover (light blue)
+local BTN_COLOR_CLICK = "|cffff0000"   -- Button color when clicked (red)
+local BORDER_COLOR = "|cff000000"      -- Border color (black)
+
+-- Fog and Terrain Colors
+local FOG_COLOR_BLUE = "|cFF8CACE1"    -- Blue-ish fog color
+local FOG_COLOR_PURPLE = "|cFF6A4C9C"  -- Purple fog for mystical zones
+local FOG_COLOR_GREEN = "|cFF80C14D"   -- Green fog (for nature-based areas)
+
+-- Miscellaneous Colors
+local COLOR_HIGHLIGHT = "|cff00ff00"  -- Highlight color (bright green)
+local COLOR_DISABLED = "|cff999999"   -- Disabled state color (gray)
+local COLOR_WARNING = "|cffffcc00"    -- Warning color (yellow)
+local COLOR_ERROR = "|cffff0000"  
 
     local root, barFill, btn = {}, {}, {}
     local tAccum, barDone = {}, {}
@@ -69,18 +104,13 @@ do
         local ui = BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0)
 
         local b = BlzCreateFrameByType("BUTTON", "", ui, "", 0)
-        BlzFrameSetSize(b, 0.22, 0.045)
+        BlzFrameSetSize(b, 0.22, 0.08)
         BlzFrameSetPoint(b, FRAMEPOINT_CENTER, ui, FRAMEPOINT_CENTER, 0, -0.04)
         btn[pid] = b
 
         local bg = BlzCreateFrameByType("BACKDROP", "", b, "", 0)
         BlzFrameSetAllPoints(bg, b)
-        BlzFrameSetTexture(bg, BTN_TEX, 0, true)
-
-        local t = BlzCreateFrameByType("TEXT", "", b, "", 0)
-        BlzFrameSetPoint(t, FRAMEPOINT_CENTER, b, FRAMEPOINT_CENTER, 0, 0)
-        BlzFrameSetTextAlignment(t, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
-        BlzFrameSetText(t, "Create Soul")
+        BlzFrameSetTexture(bg, Create_TEX, 0, true)
 
         BlzFrameSetVisible(b, false)
         BlzFrameSetEnable(b, true)
@@ -103,12 +133,15 @@ do
             end
 
             DisplayTextToPlayer(Player(pid), 0, 0,
-            "Welcome to the Spirit Realm!\n\n" ..
-            "• Speak with *King Yemma* at the desk to begin your first task.\n" ..
-            "• Press **F** near a Hub Crystal to open the Travel Menu.\n" ..
-            "• Press **L** to open your Player Menu (Stats, Inventory, Save).\n" ..
-            "• Press **P** to toggle your DPS / Threat meter.\n\n" ..
-            "Your journey starts here — prove your spirit’s strength and earn your way back to the living world!")
+                "Welcome to the Spirit Realm!\n\n" ..
+                "• Speak with " .. COLOR_PURPLE .. "*King Yemma*" .. "|r" .. " at the desk to begin your first task.\n" ..
+                "• Press " .. COLOR_GOLD .. "**F**" .. "|r" .. " near a Hub to open the Menu.\n" ..
+                "• Press " .. COLOR_GOLD .. "**L**" .. "|r" .. " to open your Player Menu (Stats, Inventory, Save).\n" ..
+                "• Press " .. COLOR_GOLD .. "**P**" .. "|r" .. " to toggle your DPS / Threat meter.\n" ..
+                "• Press " .. COLOR_GOLD .. "**O**" .. "|r" .. " to toggle 3rd person Camera.(Recommended)\n" ..
+                "Your journey starts here — prove your spirit’s strength and earn your way back to the living world!"
+            )
+
 
             local u = pd.hero or (PlayerHero and PlayerHero[pid])
             if ValidUnit(u) then SelectUnitAddForPlayer(u, Player(pid)) end
@@ -185,29 +218,37 @@ do
             end
 
             -- Load the sky (per player), then convert black → gray fog, and add atmospheric fog
-            if GetLocalPlayer() == Player(pid) then
-                if SetSkyModel then
-                    SetSkyModel("Environment\\Sky\\LordaeronSummerSky\\LordaeronSummerSky.mdx")
-                end
+if GetLocalPlayer() == Player(pid) then
+    -- Set sky model for the current player (affects only their view)
+    if SetSkyModel then
+        SetSkyModel("Environment\\Sky\\LordaeronSummerSky\\LordaeronSummerSky.mdx")
+    end
 
-                -- keep FoW systems enabled
-                if FogMaskEnable then FogMaskEnable(true) end
-                if FogEnable then FogEnable(true) end
+    -- Ensure Fog of War systems are enabled for the player
+    if FogMaskEnable then 
+        FogMaskEnable(true) 
+    end
+    if FogEnable then 
+        FogEnable(true) 
+    end
 
-                -- mark entire map as explored (gray fog instead of black)
-                local r = GetPlayableMapRect()
-                fogMod[pid] = CreateFogModifierRect(Player(pid), FOG_OF_WAR_FOGGED, r, true, false)
-                FogModifierStart(fogMod[pid])
+    -- Mark the map as explored for the player (gray fog instead of black)
+    local r = GetPlayableMapRect()
+    fogMod[pid] = CreateFogModifierRect(Player(pid), FOG_OF_WAR_FOGGED, r, true, false)
+    FogModifierStart(fogMod[pid])
 
-                -- gentle blue atmospheric fog from 1000 to 4000
-                if SetTerrainFogColor then SetTerrainFogColor(140, 165, 205, 255) end
-                if SetTerrainFogEx then SetTerrainFogEx(0, 1000.0, 4000.0, 1.0, 140, 165, 205) end
-            end
+    -- Set the atmospheric fog with a gentle blue color using SetTerrainFog
+    -- Set the fog range (from 1000 to 4000) and color
+    if SetTerrainFogEx then
+        SetTerrainFogEx(0, 2000.0, 7000.0, 1.0, 140, 165, 205)  -- Blue fog color (RGB)
+    end
+end
 
-            -- Remove the inventory cover reliably
-            HideInventoryCoverSafely(pid)
+-- Remove the inventory cover reliably (separate from fog and sky settings)
+HideInventoryCoverSafely(pid)
 
-            DestroyTimer(GetExpiredTimer())
+-- Destroy the timer once the setup is complete
+DestroyTimer(GetExpiredTimer())
         end)
     end
 

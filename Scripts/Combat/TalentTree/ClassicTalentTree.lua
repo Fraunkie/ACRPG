@@ -74,7 +74,10 @@ do
 
     --Define talent trees by their name.
     local TALENT_TREES = {                        ---@constant string[]
-        "LostSoul",
+        "Lunar",
+        "Archery",
+        "Survival",
+	    "LostSoul",
 
     }
 
@@ -389,10 +392,12 @@ do
             return
         end
         local player = GetTriggerPlayer()
+        local pid = GetPlayerId(player)
         if localPlayer == player then
             StartSound(buttonPressSound)
         end
         CTT.Show(player, false)
+        PlayerData.SetUIFocus(pid, false)
     end
 
     ---@param whichTalent string

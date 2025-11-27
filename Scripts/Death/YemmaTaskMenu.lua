@@ -159,7 +159,7 @@ do
         clearChoiceRows(pid)
         setHeader(inst, task.title or task.id, task.typeTag or "common")
 
-        local desc = "Task is active. Complete the objective shown below."
+        local desc = ""
         if task.data and task.data.kind then
             if task.data.kind == "kill" then
                 desc = "Defeat the required enemies."
@@ -169,7 +169,7 @@ do
                 desc = "Escort the target safely."
             end
         end
-        setBody(inst, task.desc)
+        setBody(inst, desc)
         setProg(inst, task.progress, task.goal)
 
         -- Bottom buttons: hide New, show TurnIn

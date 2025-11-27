@@ -1,12 +1,4 @@
 if Debug and Debug.beginFile then Debug.beginFile("SlotPicker.lua") end
---==================================================
--- SlotPicker.lua (v1.06, 2025-10-29)
--- Lightweight 1..9 slot picker row shown beside a spell tile.
--- • Parented to the provided parentFrame (no own root lifetime)
--- • Anchors to the provided anchorFrame
--- • Calls onPick(slotIndex) OR assigns directly when abilRaw provided
--- • WC3-safe (no percent operator)
---==================================================
 
 do
   SlotPicker = SlotPicker or {}
@@ -124,7 +116,7 @@ do
     end
   end
 
-  function SlotPicker.AssignSlot(pid, slotIdx, abilRaw)
+  function SlotPicker.AssignSlot(pid, slotIdx, abilString)  -- Use abilString instead of abilRaw
     local u = getHero(pid)
     if not validUnit(u) then
       DisplayTextToPlayer(Player(pid), 0, 0, "[SlotPicker] No hero assigned")
@@ -132,14 +124,14 @@ do
     end
 
     local loadout = ensureLoadout(pid)
-    loadout[slotIdx] = abilRaw
+    loadout[slotIdx] = abilString  -- Store the ability string (not raw ID)
 
     if _G.CustomSpellBar and CustomSpellBar.SetSlot then
-      CustomSpellBar.SetSlot(pid, slotIdx, abilRaw)
+      CustomSpellBar.SetSlot(pid, slotIdx, abilString)  -- Pass ability string to CustomSpellBar
       if CustomSpellBar.Refresh then CustomSpellBar.Refresh(pid) end
     end
 
-    local name = GetAbilityName(abilRaw) or tostring(abilRaw)
+    local name = GetAbilityName(abilString) or tostring(abilString)
     DisplayTextToPlayer(Player(pid), 0, 0, "Assigned "..name.." to slot "..tostring(slotIdx))
   end
 end

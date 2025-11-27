@@ -97,8 +97,25 @@ function DamageEngine.showArcingDamageText(caster, target, damage, dmgType)
         return
     end
 
-    local x = GetUnitX(target)
-    local y = GetUnitY(target)
+    local baseX = GetUnitX(target)
+    local baseY = GetUnitY(target)
+
+    -- small per-type offsets so multiple tags do not stack exactly
+    local dx = 0.0
+    local dy = 0.0
+    if dmgType == DAMAGE_TYPE_MAGIC then
+        dx = 16.0
+        dy = 10.0
+    elseif dmgType == DAMAGE_TYPE_NORMAL then
+        dx = -16.0
+        dy = 0.0
+    elseif dmgType == DAMAGE_TYPE_UNIVERSAL then
+        dx = 0.0
+        dy = 18.0
+    end
+
+    local x = baseX + dx
+    local y = baseY + dy
 
     local textTag = CreateTextTag()
     if textTag == nil then

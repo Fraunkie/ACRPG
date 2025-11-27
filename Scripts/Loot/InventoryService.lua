@@ -124,12 +124,12 @@ do
     end
     local function getPowerLevel(pid)
         local PD = rawget(_G, "PlayerData"); if PD and PD.GetPowerLevel then return PD.GetPowerLevel(pid) end
-        local P = rawget(_G, "PLAYER_DATA"); if P and P[pid] and type(P[pid].powerLevel)=="number" then return P[pid].powerLevel end
+        local P = rawget(_G, "PLAYER_DATA"); if P and P[pid] and type(P[pid].stats.power)=="number" then return P[pid].stats.power end
         return 0
     end
     local function getSoulEnergy(pid)
-        local PD = rawget(_G, "PlayerData"); if PD and PD.GetSoulEnergy then return PD.GetSoulEnergy(pid) end
-        local P = rawget(_G, "PLAYER_DATA"); if P and P[pid] and type(P[pid].soulEnergy)=="number" then return P[pid].soulEnergy end
+        local PD = rawget(_G, "PlayerData"); if PD and PD.GetSoulLevel then return PD.GetSoulLevel(pid) end
+        local P = rawget(_G, "PLAYER_DATA"); if P and P[pid] and type(P[pid].soulLevel)=="number" then return P[pid].soulLevel end
         return 0
     end
     local function itemAllowsHeroType(data, heroTypeUpper)
@@ -189,7 +189,7 @@ do
             -- Apply the Healing Herb buff
             -- Apply buff from ItemBuffs (Healing Herb buff)
             local buffValues = ItemBuffs[FourCC("I00F")]  -- The key for Healing Herb in ItemBuffs
-            BuffBot.SetMainUnit(Player(pid),u)
+           -- BuffBot.SetMainUnit(Player(pid),u)
             BuffBot.Apply(u, buffValues)
 
             -- You can use the healing function as well if you want direct healing, but the buff system handles it.

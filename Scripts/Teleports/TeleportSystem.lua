@@ -101,15 +101,14 @@ do
         emit("OnTeleportDepart", { pid = pid, node = node, reason = reason })
 
         SetUnitPosition(u, c.x or 0.0, c.y or 0.0)
-        if SetUnitFlyHeight then SetUnitFlyHeight(u, c.z or 0.0, 0.00) end
-        PanCameraToTimedForPlayer(Player(pid), c.x or 0.0, c.y or 0.0, 0.15)
+        SetUnitFlyHeight(u, 0, 0)
+    
 
         local pd = PD(pid)
         local forceHub = opts and opts.setHub == true
         if forceHub or HUB_SET[node] then
             pd.lastHubNode = node
         end
-
         emit("OnTeleportArrive", { pid = pid, node = node, reason = reason })
 
         -- ** Restore Direct Control Mode after teleportation **

@@ -49,6 +49,18 @@ do
         return num
     end
 
+    -- Simple string arg parser (for ids, names, etc.)
+    local function parseArg(msg, cmd)
+        -- strip "-cmd " prefix
+        local s = string.sub(msg, string.len(cmd) + 1)
+        -- remove leading spaces
+        local i = 1
+        while i <= string.len(s) and string.sub(s, i, i) == " " do
+            i = i + 1
+        end
+        return string.sub(s, i)
+    end
+
     local function getSelectedUnitSafe(p)
         local u = GetTriggerUnit()
         if u and GetUnitTypeId(u) ~= 0 then return u end
@@ -183,6 +195,116 @@ do
     end)
 
     --------------------------------------------------
+    -- World Event Debug Commands
+    --------------------------------------------------
+    -- Show current world event status
+    registerChat("-we_status", function(p, pid)
+        local WES = rawget(_G, "WorldEventSystem")
+        if not WES or not WES.GetActiveId then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] System not available")
+            return
+        end
+
+        local id = WES.GetActiveId()
+        if not id then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] No active event")
+            return
+        end
+
+        local ctx = WES.GetActiveContext and WES.GetActiveContext() or nil
+        local def = WES.GetEventDef and WES.GetEventDef(id) or nil
+
+        local name = def and def.name or id
+        local zone = def and def.zone or "?"
+        local elapsed = ctx and ctx.elapsed or 0
+        local duration = def and def.duration or 0
+
+        DisplayTextToPlayer(
+            p, 0, 0,
+            "[WorldEvent] Active: " ..
+                tostring(name) ..
+                " (id=" .. tostring(id) ..
+                ", zone=" .. tostring(zone) ..
+                ", elapsed=" .. tostring(elapsed) ..
+                " / " .. tostring(duration) .. "s)"
+        )
+    end)
+
+    -- Mark an event as ready so it can be rolled
+    -- Usage: -we_ready HFIL_SPIRIT_SURGE
+    registerChat("-we_ready", function(p, pid, msg)
+        local WES = rawget(_G, "WorldEventSystem")
+        if not WES or not WES.MarkEventReady then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] System not available")
+            return
+        end
+
+        local id = parseArg(msg, "-we_ready")
+        if not id or id == "" then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] Usage: -we_ready EVENT_ID")
+            return
+        end
+
+        WES.MarkEventReady(id)
+        DisplayTextToPlayer(p, 0, 0, "[WorldEvent] Marked ready: " .. tostring(id))
+    end)
+
+    -- Force end the active event
+    registerChat("-we_end", function(p, pid)
+        local WES = rawget(_G, "WorldEventSystem")
+        if not WES or not WES.ForceEndActive then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] System not available")
+            return
+        end
+
+        if not (WES.GetActiveId and WES.GetActiveId()) then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] No active event to end")
+            return
+        end
+
+        WES.ForceEndActive("debug_end")
+        DisplayTextToPlayer(p, 0, 0, "[WorldEvent] Active event force-ended")
+    end)
+
+    -- Force a specific event to be the next one (debug helper)
+    -- Usage: -we_force HFIL_SPIRIT_SURGE
+    registerChat("-we_force", function(p, pid, msg)
+        local WES = rawget(_G, "WorldEventSystem")
+        if not WES or not WES.GetEventDef or not WES.MarkEventReady then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] System not available")
+            return
+        end
+
+        local id = parseArg(msg, "-we_force")
+        if not id or id == "" then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] Usage: -we_force EVENT_ID")
+            return
+        end
+
+        local def = WES.GetEventDef(id)
+        if not def then
+            DisplayTextToPlayer(p, 0, 0, "[WorldEvent] Unknown event id: " .. tostring(id))
+            return
+        end
+
+        -- End any current event if possible
+        if WES.ForceEndActive then
+            WES.ForceEndActive("debug_force")
+        end
+
+        -- Mark the chosen event ready so the director will pick it on the next roll
+        WES.MarkEventReady(id)
+        DisplayTextToPlayer(
+            p,
+            0,
+            0,
+            "[WorldEvent] Forced event " ..
+                tostring(id) ..
+                " (will start as soon as the director rolls again)"
+        )
+    end)
+
+    --------------------------------------------------
     -- SIMPLE STATS VIEW (fixed)
     --------------------------------------------------
     registerChat("-stats", function(p, pid)
@@ -210,30 +332,20 @@ do
     end)
 
 
-	-- Adds a chat command to replenish a player's hero health to maximum
-registerChat("-replenish", function(p, pid)
-    local hero = PlayerData.GetHero(pid)  -- Get the hero unit
-    if hero and GetUnitTypeId(hero) ~= 0 then
-        SetUnitHealth(hero, GetUnitState(hero, UNIT_STATE_MAX_HEALTH))  -- Set hero health to max
-        DisplayTextToPlayer(p, 0, 0, "Hero health replenished to full!")
-    else
-        DisplayTextToPlayer(p, 0, 0, "No hero found for this player.")
-    end
-end)
-    --------------------------------------------------
-    -- Console Debug Commands
-    --------------------------------------------------
-    registerChat(".", function(p, pid, msg)
-        if _G.IngameConsole and IngameConsole.HandleCommand then
-            IngameConsole.HandleCommand(pid, msg)
+    registerChat("-replenish", function(p, pid)
+        local hero = PlayerData.GetHero(pid)  -- Get the hero unit
+        if hero and GetUnitTypeId(hero) ~= 0 then
+            SetWidgetLife(hero,(BlzGetUnitMaxHP(hero)))
+
+        else
+            DisplayTextToPlayer(p, 0, 0, "No hero found for this player.")
         end
     end)
 
-    registerChat("-debug", function(p, pid)
-        if _G.DebugUtils and DebugUtils.ToggleDebug then
-            DebugUtils.ToggleDebug(pid)
-        end
-    end)
+
+
+
+
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

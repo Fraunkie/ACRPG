@@ -112,14 +112,14 @@ do
 
     --These constants control the layout of the custom UI buff bar.
     local BUFF_BAR_ALIGNMENT                = "center"          ---@constant "left" | "center" | "right"
-    local BUFF_BAR_X                        = 0.4               ---@constant number
-    local BUFF_BAR_Y                        = 0.52              ---@constant number
+    local BUFF_BAR_X                        = -0.04              ---@constant number
+    local BUFF_BAR_Y                        = 0.1              ---@constant number
     local BUFF_BAR_ICON_SIZE                = 0.03155           ---@constant number
     --The distance between the time remaining text and the icons.
     local BUFF_BAR_TEXT_HEIGHT              = 0.015             ---@constant number
 
     --Width of the mouse-over tooltips of each buff in the custom UI.
-    local TOOLTIP_WIDTH                     = 0.24              ---@constant number
+    local TOOLTIP_WIDTH                     = 0.28              ---@constant number
 
     --When a buff has multiple stacks, a number overlay appears. These constants control the position.
     local STACKS_FRAME_HORIZONTAL_INSET     = 0.0035            ---@constant number

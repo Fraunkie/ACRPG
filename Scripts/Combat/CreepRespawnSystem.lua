@@ -215,6 +215,9 @@ do
     --------------------------------------------------
     -- Optional: explicit opt-in for spawned NA (other systems call this)
     --------------------------------------------------
+    function CreepRespawnSystem.ApplyHFILStatsToUnit(u)
+        ApplyHFILStatsToUnit(u)
+    end
     function CreepRespawnSystem.RegisterSpawnedNA(u)
         if not PassesFilters(u) then return end
         local hid = H(u)

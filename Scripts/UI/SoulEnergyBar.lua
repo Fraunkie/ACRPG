@@ -14,7 +14,7 @@ do
     --------------------------------------------------
     -- TUNABLES
     --------------------------------------------------
-    local BAR_W        = 0.25      -- overall width
+    local BAR_W        = 0.35      -- overall width
     local BAR_H        = 0.040     -- overall height
     local FILL_W_PAD   = 0.04     -- padding for width of the fill
     local FILL_H_PAD   = 0.011     -- padding for height of the fill
@@ -113,7 +113,7 @@ do
         BlzFrameSetAllPoints(bg, r)
         BlzFrameSetTexture(bg, TEX_BACK, 0, true)
         BlzFrameSetAlpha(bg, 180)
-        BlzFrameSetLevel(bg, 15)
+        BlzFrameSetLevel(bg, 3)
 
         -- Fill
         local sb = BlzCreateFrameByType("SIMPLESTATUSBAR", "SEBarFill"..pid, r, "", 0)
@@ -124,7 +124,7 @@ do
         BlzFrameSetTexture(sb, TEX_FILL, 0, false)
         BlzFrameSetMinMaxValue(sb, 0, 1)
         BlzFrameSetValue(sb, 0)
-        BlzFrameSetLevel(sb, 3)
+        BlzFrameSetLevel(sb, 1)
 
         -- Text (parented to GAME_UI so it renders crisp)
         local t = BlzCreateFrameByType("TEXT", "SEBarText"..pid, uiRoot(), "", 0)
@@ -153,7 +153,7 @@ do
         local nxt = se_getNextXP(pid)
         if nxt <= cur then nxt = cur + 1 end
 
-        BlzFrameSetMinMaxValue(bar[pid], 0, nxt)
+        BlzFrameSetMinMaxValue(bar[pid], cur, nxt)
         BlzFrameSetValue(bar[pid], cur)
 
         local lvl = se_getLevel(pid)

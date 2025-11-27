@@ -69,6 +69,21 @@ do
     local q = math.floor(a / b)
     return a - q * b
   end
+local function getprettyitemname(id)
+    if id == "db" then 
+        return "Dragonball Fragments"
+    elseif id == "digi" then 
+        return "Digi Fragments"
+    elseif id == "poke" then 
+        return "Poke Fragments"
+    elseif id == "chakra" then 
+        return "Chakra Fragments"
+    elseif id == "capsuleCoins" then 
+        return "Capsule Coins"
+    else
+        return id  -- Return the id if no match is found
+    end
+  end
 
   --------------------------------------------------
   -- Shared CustomTooltip (TOC-based, global)
@@ -166,29 +181,31 @@ do
   end
 
   -- Updated Tooltip cost builder to handle multi-fragments from ShopCatalog
-  local function buildTooltipCost(entry)
+local function buildTooltipCost(entry)
     local price = entry.price or {}
     local hasGold      = price.gold and price.gold > 0
     local hasFragments = false
     local fragmentTypes = {}
     local hasSouls     = price.souls and price.souls > 0
+    local hasCC        = price.capsuleCoin and price.capsuleCoin > 0  -- Check for Capsule Coins
 
     -- Check for each fragment type in the fragmentsByKind table
     for fragType, fragAmount in pairs(price.fragments or {}) do
       if fragAmount > 0 then
         hasFragments = true
-        table.insert(fragmentTypes, fragType .. " " .. tostring(fragAmount))
+        table.insert(fragmentTypes, getprettyitemname(fragType) .. " " .. tostring(fragAmount))
       end
     end
 
     -- If no explicit cost: treat as free
-    if not (hasGold or hasFragments or hasSouls) then
+    if not (hasGold or hasFragments or hasSouls or hasCC) then
       return "Cost\n  Free"
     end
 
     local lines = {}
     lines[#lines+1] = "Cost"
     if hasGold then lines[#lines+1] = "  Gold " .. tostring(price.gold) end
+    if hasCC then lines[#lines+1] = "  CapsuleCoins " .. tostring(price.capsuleCoin) end  -- Display Capsule Coins
     if hasFragments then
       for _, frag in ipairs(fragmentTypes) do
         lines[#lines+1] = "  " .. frag
@@ -198,6 +215,7 @@ do
 
     return table.concat(lines, "\n")
   end
+
 
   local function getItemsFor(pid, zone)
     if _G.ShopService and ShopService.ListForHub then

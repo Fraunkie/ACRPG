@@ -72,49 +72,9 @@ do
     -- Fields:
     --  id, title, desc, typeTag, eligible(pid), make(pid) -> data, reward(pid, task) -> { soul, frags }
     --------------------------------------------------
-    HFILQuests._POOL_REGULAR = HFILQuests._POOL_REGULAR or {
-        {
-            id = "cull_restless",
-            title = "Cull the Restless",
-            desc = "Kill Wandering Spirits",
-            typeTag = "common",
-            eligible = function(pid) return true end,
-            make = function(pid)
-                return { kind = "kill", target = "spirit", goal = 6 }
-            end,
-            reward = function(pid, task)
-                return { soul = 10, frags = 1 }
-            end,
-        },
-        {
-            id = "gather_soulshards",
-            title = "Gather Shards",
-            desc = "Kill Wandering Spirits",
-            typeTag = "common",
-            eligible = function(pid) return true end,
-            make = function(pid)
-                return { kind = "collect", item = "soul_shard", goal = 6 }
-            end,
-            reward = function(pid, task)
-                return { soul = 8, frags = 2 }
-            end,
-        },
-        {
-            id = "clean_up",
-            title = "Clean Up Stragglers",
-            desc = "Kill Wandering Spirits",
-            typeTag = "common",
-            eligible = function(pid) return true end,
-            make = function(pid)
-                return { kind = "kill", target = "minor_spirit", goal = 12 }
-            end,
-            reward = function(pid, task)
-                return { soul = 12, frags = 1 }
-            end,
-        },
-    } 
+    HFILQuests._POOL_REGULAR = HFILQuests._POOL_REGULAR or {} 
 
-    HFILQuests._POOL_SPECIAL = HFILQuests._POOL_SPECIAL or {
+    HFILQuests._POOL_SPECIAL = HFILQuests._POOL_SPECIAL or {}--[[
         {
             id = "cleanse_shrine",
             title = "Cleanse a Shrine",
@@ -146,10 +106,8 @@ do
             reward = function(pid, task)
                 return { soul = 18, frags = 2 }
             end,
-        },
-    }
-
-    HFILQuests._POOL_RARE = HFILQuests._POOL_RARE or {
+        },--]]
+    HFILQuests._POOL_RARE = HFILQuests._POOL_RARE or {}--[[
         {
             id = "ancient_echo",
             title = "Answer the Ancient Echo",
@@ -181,8 +139,7 @@ do
             reward = function(pid, task)
                 return { soul = 28, frags = 5 }
             end,
-        },
-    }
+        },--]]
 
     --------------------------------------------------
     -- New HFIL tasks (power-scaled goals)
@@ -240,6 +197,187 @@ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
         return { soul = soul, frags = frags }
     end,
 }
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "cull_n00U",
+    title = "Cull Soulmon",
+    desc = "Kill Soulmon",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n00U")  -- Use IsEligible to check for Vengeful Wraith
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(12, 22, t))
+        local maxG = math.floor(lerp(33, 100, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 100)
+        return { kind = "kill", raw = "n00U", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 25
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,
+}
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "cull_n00W",
+    title = "Cull Orgemon",
+    desc = "Kill Orgemon",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n00W")  -- Use IsEligible to check for Vengeful Wraith
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(12, 15, t))
+        local maxG = math.floor(lerp(22, 100, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 100)
+        return { kind = "kill", raw = "n00W", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 40
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,
+}
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "cull_n00T",
+    title = "Cull Hidden Mist Shinobi",
+    desc = "Kill Hidden Mist Shinobi",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n00W")  -- Use IsEligible to check for Vengeful Wraith
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(12, 15, t))
+        local maxG = math.floor(lerp(22, 100, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 100)
+        return { kind = "kill", raw = "n00T", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 60
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,
+}
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "cull_n00Y",
+    title = "Cull Hidden Leaf Shinobi",
+    desc = "Cull Hidden Leaf Shinobi",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n00Y")  -- Use IsEligible to check for Vengeful Wraith
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(12, 15, t))
+        local maxG = math.floor(lerp(22, 100, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 100)
+        return { kind = "kill", raw = "n00Y", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 60
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,
+    
+}
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "cull_n00L",
+    title = "Defeat Gastly",
+    desc = "Kill Gastly in HFIL",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n00L")  -- Use IsEligible to check for Vengeful Wraith
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(12, 15, t))
+        local maxG = math.floor(lerp(22, 100, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 100)
+        return { kind = "kill", raw = "n00L", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 75
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,   
+}
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "cull_n00Z",
+    title = "Defeat Haunter",
+    desc = "Kill Gastly in HFIL",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n00Z")  -- Use IsEligible to check for Vengeful Wraith
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(12, 15, t))
+        local maxG = math.floor(lerp(22, 100, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 100)
+        return { kind = "kill", raw = "n00Z", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 80
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,
+}
+HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+    id = "cull_n010",
+    title = "Defeat Misdreavus",
+    desc = "Kill Misdreavus in HFIL",
+    typeTag = "common",
+    eligible = function(pid)
+        return HFILUnitConfig.IsEligible(pid, "n010")  -- Use IsEligible to check for Vengeful Wraith
+    end,
+    make = function(pid)
+        local t = pf(pid)
+        local minG = math.floor(lerp(12, 15, t))
+        local maxG = math.floor(lerp(22, 100, t))
+        local goal = rnd(minG, maxG)
+        goal = clamp(goal, 1, 100)
+        return { kind = "kill", raw = "n010", goal = goal }
+    end,
+    reward = function(pid, task)
+        local baseSoulPerKill  = 90
+        local baseFragsPerKill = 1
+        local goal  = (task and task.goal) or 0
+        local soul  = baseSoulPerKill  * goal
+        local frags = baseFragsPerKill * goal
+        return { soul = soul, frags = frags }
+    end,  
+}
+
+------------------------------------------------
+---Collection task
+------------------------------------------------
+
 
 HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
     id = "collect_spirit_fragments",
@@ -264,7 +402,7 @@ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
     end,
     reward = function(pid, task)
         local baseSoulPerFrag  = 10
-        local baseFragsPerFrag = 10
+        local baseFragsPerFrag = 1
         local goal  = (task and task.goal) or 0
         local soul  = baseSoulPerFrag  * goal
         local frags = baseFragsPerFrag * goal
@@ -293,6 +431,151 @@ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
         end,
         reward = function(pid, task)
             local baseSoulPerFrag  = 12
+            local baseFragsPerFrag = 2
+            local goal  = (task and task.goal) or 0
+            local soul  = baseSoulPerFrag  * goal
+            local frags = baseFragsPerFrag * goal
+            return { soul = soul, frags = frags }
+        end,
+    }
+ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+        id = "collect_Soulmon_Hats",
+        title = "Gather Soulmons Hats",
+        desc = "Collect Soulmons Hats without destroying them.",
+        typeTag = "common",
+        eligible = function(pid)
+            return HFILUnitConfig.IsEligible(pid, "n00U")  -- Use IsEligible to check for Wandering Spirits
+        end,
+        make = function(pid)
+            local t = pf(pid)
+            local minG = math.floor(lerp(12, 30, t))
+            local maxG = math.floor(lerp(23, 50, t))
+            local goal = rnd(minG, maxG)
+            goal = clamp(goal, 1, 50)
+            return {
+                kind = "collect",
+                item = "Soulmon_Hats",  -- Custom item name for collection
+                goal = goal,
+            }
+        end,
+        reward = function(pid, task)
+            local baseSoulPerFrag  = 18
+            local baseFragsPerFrag = 3
+            local goal  = (task and task.goal) or 0
+            local soul  = baseSoulPerFrag  * goal
+            local frags = baseFragsPerFrag * goal
+            return { soul = soul, frags = frags }
+        end,
+    }
+ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+        id = "collect_orgemon_clubs",
+        title = "Gather Orgemon's Clubs",
+        desc = "Collect a intact version of Orgemon's club.",
+        typeTag = "common",
+        eligible = function(pid)
+            return HFILUnitConfig.IsEligible(pid, "n00W")  -- Use IsEligible to check for Wandering Spirits
+        end,
+        make = function(pid)
+            local t = pf(pid)
+            local minG = math.floor(lerp(12, 30, t))
+            local maxG = math.floor(lerp(23, 50, t))
+            local goal = rnd(minG, maxG)
+            goal = clamp(goal, 1, 50)
+            return {
+                kind = "collect",
+                item = "Orgemons_Club",  -- Custom item name for collection
+                goal = goal,
+            }
+        end,
+        reward = function(pid, task)
+            local baseSoulPerFrag  = 22
+            local baseFragsPerFrag = 4
+            local goal  = (task and task.goal) or 0
+            local soul  = baseSoulPerFrag  * goal
+            local frags = baseFragsPerFrag * goal
+            return { soul = soul, frags = frags }
+        end,
+    }
+     HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+        id = "capture_Gastly",
+        title = "Capture Gastly",
+        desc = "Try to collect gastly with basic pokeball.",
+        typeTag = "common",
+        eligible = function(pid)
+            return HFILUnitConfig.IsEligible(pid, "n00L")  -- Use IsEligible to check for Wandering Spirits
+        end,
+        make = function(pid)
+            local t = pf(pid)
+            local minG = math.floor(lerp(12, 30, t))
+            local maxG = math.floor(lerp(23, 50, t))
+            local goal = rnd(minG, maxG)
+            goal = clamp(goal, 1, 50)
+            return {
+                kind = "collect",
+                item = "Captured_Gastly",  -- Custom item name for collection
+                goal = goal,
+            }
+        end,
+        reward = function(pid, task)
+            local baseSoulPerFrag  = 25
+            local baseFragsPerFrag = 5
+            local goal  = (task and task.goal) or 0
+            local soul  = baseSoulPerFrag  * goal
+            local frags = baseFragsPerFrag * goal
+            return { soul = soul, frags = frags }
+        end,
+    }
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+        id = "capture_haunter",
+        title = "Capture Haunters",
+        desc = "Try to collect Haunters with basic pokeball.",
+        typeTag = "common",
+        eligible = function(pid)
+            return HFILUnitConfig.IsEligible(pid, "n00Z")  -- Use IsEligible to check for Wandering Spirits
+        end,
+        make = function(pid)
+            local t = pf(pid)
+            local minG = math.floor(lerp(12, 30, t))
+            local maxG = math.floor(lerp(23, 50, t))
+            local goal = rnd(minG, maxG)
+            goal = clamp(goal, 1, 50)
+            return {
+                kind = "collect",
+                item = "Captured_Haunters",  -- Custom item name for collection
+                goal = goal,
+            }
+        end,
+        reward = function(pid, task)
+            local baseSoulPerFrag  = 28
+            local baseFragsPerFrag = 8
+            local goal  = (task and task.goal) or 0
+            local soul  = baseSoulPerFrag  * goal
+            local frags = baseFragsPerFrag * goal
+            return { soul = soul, frags = frags }
+        end,
+    }
+    HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
+        id = "capture_misdreavus",
+        title = "Capture Misdreavus",
+        desc = "Try to collect Misdreavus with basic pokeball.",
+        typeTag = "common",
+        eligible = function(pid)
+            return HFILUnitConfig.IsEligible(pid, "n010")  -- Use IsEligible to check for Wandering Spirits
+        end,
+        make = function(pid)
+            local t = pf(pid)
+            local minG = math.floor(lerp(12, 30, t))
+            local maxG = math.floor(lerp(23, 50, t))
+            local goal = rnd(minG, maxG)
+            goal = clamp(goal, 1, 50)
+            return {
+                kind = "collect",
+                item = "Captured_Misdreavus",  -- Custom item name for collection
+                goal = goal,
+            }
+        end,
+        reward = function(pid, task)
+            local baseSoulPerFrag  = 35
             local baseFragsPerFrag = 8
             local goal  = (task and task.goal) or 0
             local soul  = baseSoulPerFrag  * goal
@@ -370,7 +653,7 @@ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
         pd.currentTask = {
             id       = choice.id,
             title    = choice.title or choice.id,
-            desc     = choice.desc or "Did not load Description",
+            desc     = made.desc or "Did not load Description",
             typeTag  = choice.typeTag or "common",
             data     = made,
             progress = 0,
@@ -555,6 +838,7 @@ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
         pd.inv[item] = pd.inv[item] or 0  -- Dynamically update based on the item parameter
         return pd.inv
     end
+    local function valid(u) return u ~= nil and GetUnitTypeId(u) ~= 0 end
 
     local function isN00G(u)
         if not u or GetUnitTypeId(u) == 0 then return false end
@@ -562,13 +846,44 @@ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
         if not ok or not id then return false end
         return GetUnitTypeId(u) == id
     end
+    local function isN00L(u)
+        if not u or GetUnitTypeId(u) == 0 then return false end
+        local ok, id = pcall(FourCC, "n00L")
+        if not ok or not id then return false end
+        return GetUnitTypeId(u) == id
+    end
+    local function isN00W(u)
+        if not u or GetUnitTypeId(u) == 0 then return false end
+        local ok, id = pcall(FourCC, "n00G")
+        if not ok or not id then return false end
+        return GetUnitTypeId(u) == id
+    end
+    local function isN00U(u)
+        if not u or GetUnitTypeId(u) == 0 then return false end
+        local ok, id = pcall(FourCC, "n00U")
+        if not ok or not id then return false end
+        return GetUnitTypeId(u) == id
+    end
 
-        local function isN001(u)
+    local function isN001(u)
         if not u or GetUnitTypeId(u) == 0 then return false end
         local ok, id = pcall(FourCC, "n001")
         if not ok or not id then return false end
         return GetUnitTypeId(u) == id
     end
+    local function isN00Z(u)
+        if not u or GetUnitTypeId(u) == 0 then return false end
+        local ok, id = pcall(FourCC, "n00Z")
+        if not ok or not id then return false end
+        return GetUnitTypeId(u) == id
+    end
+    local function isN010(u)
+        if not u or GetUnitTypeId(u) == 0 then return false end
+        local ok, id = pcall(FourCC, "n010")
+        if not ok or not id then return false end
+        return GetUnitTypeId(u) == id
+    end
+
 
     local function getDropChance()
         local GB = GameBalance or {}
@@ -582,15 +897,23 @@ HFILQuests._POOL_REGULAR[#HFILQuests._POOL_REGULAR + 1] = {
         end
         return p
     end
+    local function onKillCURRENCY(e)
+        if not e or e.pid == nil or not valid(e.target) then return end
+        local pid = e.pid
+        LootSystem.OnKill(e.pid, e.target)
+    end
+
+
     ------------------------------------------------
 ---Wandering Spirit
 ------------------------------------------------
 local function onKillN001(e)
     -- e.pid = killer pid, e.target = killed unit
+    
     if not e or e.pid == nil or not isN001(e.target) then return end
     local pid = e.pid
-
     -- 1) Kill task progress (cull_n001)
+    --LootSystem.OnKill(e.pid, e.target)
     local t = HFILQuests.GetCurrent(pid)
     if t and t.id == "cull_n001"
         and t.data and t.data.kind == "kill"
@@ -615,7 +938,7 @@ local function onKillN001(e)
 end
 
 ------------------------------------------------
----Vengeful Spirit
+---Vengeful Spirit n00G
 ------------------------------------------------
 local function onKillN00G(e)
     -- e.pid = killer pid, e.target = killed unit
@@ -645,9 +968,166 @@ local function onKillN00G(e)
         end
     end
 end
+------------------------------------------------
+---Soulmon n00U
+------------------------------------------------
+local function onKillN00U(e)
+    -- e.pid = killer pid, e.target = killed unit
+    if not e or e.pid == nil or not isN00U(e.target) then return end
+    local pid = e.pid
 
+    -- 1) Kill task progress (cull_n001)
+    local t = HFILQuests.GetCurrent(pid)
+    if t and t.id == "cull_n00U"
+        and t.data and t.data.kind == "kill"
+        and (t.data.raw == "n00U") then
+        HFILQuests.AddProgress(pid, 1)
+    end
 
+    -- 2) Virtual fragment drop + collect task progress
+    local chance = getDropChance()
+    if GetRandomReal(0.0, 1.0) <= chance then
+        local inv = ensureInv(pid, "Soulmon_Hats")  -- Pass the correct item name
+        inv.Soulmon_Hats = (inv.Soulmon_Hats or 0) + 1
 
+        local cur = HFILQuests.GetCurrent(pid)
+        if cur
+            and cur.id == "collect_Soulmon_Hats"
+            and cur.data and cur.data.kind == "collect"
+            and (cur.data.item == "Soulmon_Hats") then
+            HFILQuests.AddProgress(pid, 1)
+        end
+    end
+end
+------------------------------------------------
+---orgemon n00W
+------------------------------------------------
+local function onKillN00W(e)
+    -- e.pid = killer pid, e.target = killed unit
+    if not e or e.pid == nil or not isN00W(e.target) then return end
+    local pid = e.pid
+
+    -- 1) Kill task progress (cull_n00W)
+    local t = HFILQuests.GetCurrent(pid)
+    if t and t.id == "cull_n00W"
+        and t.data and t.data.kind == "kill"
+        and (t.data.raw == "n00W") then
+        HFILQuests.AddProgress(pid, 1)
+    end
+
+    -- 2) Virtual fragment drop + collect task progress
+    local chance = getDropChance()
+    if GetRandomReal(0.0, 1.0) <= chance then
+        local inv = ensureInv(pid, "Orgemons_Club")  -- Pass the correct item name
+        inv.collect_Soulmon_Hats = (inv.collect_Soulmon_Hats or 0) + 1
+
+        local cur = HFILQuests.GetCurrent(pid)
+        if cur
+            and cur.id == "collect_orgemon_clubs"
+            and cur.data and cur.data.kind == "collect"
+            and (cur.data.item == "Orgemons_Club") then
+            HFILQuests.AddProgress(pid, 1)
+        end
+    end
+end
+------------------------------------------------
+---Gastly n00L
+------------------------------------------------
+local function onKillN00L(e)
+    -- e.pid = killer pid, e.target = killed unit
+    if not e or e.pid == nil or not isN00L(e.target) then return end
+    local pid = e.pid
+
+    -- 1) Kill task progress (cull_n00W)
+    local t = HFILQuests.GetCurrent(pid)
+    if t and t.id == "cull_n00L"
+        and t.data and t.data.kind == "kill"
+        and (t.data.raw == "n00L") then
+        HFILQuests.AddProgress(pid, 1)
+    end
+
+    -- 2) Virtual fragment drop + collect task progress
+    local chance = getDropChance()
+    if GetRandomReal(0.0, 1.0) <= chance then
+        local inv = ensureInv(pid, "Captured_Gastly")  -- Pass the correct item name
+        inv.capture_Gastly = (inv.capture_Gastly or 0) + 1
+
+        local cur = HFILQuests.GetCurrent(pid)
+        if cur
+            and cur.id == "capture_Gastly"
+            and cur.data and cur.data.kind == "collect"
+            and (cur.data.item == "Captured_Gastly") then
+            HFILQuests.AddProgress(pid, 1)
+        end
+    end
+end
+------------------------------------------------
+---Haunter n00Z
+------------------------------------------------
+local function onKillN00Z(e)
+    -- e.pid = killer pid, e.target = killed unit
+    
+    if not e or e.pid == nil or not isN00Z(e.target) then return end
+    local pid = e.pid
+    -- 1) Kill task progress (cull_n001)
+    --LootSystem.OnKill(e.pid, e.target)
+    local t = HFILQuests.GetCurrent(pid)
+    if t and t.id == "cull_n00Z"
+        and t.data and t.data.kind == "kill"
+        and (t.data.raw == "n00Z") then
+        HFILQuests.AddProgress(pid, 1)
+    end
+
+    -- 2) Virtual fragment drop + collect task progress
+    local chance = getDropChance()
+    if GetRandomReal(0.0, 1.0) <= chance then
+        local inv = ensureInv(pid, "Captured_Haunters")  -- Pass the correct item name
+        inv.Captured_Haunters = (inv.Captured_Haunters or 0) + 1
+
+        local cur = HFILQuests.GetCurrent(pid)
+        if cur
+            and cur.id == "capture_haunter"
+            and cur.data and cur.data.kind == "collect"
+            and (cur.data.item == "Captured_Haunters") then
+            HFILQuests.AddProgress(pid, 1)
+        end
+    end
+end
+------------------------------------------------
+---Misdreavus
+------------------------------------------------
+local function onKillN010(e)
+    -- e.pid = killer pid, e.target = killed unit
+    
+    if not e or e.pid == nil or not isN010(e.target) then return end
+    local pid = e.pid
+    -- 1) Kill task progress (cull_n001)
+    --LootSystem.OnKill(e.pid, e.target)
+    local t = HFILQuests.GetCurrent(pid)
+    if t and t.id == "cull_n010"
+        and t.data and t.data.kind == "kill"
+        and (t.data.raw == "n010") then
+        HFILQuests.AddProgress(pid, 1)
+    end
+
+    -- 2) Virtual fragment drop + collect task progress
+    local chance = getDropChance()
+    if GetRandomReal(0.0, 1.0) <= chance then
+        local inv = ensureInv(pid, "Captured_Misdreavus")  -- Pass the correct item name
+        inv.Captured_Misdreavus = (inv.Captured_Misdreavus or 0) + 1
+
+        local cur = HFILQuests.GetCurrent(pid)
+        if cur
+            and cur.id == "capture_misdreavus"
+            and cur.data and cur.data.kind == "collect"
+            and (cur.data.item == "Captured_Misdreavus") then
+            HFILQuests.AddProgress(pid, 1)
+        end
+    end
+end
+------------------------------------------------
+---Phantomon
+------------------------------------------------
 
     OnInit.final(function()
         local PB = rawget(_G, "ProcBus")
@@ -655,6 +1135,12 @@ end
             local on = PB.On or PB.Subscribe
             on("OnKill", onKillN001)
             on("OnKill", onKillN00G)
+            on("OnKill", onKillN00U)
+            on("OnKill", onKillN00W)
+            on("OnKill", onKillN00L)
+            on("OnKill", onKillN00Z)
+            on("OnKill", onKillN010)
+            on("OnKill", onKillCURRENCY)
         end
     end)
 end

@@ -1,45 +1,99 @@
 if Debug then Debug.beginFile "TalentDeclaration" end
 do
     OnInit.global(function()
-        --Lunar Blessing
+
+        -- Energy Damage Lost Soul (Correct Scaling for Ranks)
+CTT.RegisterTalent({
+    name = "Bonus Energy Damage",
+    tooltip = "Increases energy bonus damage by !increase,\x25!.",
+    prelearnTooltip = "Increases energy bonus damage by !increase,\x25!.",
+    icon = "ReplaceableTextures\\CommandButtons\\BTNSoulSpirit.blp",
+    tree = "LostSoul",
+    column = 1,
+    row = 1,
+    maxPoints = 3,
+    values = {
+        increase = 0.04  
+    },
+    onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
+        local pid = GetPlayerId(whichPlayer)
+
+        local combatData = PlayerData.GetCombat(pid)
+        if not combatData.spellBonusPct then
+            combatData.spellBonusPct = 0 
+        end
+
+
+        local energylevel = combatData.spellBonusPct or 0
+        local increaseValue = CTT.GetValue(whichPlayer, talentName, "increase")
+
+
+        if newRank == 1 then
+            combatData.spellBonusPct = increaseValue
+        elseif newRank == 2 then
+            combatData.spellBonusPct = energylevel - (increaseValue / newRank) + increaseValue  
+        elseif newRank == 3 then
+            combatData.spellBonusPct = energylevel - (increaseValue / newRank) + increaseValue  
+        end
+
+        PlayerData.SetCombat(pid).spellBonusPct = combatData.spellBonusPct
+
+    end
+}) 
+        --SpiritVortex Orb Count
         CTT.RegisterTalent({
             --Add name, tooltip, and icon from an ability.
-            fourCC = 'Tlub',
-            tree = "Lunar",
+            name = "Vortex Orbs",
+            icon = "ReplaceableTextures\\CommandButtons\\BTNSpiritVortex.blp",
+            tooltip = "Gain extra !orbs! orbs for Spirit Vortex.",
+            prelearnTooltip = "Gain extra !orbs! orbs for Spirit Vortex.",
+            tree = "LostSoul",
             column = 2,
+            requirement = "Bonus Energy Damage",
             row = 1,
-            maxPoints = 5,
+            maxPoints = 2,
             values = {
-                manaReg = 0.2
+                orbs = 3
             },
-            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
-                if newRank > 0 then
-                    UnitAddAbility(HeroOfPlayer[whichPlayer], FourCC "Alub")
-                    SetUnitAbilityField(HeroOfPlayer[whichPlayer], "Alub", "Imrp", CTT.GetValue(whichPlayer, talentName, "manaReg"))
-                else
-                    UnitRemoveAbility(HeroOfPlayer[whichPlayer], FourCC "Alub")
-                end
-            end,
         })
 
-        --Improved Scout
-        CTT.RegisterTalent({
-            fourCC = 'Towl',
-            tree = "Lunar",
-            column = 3,
-            row = 1,
-            maxPoints = 5,
-            values = {
-                duration = 5
-            },
-            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
-                local newDuration = math.tointeger(GetAbilityField("AEst", "adur") + CTT.GetValue(whichPlayer, talentName, "duration"))
-                SetUnitAbilityField(HeroOfPlayer[whichPlayer], "AEst", "adur", newDuration)
-                if GetLocalPlayer() == whichPlayer then
-                    BlzSetAbilityExtendedTooltip(FourCC "AEst", "Summons an Owl Scout, which can be used to scout. Can see invisible units. Lasts " .. newDuration .. " seconds.", 0)
-                end
-            end
-        })
+CTT.RegisterTalent({
+    name = "Bonus Physical Damage",
+    tooltip = "Increases Physical bonus damage by !increase,\x25!.",
+    prelearnTooltip = "Increases Physical bonus damage by !increase,\x25!.",
+    icon = "ReplaceableTextures\\CommandButtons\\BTNSoulSpirit.blp",
+    tree = "LostSoul",
+    column = 3,
+    row = 1,
+    maxPoints = 5,
+    values = {
+        increase = 0.04  
+    },
+    onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
+        local pid = GetPlayerId(whichPlayer)
+
+        local combatData = PlayerData.GetCombat(pid)
+        if not combatData.physicalBonusPct then
+            combatData.physicalBonusPc = 0 
+        end
+
+
+        local damagelevel = combatData.physicalBonusPc or 0
+        local increaseValue = CTT.GetValue(whichPlayer, talentName, "increase")
+
+
+        if newRank == 1 then
+            combatData.physicalBonusPc = increaseValue
+        elseif newRank == 2 then
+            combatData.physicalBonusPc = damagelevel - (increaseValue / newRank) + increaseValue  
+        elseif newRank == 3 then
+            combatData.physicalBonusPc = damagelevel - (increaseValue / newRank) + increaseValue  
+        end
+
+        PlayerData.SetCombat(pid).physicalBonusPct = combatData.physicalBonusPc
+
+    end
+}) 
 
         --Starlight Pillar
         CTT.RegisterTalent({
@@ -54,29 +108,17 @@ do
             },
             onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
                 if newRank > 0 then
-                    UnitAddAbility(HeroOfPlayer[whichPlayer], FourCC "Apil")
+                    UnitAddAbility(PlayerData.Get(GetPlayerId(whichPlayer)), FourCC "Apil")
                 else
-                    UnitRemoveAbility(HeroOfPlayer[whichPlayer], FourCC "Apil")
+                    UnitRemoveAbility(PlayerData.Get(GetPlayerId(whichPlayer)), FourCC "Apil")
                 end
             end,
         })
 
-        --Starforce
-        CTT.RegisterTalent({
-            --Add name, tooltip, and icon without using an ability.
-            name = "Starforce",
-            tooltip = "Increases all spell damage you deal by !increase,\x25!.",
-			prelearnTooltip = "Increases all duderized damage you deal by !increase,\x25!.",
-            icon = "TalentIcons\\Starforce.blp",
-            tree = "Lunar",
-            column = 3,
-            row = 2,
-            maxPoints = 3,
-            requirement = "Starlight Pillar",
-            values = {
-                increase = {0.04, 0.07, 0.1}
-            },
-        })
+        
+
+
+
 
         --Improved Starlight Pillar
         CTT.RegisterTalent({
@@ -117,9 +159,9 @@ do
             },
             onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
                 if newRank > 0 then
-                    UnitAddAbility(HeroOfPlayer[whichPlayer], FourCC "AEsf")
+                    UnitAddAbility(PlayerData.Get(GetPlayerId(whichPlayer)), FourCC "AEsf")
                 else
-                    UnitRemoveAbility(HeroOfPlayer[whichPlayer], FourCC "AEsf")
+                    UnitRemoveAbility(PlayerData.Get(GetPlayerId(whichPlayer)), FourCC "AEsf")
                 end
             end,
         })
@@ -153,33 +195,16 @@ do
             },
             onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
                 if newRank == 1 then
-                    UnitAddAbility(HeroOfPlayer[whichPlayer], FourCC "AEar")
+                    UnitAddAbility(PlayerData.Get(GetPlayerId(whichPlayer)), FourCC "AEar")
                 elseif newRank > 1 then
-                    SetUnitAbilityLevel(HeroOfPlayer[whichPlayer], FourCC "AEar", newRank)
+                    SetUnitAbilityLevel(PlayerData.Get(GetPlayerId(whichPlayer)), FourCC "AEar", newRank)
                 else
-                    UnitRemoveAbility(HeroOfPlayer[whichPlayer], FourCC "AEar")
+                    UnitRemoveAbility(PlayerData.Get(GetPlayerId(whichPlayer)), FourCC "AEar")
                 end
             end,
         })
 
-        --Tenacity
-        CTT.RegisterTalent({
-            fourCC = 'Tten',
-            tree = "Survival",
-            column = 2,
-            row = 1,
-            maxPoints = 5,
-            values = {
-                health = 25
-            },
-            onLearn = function(whichPlayer, talentName, parentTree, oldRank, newRank)
-                if newRank > oldRank then
-                    SetPlayerTechResearched(whichPlayer, FourCC "Rtnc", newRank)
-                else
-                    BlzDecPlayerTechResearched(whichPlayer, FourCC "Rtnc", oldRank - newRank)
-                end
-            end
-        })
+ 
     end)
 end
 if Debug then Debug.endFile() end

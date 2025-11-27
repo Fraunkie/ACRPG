@@ -125,7 +125,7 @@ do
     -- Threat and combat scaling
     --------------------------------------------------
     GameBalance.THREAT_PER_DAMAGE     = GameBalance.THREAT_PER_DAMAGE or 0.5
-    GameBalance.DAMAGE_TRACK_CLAMP    = GameBalance.DAMAGE_TRACK_CLAMP or 35
+    GameBalance.DAMAGE_TRACK_CLAMP    = GameBalance.DAMAGE_TRACK_CLAMP or 100
     GameBalance.DAMAGE_RECORD_MIN_GAP = GameBalance.DAMAGE_RECORD_MIN_GAP or 0.20
 
     --------------------------------------------------
@@ -158,6 +158,33 @@ do
     GameBalance.DEV_SPAWN_RADIUS = GameBalance.DEV_SPAWN_RADIUS or 200.0
     GameBalance.DEV_SOUL_TEST_ID = GameBalance.DEV_SOUL_TEST_ID or FourCC("n001")
 
+    --------------------------------------------------
+    ---ItemGlobalDroptables
+    --------------------------------------------------
+    GameBalance.ITEMGLOBALCHANCE_COMMON             = GameBalance.ITEMGLOBALCHANCE_COMMON or 0.2 -- 20 percent chance
+    GameBalance.ITEMGLOBALCHANCE_UNCOMMON           = GameBalance.ITEMGLOBALCHANCE_UNCOMMON or 0.01 -- 1 percent chance
+    GameBalance.ITEMGLOBALCHANCE_RARE               = GameBalance.ITEMGLOBALCHANCE_RARE or 0.005 -- 0.01 percent chance
+    GameBalance.ITEMGLOBALDROPS                     = GameBalance.ITEMGLOBALDROPS or {
+        common = {[FourCC("I00F")] = {weight = 1, zone = "HFIL" }
+                    
+        },
+
+        uncommon = {[FourCC("I00H")] = { weight = 1,},
+                    
+        },
+
+        rare = {[FourCC("I00C")] = { weight = 1,},
+                [FourCC("I00B")] = { weight = 1,},
+                [FourCC("I00O")] = { weight = 1,},
+                [FourCC("I00W")] = { weight = 1,},
+                [FourCC("I014")] = { weight = 1,},
+                [FourCC("I015")] = { weight = 1,},
+                [FourCC("I006")] = { weight = 1,},
+                [FourCC("I007")] = { weight = 1,},
+                [FourCC("I016")] = { weight = 1,},
+        },
+    }
+
 
     --------------------------------------------------
     -- Spell unlocks (define with string keys, normalize to numeric)
@@ -171,45 +198,44 @@ do
     local SPELLS_BY_UNIT_STRKEY = {
         -- LOST SOUL (H001)
         H001 = {
-            { name="Soul Spirit",   maxlevel = 1,    abil="A000", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
-                 need   =   { sl_min = 1,  checkname = "soulStrike"},       type = "passive", tooltip = {header = "Soul Spirit",
-                                                                                                   title = "Passive",
-                                                                                                   description = "Basic passive that increases soul energy gain."},
-                                                                                                   requirements = " Requires Soul Level 1.",
-                                                                                                   damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"
-},
+            { name="Soul Spirit",   maxlevel = 1,    abil="A000", icon = "ReplaceableTextures\\CommandButtons\\BTNSoulSpirit.blp",
+                 need   =   { sl_min = 1,  checkname = "soulSpirit"},       type = "passive", tooltip = {header = "Soul Spirit",
+                                                                                                        title = "Passive",
+                                                                                                        description = "Basic passive increases attack and movement speed.",
+                                                                                                        requirements = " Requires Soul Level 1.",
+                                                                                                        damage = "Increases attack speed by 25".."%%".." and movement speed by".."%%"}},
 
-            { name="Phantom Echo", maxlevel = 1,     abil="A0PE", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
-                 need   =   { sl_min = 5,  checkname = "phantomEcho"},      type = "passive", tooltip = {header = "Soul Spirit",
+            { name="Phantom Echo", maxlevel = 1,     abil="A0PE", icon = "ReplaceableTextures\\CommandButtons\\BTNPhantomEcho.blp",
+                 need   =   { sl_min = 12,  checkname = "phantomEcho"},      type = "passive", tooltip = {header = "Phantom Echo",
                                                                                                          title = "Passive",
-                                                                                                         description = "Basic passive that increases soul energy gain."},
+                                                                                                         description = "Gives bonus damage depending on total heal missing.",
+                                                                                                         requirements = " Requires Soul Level 12.",
+                                                                                                         damage = "Increases Energy Damage by 1 ".."%%".." for every 10 ".."%%".." missing health."}},                                            
+            { name="Energy Volley", maxlevel = 1,    abil="A0CE", icon = "ReplaceableTextures\\CommandButtons\\BTNVegetaEnergyVolley.blp",
+                 need   =   { sl_min = 0,  checkname = "energyVolley" },    type = "active",  tooltip = {header = "Energy Volley",
+                                                                                                         title = "Active",
+                                                                                                         description = "Shots a single ki blast straight ahead.",
                                                                                                          requirements = " Requires Soul Level 1.",
-                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"
-},                                            
-            { name="Energy Volley", maxlevel = 1,    abil="A0CE", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
-                 need   =   { sl_min = 0,  checkname = "energyVolley" },    type = "active",  tooltip = {header = "Soul Spirit",
+                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 2)"}},  -- Active spell
+            { name="Spirit Vortex", maxlevel = 1,    abil="A0SV", icon = "ReplaceableTextures\\CommandButtons\\BTNSpiritVortex.blp",
+                 need   =   { sl_min = 3,  checkname = "spiritVortex" },    type = "active",  tooltip = {header = "Spirit Vortex",
+                                                                                                         title = "Active",
+                                                                                                         description = "Creates orbs that rotate around the user and each orb can be fired"..
+                                                                                                                       "towards closest target in range.",
+                                                                                                         requirements = " Requires Soul Level 3.",
+                                                                                                         damage = "Deals damage on hit based on Energy Damage. Each orb = (Energy Damage * 1)"}},  -- Active spell
+            { name="Spirit Burst", maxlevel = 1,     abil="A002", icon = "ReplaceableTextures\\CommandButtons\\BTNSoulBurst.blp",
+                 need   =   { sl_min = 8,  checkname = "spiritBurst" },     type = "active",  tooltip = {header = "Spirit Burst",
+                                                                                                         title = "Active",
+                                                                                                         description = "Caster creates a aoe blast around them dealing Energy damage.",
+                                                                                                         requirements = " Requires Soul Level 8.",
+                                                                                                         damage = "Deals aoe damage (Energy Damage * 3)"}},  -- Active spell
+            { name="Soul Strike", maxlevel = 1,      abil="A003", icon = "ReplaceableTextures\\CommandButtons\\BTNGuardianWispSpirits.blp",
+                 need   =   { sl_min = 15, checkname = "soulStrike" },    type = "passive", tooltip = {header = "Soul Strike",
                                                                                                          title = "Passive",
-                                                                                                         description = "Basic passive that increases soul energy gain."},
-                                                                                                         requirements = " Requires Soul Level 1.",
-                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"},  -- Active spell
-            { name="Spirit Vortex", maxlevel = 1,    abil="A0SV", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
-                 need   =   { sl_min = 4,  checkname = "spiritVortex" },    type = "active",  tooltip = {header = "Soul Spirit",
-                                                                                                         title = "Passive",
-                                                                                                         description = "Basic passive that increases soul energy gain."},
-                                                                                                         requirements = " Requires Soul Level 1.",
-                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"},  -- Active spell
-            { name="Spirit Burst", maxlevel = 1,     abil="A002", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
-                 need   =   { sl_min = 8,  checkname = "spiritBurts" },     type = "active",  tooltip = {header = "Soul Spirit",
-                                                                                                         title = "Passive",
-                                                                                                         description = "Basic passive that increases soul energy gain."},
-                                                                                                         requirements = " Requires Soul Level 1.",
-                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"},  -- Active spell
-            { name="Soul Strike", maxlevel = 1,      abil="A003", icon = "ReplaceableTextures\\CommandButtons\\PASLightningSphereBlue.blp",
-                 need   =   { sl_min = 15, checkname = "spiritVortex" },    type = "passive", tooltip = {header = "Soul Spirit",
-                                                                                                         title = "Passive",
-                                                                                                         description = "Basic passive that increases soul energy gain."},
-                                                                                                         requirements = " Requires Soul Level 1.",
-                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 1.2)"},  -- Passive spell
+                                                                                                         description = "Basic passive that increases soul energy gain.",
+                                                                                                         requirements = " Requires Soul Level 15.",
+                                                                                                         damage = "Deals damage on hit based on Energy Damage. (Energy Damage * 0.1)"}},  -- Passive spell
         }
     }
     GameBalance.TALENT_TREES = GameBalance.TALENT_TREES or {

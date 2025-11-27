@@ -14,6 +14,7 @@ do
   --------------------------------------------------
   -- Utils
   --------------------------------------------------
+
   local function dbg(msg)
     if Debug and Debug.printf then Debug.printf("[ShopService] " .. tostring(msg)) end
   end
@@ -49,8 +50,28 @@ do
   local function getGold(pid)
     return GetPlayerState(Player(pid), PLAYER_STATE_RESOURCE_GOLD)
   end
+
   local function addGold(pid, delta)
     SetPlayerState(Player(pid), PLAYER_STATE_RESOURCE_GOLD, math.max(0, getGold(pid) + (delta or 0)))
+  end
+
+  -- Get CapsuleCoins
+  local function getCapsuleCoin(pid)
+    -- Ensure PlayerData is being accessed correctly
+    local playerData = PlayerData.Get(pid)
+    if playerData and playerData.currency then
+      return playerData.currency.capsuleCoins or 0 -- Return 0 if undefined
+    end
+    return 0 -- Fallback
+  end
+
+  -- Add CapsuleCoins
+  local function addCapsuleCoin(pid, delta)
+    -- Ensure PlayerData is being updated correctly
+    local playerData = PlayerData.Get(pid)
+    if playerData and playerData.currency then
+      playerData.currency.capsuleCoins = playerData.currency.capsuleCoins + delta
+    end
   end
 
   -- Get Fragments (adjusted to use fragmentsByKind)
@@ -76,6 +97,7 @@ do
     if PD and PD.GetSoulEnergy then return PD.GetSoulEnergy(pid) end
     return 0
   end
+
   local function addSouls(pid, delta)
     local PD = rawget(_G, "PlayerData")
     if PD and PD.AddSoul then PD.AddSoul(pid, delta or 0) end
@@ -223,26 +245,38 @@ do
     local needGold      = price.gold      or 0
     local needFragments = price.fragments or {}
     local needSouls     = price.souls     or 0
+    local needcc        = price.capsuleCoin and price.capsuleCoin > 0 -- CapsuleCoins check
 
-    -- Check for Gold
+ 
+
     if getGold(pid) < needGold then return false, "Not enough gold" end
 
-    -- Check for each fragment type in the fragmentsByKind table
-    for fragType, fragAmount in pairs(needFragments) do
-      if getFragments(pid)[fragType] < fragAmount then
-        return false, "Not enough " .. fragType
-      end
+    if needcc  then 
+        print("Player doesn't have enough CapsuleCoins.")
+        return false, "Not enough CapsuleCoins"  
     end
 
-    -- Check for Souls
-    if getSouls(pid) < needSouls then return false, "Not enough souls" end
+    for fragType, fragAmount in pairs(needFragments) do
+        if getFragments(pid)[fragType] < fragAmount then
+            return false, "Not enough " .. fragType
+        end
+    end
+
+    if getSouls(pid) < needSouls then 
+        return false, "Not enough souls" 
+    end
 
     return true, nil
-  end
+end
 
   local function pay(pid, price)
     price = price or {}
-    if (price.gold or 0) > 0 then addGold(pid, -price.gold) end
+    if (price.gold or 0) > 0 then 
+        addGold(pid, -price.gold) 
+    end
+    if (price.capsuleCoins or 0) > 0 then 
+        addCapsuleCoin(pid, -price.capsuleCoins) 
+    end
     if (price.fragments or {}) then
       for fragType, fragAmount in pairs(price.fragments) do
         addFragments(pid, fragType, -fragAmount)

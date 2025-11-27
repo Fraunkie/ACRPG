@@ -1,5 +1,4 @@
 if Debug and Debug.beginFile then Debug.beginFile("PlayerMenu_StatsModule.lua") end
---@@debug
 --==================================================
 -- PlayerMenu_StatsModule.lua
 -- WoW style character sheet inside PlayerMenu content.
@@ -92,20 +91,20 @@ do
         set(L["Endurance"],GREEN_COLOR .. tostring(pd.stats.basestr or 0) .. "|r")
         set(L["Power"],GREEN_COLOR .. tostring(pd.stats.baseagi or 0) .. "|r")
         set(L["Ki"],GREEN_COLOR .. tostring(pd.stats.baseint or 0) .. "|r")
-        set(L["Crit Chance"], GREEN_COLOR ..tostring(pd.combat.critChance or 0) .. "|r".."%%")
-        set(L["Crit Multi"], GREEN_COLOR ..tostring(pd.combat.critMult or 0) .. "|r".."%%")
+        set(L["Crit Chance"], GREEN_COLOR ..tostring(pd.combat.critChance * 100 or 0) .. "|r".."%%")
+        set(L["Crit Multi"], GREEN_COLOR ..tostring(pd.combat.critMult * 100 or 0) .. "|r".."%%")
         set(L["Soul Energy"], GREEN_COLOR ..tostring(pd.soulEnergy or 0) .. "|r")
         set(L["DB Fragments"], GREEN_COLOR ..tostring(pd.fragmentsByKind.db or 0) .. "|r")
         set(L["Digi Fragments"], GREEN_COLOR ..tostring(pd.fragmentsByKind.digi or 0) .. "|r")
         set(L["Poke Fragments"], GREEN_COLOR ..tostring(pd.fragmentsByKind.poke or 0) .. "|r")
         set(L["Chakra Fragments"], GREEN_COLOR ..tostring(pd.fragmentsByKind.chakra or 0) .. "|r")
-        set(L["Energy Bonus"],GREEN_COLOR..tostring(pd.combat.spellBonusPct or 0) .. "|r".."%%")
-        set(L["Physical Bonus"],GREEN_COLOR..tostring(pd.combat.physicalBonusPct or 0) .. "|r".."%%")
+        set(L["Energy Bonus"],GREEN_COLOR..tostring(pd.combat.spellBonusPct * 100 or 0) .. "|r".."%%")
+        set(L["Physical Bonus"],GREEN_COLOR..tostring(pd.combat.physicalBonusPct * 100 or 0) .. "|r".."%%")
         set(L["Armor"],GREEN_COLOR..tostring(pd.combat.armor or 0) .. "|r")
-        set(L["Energy Resist"],GREEN_COLOR..tostring(pd.combat.energyResist or 0) .. "|r".."%%")
-        set(L["Parry"],GREEN_COLOR..tostring(pd.combat.parry or 0) .. "|r".."%%")
-        set(L["Block"],GREEN_COLOR..tostring(pd.combat.block or 0) .. "|r".."%%")
-        set(L["Dodge"],GREEN_COLOR..tostring(pd.combat.dodge or 0) .. "|r".."%%")
+        set(L["Energy Resist"],GREEN_COLOR..tostring(pd.combat.energyResist * 100 or 0) .. "|r".."%%")
+        set(L["Parry"],GREEN_COLOR..tostring(pd.combat.parry * 100 or 0) .. "|r".."%%")
+        set(L["Block"],GREEN_COLOR..tostring(pd.combat.block * 100 or 0) .. "|r".."%%")
+        set(L["Dodge"],GREEN_COLOR..tostring(tonumber(pd.combat.dodge) * 100 or 0) .. "|r".."%%")
         set(L["Physical Damage"],GREEN_COLOR..tostring(pd.stats.damage or 0) .. "|r")
         set(L["Energy Damage"],GREEN_COLOR..tostring(pd.combat.energyDamage or 0) .. "|r")
         set(L["Soul Xp Bonus"],GREEN_COLOR..tostring(pd.xpBonusPercent or 0) .. "|r".."%%")

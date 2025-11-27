@@ -131,29 +131,48 @@ do
                 y = y - (BTN_H + GAP)
                 local t = CreateTrigger()
                 BlzTriggerRegisterFrameEvent(t, b, FRAMEEVENT_CONTROL_CLICK)
-                TriggerAddAction(t, onClick)
+                TriggerAddAction(t, function()
+                    onClick()
+                    UIUtil.BounceFrame(b, pid)
+                end)
+                
             end
 
             -- Home (neutral landing)
-            addNav("Home", function() YemmaHub.ShowHome(pid) end)
+            addNav("Home", function() 
+                YemmaHub.ShowHome(pid)YemmaHub.ShowHome(pid)
+                
+                end)
 
             -- Tasks (pane created lazily)
-            addNav("Tasks", function() YemmaHub.ShowTasks(pid) end)
-
+            addNav("Tasks", function() 
+                YemmaHub.ShowTasks(pid) 
+                 
+                end)
             -- Travel (pane created lazily)
-            addNav("Travel", function() YemmaHub.ShowTravel(pid) end)
+            addNav("Travel", function() 
+                YemmaHub.ShowTravel(pid) 
+                 
+                end)
 
             -- Shop (uses ShopUI) + debug ping
             addNav("Shop", function()
                 DisplayTextToPlayer(Player(pid), 0, 0, "[Hub] Shop clicked")
                 YemmaHub.ShowShop(pid)
+                
             end)
 
             -- Services (static text)
-            addNav("Services", function() YemmaHub.ShowServices(pid) end)
+            addNav("Services", function() 
+                YemmaHub.ShowServices(pid) 
+                
+            end)
 
             -- Intro (static text)
-            addNav("Intro", function() YemmaHub.ShowIntro(pid) end)
+            addNav("Intro", function() 
+                YemmaHub.ShowIntro(pid) 
+                
+            end)
 
             wired[pid] = true
         end
@@ -308,12 +327,14 @@ do
             BlzFrameSetVisible(root[pid], true)
         end
         YemmaHub.ShowHome(pid)
+        PlayerData.SetUIFocus(pid, true)
     end
 
     function YemmaHub.Close(pid)
         if root[pid] and GetLocalPlayer() == Player(pid) then
             BlzFrameSetVisible(root[pid], false)
         end
+        PlayerData.SetUIFocus(pid, false)
     end
 
     --------------------------------------------------

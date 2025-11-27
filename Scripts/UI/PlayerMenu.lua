@@ -65,10 +65,10 @@ do
   local TEX_SB         = "ui\\SpellbookButton.blp"
 
   -- Border Textures (replace these with your border textures)
-local TEX_BORDER_LEFT = "war3mapImported\\SideMenuBorder.blp"
-local TEX_BORDER_RIGHT = "war3mapImported\\SideMenuBorder.blp"
-local TEX_BORDER_TOP = "war3mapImported\\TopMenuBorder.blp"
-local TEX_BORDER_BOTTOM = "war3mapImported\\BottomMenuBorder.blp"
+  local TEX_BORDER_LEFT = "war3mapImported\\SideMenuBorder.blp"
+  local TEX_BORDER_RIGHT = "war3mapImported\\SideMenuBorder.blp"
+  local TEX_BORDER_TOP = "war3mapImported\\TopMenuBorder.blp"
+  local TEX_BORDER_BOTTOM = "war3mapImported\\BottomMenuBorder.blp"
 
   local W_OUT, H_OUT   = 0.48, 0.42
   local RAIL_W         = 0.12
@@ -146,12 +146,10 @@ local TEX_BORDER_BOTTOM = "war3mapImported\\BottomMenuBorder.blp"
     local titleMenu = BlzCreateFrameByType("TEXT", "", root, "", 0)
     BlzFrameSetPoint(titleMenu, FRAMEPOINT_TOPLEFT, rail, FRAMEPOINT_TOPLEFT, 0.012, -0.012)
     BlzFrameSetTextAlignment(titleMenu, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-   
 
     local titleInfo = BlzCreateFrameByType("TEXT", "", root, "", 0)
     BlzFrameSetPoint(titleInfo, FRAMEPOINT_TOPLEFT, content, FRAMEPOINT_TOPLEFT, 0.012, -0.012)
     BlzFrameSetTextAlignment(titleInfo, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_TOP)
-
 
     local function makeButton(yOff, label, onClick)
       local b = BlzCreateFrameByType("BUTTON", "", rail, "IconButtonTemplate", 0)

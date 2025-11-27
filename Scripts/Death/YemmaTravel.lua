@@ -349,9 +349,9 @@ local BUTTON_TO_NODE = {
                         return
                     end
                     TeleportSystem.TeleportToNode(pid, nodeId, { reason = "yemma_travel", setHub = true })
-                    if _G.setUiFocus then
-                        setUiFocus(pid, false)
-                    end
+                    YemmaHub.Close(pid)
+                    local zone = getNodePretty(nodeId, nodeId)
+                    PlayerData.SetZone(pid, zone)
                     hideTooltipFor(pid)
                 end)
 

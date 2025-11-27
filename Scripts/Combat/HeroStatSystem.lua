@@ -13,12 +13,13 @@ do
         armor                   = 0,
         damage                  = 20,
         energyDamage            = 0,
-        energyResist            = 1.00,
-        dodge                   = 2.00,
-        parry                   = 1.00,
-        block                   = 1.00,
-        critChance              = 5.0,
-        critMult                = 150.00,
+        -- store chance stats as 0–1 FRACTIONS
+        energyResist            = 0.01,   -- 1% as fraction
+        dodge                   = 0.02,   -- 2% as fraction
+        parry                   = 0.01,   -- 1% as fraction
+        block                   = 0.01,   -- 1% as fraction
+        critChance              = 0.05,   -- 5% as fraction
+        critMult                = 1.50,   -- 1.5x crit multiplier
         spellBonusPct           = 0.00,
         physicalBonusPct        = 0.00,
         strmulti                = 1.0,
@@ -87,26 +88,66 @@ do
         local st = ensure(pid)  -- Ensure the stats table exists for the player
 
         -- Apply multipliers to the base stats
-        local finalStrength = (st.strength or 0) * (st.strmulti or 1.0)
-        local finalAgility  = (st.agility  or 0) * (st.agimulti  or 1.0)
+        local finalStrength     = (st.strength     or 0) * (st.strmulti or 1.0)
+        local finalAgility      = (st.agility      or 0) * (st.agimulti or 1.0)
         local finalIntelligence = (st.intelligence or 0) * (st.intmulti or 1.0)
 
         -- Basic derived values
-        st.power        = finalStrength + finalAgility + finalIntelligence  -- Calculate power as the sum of base stats
-        st.armor        = math.floor(finalStrength * 0.5)  -- Derived armor (armor) from strength
-        st.speed        = math.floor(finalAgility * 0.75)  -- Derived speed from agility
-        st.damage       = math.floor(finalAgility * 1.2)
-        st.crit         = math.floor(finalAgility * 0.2)   -- Derived crit chance from agility
+        st.power        = finalStrength + finalAgility + finalIntelligence
+        st.armor        = math.floor(finalStrength * 0.5)     -- Derived armor from strength
+        st.speed        = math.floor(finalAgility  * 0.75)    -- Derived speed from agility
+        st.damage       = math.floor(finalAgility  * 1.2)
+        st.crit         = math.floor(finalAgility  * 0.2)     -- Rating-style crit used for UI
 
-        -- Apply other derived stats
-        st.energyDamage = math.floor(finalIntelligence * 0.5)  -- Derived energy damage from intelligence
-        st.energyResist = st.energyResist or 1.00  -- Default resist value
-        st.dodge        = math.min(st.dodge or (finalAgility * 0.02), 0.30)  -- Dodge value (max 30%)
-        st.parry        = math.min(st.parry or (finalStrength * 0.02), 0.50)  -- Parry value (max 50%)
-        st.block        = math.min(st.block or (finalStrength * 0.02), 0.30)  -- Block value (max 30%)
-        st.critChance   = st.critChance or (finalAgility * 0.1)  -- Crit chance (derived from agility)
-        st.critMult     = st.critMult or 150.00  -- Crit multiplier (default value)
+        -- Energy damage from INT
+        st.energyDamage = math.floor(finalIntelligence * 0.5)
 
+        -- Chance-based stats: store as 0–1 fractions
+        -- You can tune these per-stat scalars, caps are in fractions too.
+        st.energyResist = st.energyResist or DEFAULT_STATS.energyResist
+
+        -- 0.02% per AGI, clamped to 30%
+        st.dodge        = math.min(finalAgility * 0.0002, 0.30)
+
+        -- 0.015% per STR, clamped to 50%
+        st.parry        = math.min(finalStrength * 0.00015, 0.50)
+
+        -- 0.010% per STR, clamped to 30%
+        st.block        = math.min(finalStrength * 0.00010, 0.30)
+
+        -- 0.010% per AGI, clamped to 80% crit chance
+        st.critChance   = math.min(finalAgility * 0.0001, 0.80)
+
+        -- Multiplier, not percent
+        st.critMult     = st.critMult or DEFAULT_STATS.critMult
+
+        -- Directly push stats to PlayerData (no need for PlayerData.RefreshPower)
+        local pd = PlayerData.Get(pid)
+        pd.powerLevel          = st.power
+        pd.stats.power         = st.power
+        pd.stats.armor         = st.armor
+        pd.stats.damage        = st.damage
+        pd.stats.energyDamage  = st.energyDamage
+        pd.stats.speed         = st.speed
+        pd.stats.crit          = st.crit
+        pd.stats.basestr       = finalStrength
+        pd.stats.baseagi       = finalAgility
+        pd.stats.baseint       = finalIntelligence
+        pd.stats.strmulti      = st.strmulti
+        pd.stats.agimulti      = st.agimulti
+        pd.stats.intmulti      = st.intmulti
+
+        -- Sync combat stats (from HeroStatSystem)
+        pd.combat.energyDamage = st.energyDamage
+        pd.combat.energyResist = st.energyResist
+        pd.combat.damage       = st.damage
+        pd.combat.armor        = st.armor
+        pd.combat.dodge        = st.dodge
+        pd.combat.parry        = st.parry
+        pd.combat.block        = st.block
+        pd.combat.critChance   = st.critChance
+        pd.combat.critMult     = st.critMult
+        pd.xpBonusPercent      = st.xpBonusPercent
 
         -- Apply derived stats to the hero (unit stats)
         local hero = PlayerData.GetHero(pid)
@@ -114,37 +155,7 @@ do
             SetHeroStr(hero, finalStrength, true)
             SetHeroAgi(hero, finalAgility, true)
             SetHeroInt(hero, finalIntelligence, true)
-            BlzSetUnitBaseDamage(hero,st.damage,1)
-            BlzSetUnitArmor(hero, st.armor)
         end
-
-        -- Directly push stats to PlayerData (no need for PlayerData.RefreshPower)
-        local pd = PlayerData.Get(pid)
-        pd.stats.power = st.power
-        pd.stats.armor = st.armor
-        pd.stats.damage = st.damage
-        pd.stats.energyDamage= st.energyDamage
-        pd.stats.speed = st.speed
-        pd.stats.crit = st.crit
-        pd.stats.basestr = finalStrength
-        pd.stats.baseagi = finalAgility
-        pd.stats.baseint = finalIntelligence
-        pd.stats.strmulti = st.strmulti
-        pd.stats.agimulti = st.agimulti
-        pd.stats.intmulti = st.intmulti
-
-        -- Sync combat stats (from HeroStatSystem)
-        pd.combat.energyDamage = st.energyDamage
-        pd.combat.energyResist = st.energyResist
-        pd.combat.damage = st.damage
-        pd.combat.armor = st.armor
-        pd.combat.dodge = st.dodge
-        pd.combat.parry = st.parry
-        pd.combat.block = st.block
-        pd.combat.critChance = st.critChance
-        pd.combat.critMult = st.critMult
-        pd.xpBonusPercent = st.xpBonusPercent
-
         return st
     end
 
@@ -201,8 +212,6 @@ do
                     pd.combat.physicalBonusPct = value or 0
                 elseif key == "xpBonusPercent" then
                     pd.combat.xpBonusPercent = value or 0
-                elseif key == "damage" then
-                    pd.combat.damage = value or 0
                 end
             end
         end
@@ -290,25 +299,24 @@ do
     -- debug helper
     --------------------------------------------------
     function HeroStatSystem.DebugPrint(pid)
-    local st = ensure(pid)
-    print("HERO STATS pid=" .. tostring(pid) .. 
-          " STR=" .. tostring(st.strength) .. 
-          " AGI=" .. tostring(st.agility) .. 
-          " INT=" .. tostring(st.intelligence) .. 
-          " PWR=" .. tostring(st.power) .. 
-          " DEF=" .. tostring(st.armor) .. 
-          " SPD=" .. tostring(st.speed) .. 
-          " CRT=" .. tostring(st.crit) ..
-          " DMG=" .. tostring(st.damage) ..
-          " ENERG_DMG=" .. tostring(st.energyDamage) ..
-          " ENERG_RESIST=" .. tostring(st.energyResist) ..
-          " DODGE=" .. tostring(st.dodge) ..
-          " PARRY=" .. tostring(st.parry) ..
-          " BLOCK=" .. tostring(st.block) ..
-          " CRIT_CHANCE=" .. tostring(st.critChance) ..
-          " CRIT_MULT=" .. tostring(st.critMult))
+        local st = ensure(pid)
+        print("HERO STATS pid=" .. tostring(pid) ..
+              " STR=" .. tostring(st.strength) ..
+              " AGI=" .. tostring(st.agility) ..
+              " INT=" .. tostring(st.intelligence) ..
+              " PWR=" .. tostring(st.power) ..
+              " DEF=" .. tostring(st.armor) ..
+              " SPD=" .. tostring(st.speed) ..
+              " CRT=" .. tostring(st.crit) ..
+              " DMG=" .. tostring(st.damage) ..
+              " ENERG_DMG=" .. tostring(st.energyDamage) ..
+              " ENERG_RESIST=" .. tostring(st.energyResist) ..
+              " DODGE=" .. tostring(st.dodge) ..
+              " PARRY=" .. tostring(st.parry) ..
+              " BLOCK=" .. tostring(st.block) ..
+              " CRIT_CHANCE=" .. tostring(st.critChance) ..
+              " CRIT_MULT=" .. tostring(st.critMult))
     end
-
 
     --------------------------------------------------
     -- init: make tables even before hero is created

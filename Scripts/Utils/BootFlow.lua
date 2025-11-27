@@ -131,8 +131,7 @@ local COLOR_ERROR = "|cffff0000"
             if GetLocalPlayer() == Player(pid) then
                 ClearTextMessages()
             end
-
-            DisplayTextToPlayer(Player(pid), 0, 0,
+            NeatMessageToPlayerTimed(Player(pid), 10,
                 "Welcome to the Spirit Realm!\n\n" ..
                 "• Speak with " .. COLOR_PURPLE .. "*King Yemma*" .. "|r" .. " at the desk to begin your first task.\n" ..
                 "• Press " .. COLOR_GOLD .. "**F**" .. "|r" .. " near a Hub to open the Menu.\n" ..
@@ -240,7 +239,8 @@ if GetLocalPlayer() == Player(pid) then
     -- Set the atmospheric fog with a gentle blue color using SetTerrainFog
     -- Set the fog range (from 1000 to 4000) and color
     if SetTerrainFogEx then
-        SetTerrainFogEx(0, 2000.0, 7000.0, 1.0, 140, 165, 205)  -- Blue fog color (RGB)
+        SetTerrainFogEx(0, 0, 70000.0, 1, 120, 120, 200)  -- Blue fog color (RGB)
+        SetCameraField(CAMERA_FIELD_FARZ, 100000.0, 0.0)
     end
 end
 

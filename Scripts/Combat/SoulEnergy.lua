@@ -1,4 +1,4 @@
-if Debug and Debug.beginFile then Debug.beginFile("SoulEnergy.lua") end
+--if Debug and Debug.beginFile then Debug.beginFile("SoulEnergy.lua") end
 --==================================================
 -- SoulEnergy.lua  (Adapter → SoulEnergyLogic)
 --==================================================
@@ -7,11 +7,6 @@ if not SoulEnergy then SoulEnergy = {} end
 _G.SoulEnergy = SoulEnergy
 
 do
-    local function dprint(msg)
-        if _G.DevMode and DevMode.IsOn and DevMode.IsOn(0) then
-            DisplayTextToPlayer(Player(0), 0, 0, "[SoulEnergy] " .. tostring(msg))
-        end
-    end
 
     local function setLevelLabel(pid, lvl)
         local B = _G.SpiritPowerLabelBridge
@@ -56,7 +51,6 @@ do
         return 1
     end
 
-    -- THIS was broken: it was looking for L.AddXp; logic only has L.Add
     function SoulEnergy.AddXp(pid, delta, reason, meta)
         local L = logic()
         if not L then return SoulEnergy.GetXp(pid) end
@@ -77,10 +71,6 @@ do
         setXpLabel(pid, retXp)
         setLevelLabel(pid, SoulEnergy.GetLevel(pid))
 
-        dprint("AddXp pid=" .. tostring(pid) ..
-               " delta=" .. tostring(delta or 0) ..
-               " before=" .. tostring(beforeXp) ..
-               " after=" .. tostring(retXp))
 
         return retXp
     end
@@ -93,7 +83,6 @@ do
         local xp = setFn(pid, value or 0)
         setXpLabel(pid, xp)
         setLevelLabel(pid, SoulEnergy.GetLevel(pid))
-        dprint("SetXp pid=" .. tostring(pid) .. " xp=" .. tostring(xp))
         return xp
     end
 
@@ -138,4 +127,4 @@ do
     end)
 end
 
-if Debug and Debug.endFile then Debug.endFile() end
+--if Debug and Debug.endFile then Debug.endFile() end

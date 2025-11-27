@@ -20,8 +20,16 @@ do
     --------------------------------------------------
     -- Config
     --------------------------------------------------
-    local GOKU_SHARD_ID = FourCC("I00W")
-    local POLL_PERIOD   = 0.40
+    local POLL_PERIOD               = 0.40
+    local GOKU_SHARD_ID             = FourCC("I00W")
+    local VEGETA_SHARD_ID           = FourCC("I016")
+    local PICCOLO_SHARD_ID          = FourCC("I015")
+    local SQUIRTLE_SHARD_ID         = FourCC("I007")
+    local CHARMANDER_SHARD_ID       = FourCC("I00B")
+    local SAKURA_SHARD_ID           = FourCC("I006")
+    local NARUTO_SHARD_ID           = FourCC("I014")
+    local AGUMON_SHARD_ID           = FourCC("I00C")
+    local GABUMON_SHARD_ID          = FourCC("I00O")
 
     local SHARD_RULES = {
         [GOKU_SHARD_ID] = {
@@ -29,6 +37,46 @@ do
             name = "Goku Ascension Shard (Uncharged)",
             mode = "spirit_full",
         },
+        [VEGETA_SHARD_ID] = {
+            id   = VEGETA_SHARD_ID,
+            name = "Vegeta Ascension Shard (Uncharged)",
+            mode = "spirit_full",
+        },
+        [PICCOLO_SHARD_ID] = {
+            id   = PICCOLO_SHARD_ID,
+            name = "Piccolo Ascension Shard (Uncharged)",
+            mode = "spirit_full",
+        },
+        [SQUIRTLE_SHARD_ID] = {
+            id   = SQUIRTLE_SHARD_ID,
+            name = "Squirtle Ascension Shard (Uncharged)",
+            mode = "spirit_full",
+        },
+        [CHARMANDER_SHARD_ID] = {
+            id   = CHARMANDER_SHARD_ID,
+            name = "Charmander Ascension Shard (Uncharged)",
+            mode = "spirit_full",
+        },
+        [SAKURA_SHARD_ID] = {
+            id   = SAKURA_SHARD_ID,
+            name = "Sakura Ascension Shard (Uncharged)",
+            mode = "spirit_full",
+        },
+        [NARUTO_SHARD_ID] = {
+            id   = NARUTO_SHARD_ID,
+            name = "Naruto Ascension Shard (Uncharged)",
+            mode = "spirit_full",
+        },
+        [AGUMON_SHARD_ID] = {
+            id   = AGUMON_SHARD_ID,
+            name = "Agumon Ascension Shard (Uncharged)",
+            mode = "spirit_full",
+        },
+        [GABUMON_SHARD_ID] = {
+            id   = GABUMON_SHARD_ID,
+            name = "Gabumon Ascension Shard (Uncharged)",
+            mode = "spirit_full",
+        }
     }
 
     --------------------------------------------------
@@ -189,7 +237,6 @@ do
                             markCharged(pid, itemId, rule.name)
                         else
                             -- still useful to know
-                            dbgTo(pid, "has shard, SD=" .. tostring(sdVal) .. " need 100")
                         end
                     end
                 end

@@ -1,10 +1,11 @@
 if Debug and Debug.beginFile then Debug.beginFile("CombatEventsBridge.lua") end
 --==================================================
--- CombatEventsBridge.lua  v1.02
+-- CombatEventsBridge.lua  v1.03
 -- • Bridges damage to ProcBus, Threat, SD, DPS HUD
 -- • Works with DamageEngine (preferred) OR native fallback
 -- • Avoids re-applying damage in native path (no double yellow)
 -- • Avoids on-hit infinite loop with OnHitPassives.__inPassive
+-- • NO DAMAGE CLAMP; optional bonus physical from PlayerData
 --==================================================
 
 if not CombatEventsBridge then CombatEventsBridge = {} end
@@ -15,7 +16,7 @@ do
     -- Tunables
     --------------------------------------------------
     local THREAT_PER_DAMAGE     = (GameBalance and GameBalance.THREAT_PER_DAMAGE)     or 0.5
-    local DAMAGE_TRACK_CLAMP    = (GameBalance and GameBalance.DAMAGE_TRACK_CLAMP)    or 35
+    -- DAMAGE_TRACK_CLAMP removed (no cap)
     local RECORD_MIN_GAP        = (GameBalance and GameBalance.DAMAGE_RECORD_MIN_GAP) or 0.20
     local SD_ON_HIT             = (GameBalance and GameBalance.SPIRIT_DRIVE_ON_HIT)   or 3
     local SD_ON_KILL            = (GameBalance and GameBalance.SPIRIT_DRIVE_ON_KILL)  or 10
@@ -124,16 +125,29 @@ do
         return true
     end
 
+    -- No more damage clamp; only sanitize into a positive number
     local function sanitizeAmount(a)
         local amt = tonumber(a or 0) or 0
         if amt <= 0 then
             return 0
         end
-        local cap = DAMAGE_TRACK_CLAMP or 0
-        if cap > 0 and amt > cap then
-            amt = cap
-        end
         return amt
+    end
+
+    -- Safe helper: bonus physical damage from PlayerData, or 0 if missing / nil
+    local function getPhysicalBonus(pid)
+        if not pid then
+            return 0
+        end
+        local PD = rawget(_G, "PlayerData")
+        if not PD or type(PD.GetPhysicalDamage) ~= "function" then
+            return 0
+        end
+        local ok, val = pcall(PD.GetPhysicalDamage, pid,true)
+        if not ok or type(val) ~= "number" then
+            return 0
+        end
+        return val
     end
 
     local function AddThreatTS(source, target, amount)
@@ -313,15 +327,30 @@ do
             return
         end
 
-        local amt = sanitizeAmount(d.amount)
-        if amt <= 0 then
+        -- base amount from engine (no clamp)
+        local baseAmt = sanitizeAmount(d.amount)
+        if baseAmt <= 0 then
             return
         end
 
-        -- DPS / HUD
+        -- figure out flags first
+        local meleeFlag = isMeleeAttacker(src)
+        local isAtk     = (d.isAttack == nil) and true or (d.isAttack == true)
+
+        -- start from base, then add physical bonus for melee/basic attacks
+        local amt = baseAmt
+        if isAtk and pid then
+            local bonus = getPhysicalBonus(pid)
+            if bonus ~= 0 then
+                amt = amt + bonus
+            end
+        end
+
+        --------------------------------------------------
+        -- DPS / HUD + Threat use the final amount
+        --------------------------------------------------
         emit("OnDealtDamage", { pid = pid, source = src, target = tgt, amount = amt })
 
-        -- Threat
         local threatAdd = math.floor(amt * (THREAT_PER_DAMAGE or 1.0))
         if threatAdd > 0 then
             AddThreatTS(src, tgt, threatAdd)
@@ -330,22 +359,19 @@ do
             end
         end
 
-        -- Spirit Drive (melee only)
-        local meleeFlag = isMeleeAttacker(src)
-        local isAtk     = (d.isAttack == nil) and true or (d.isAttack == true)
+        -- Spirit Drive (melee only, using the same meleeFlag / isAtk)
         if SD_ON_HIT ~= 0 and pid and _G.SpiritDrive and SpiritDrive.Add then
             if meleeFlag and isAtk and passSDGate(pid, tgt) then
                 pcall(SpiritDrive.Add, pid, SD_ON_HIT)
             end
         end
 
-        -- was this damage coming from native event?
         local fromNative = (d.fromNative == true)
 
         --------------------------------------------------
         -- PHYSICAL (basic attacks)
         --------------------------------------------------
-        if d.isAttack then
+        if isAtk then
             -- only re-apply damage if this did NOT come from native
             if not fromNative then
                 if DamageEngine and DamageEngine.applyPhysicalDamage then

@@ -1,6 +1,6 @@
 if Debug and Debug.beginFile then Debug.beginFile("PlayerMenu_SpellbookModule.lua") end
 --==================================================
--- PlayerMenu_SpellbookModule.lua (v4.1)
+-- PlayerMenu_SpellbookModule.lua (v4.4)
 -- Pure Spellbook (Actives + Passives)
 -- • Uses GameBalance.SPELL_UNLOCKS_BY_UNIT[unitTypeId]
 -- • Unlock state read from PlayerData.Get(pid).knownspells
@@ -22,25 +22,25 @@ do
     --------------------------------------------------
     -- Texture constants (all backgrounds centralized)
     --------------------------------------------------
-    local TEX_BG_MAIN         = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background.blp"
+    local TEX_BG_MAIN         = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
     local TEX_BG_TOPBAR       = "UI\\Widgets\\EscMenu\\NightElf\\nightelf-options-menu-background.blp"
     local TEX_BG_SECTION      = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
-    local TEX_BG_SECTION_HDR  = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
-    local TEX_BG_CELL         = "UI\\Widgets\\EscMenu\\Human\\human-options-menu-background.blp"
+    local TEX_BG_SECTION_HDR  = "ReplaceableTextures\\CameraMasks\\Black_mask.blp"
+    local TEX_BG_CELL         = "ReplaceableTextures\\CameraMasks\\Black_mask.blp"
     local TEX_BG_PAGEBAR      = "UI\\Widgets\\EscMenu\\Human\\blank-background.blp"
 
     local TEX_ICON_FALLBACK   = "ReplaceableTextures\\CommandButtons\\BTNSpellBookBLS.blp"
     local TEX_ICON_LOCK       = "ReplaceableTextures\\CommandButtons\\BTNLock.blp"
 
     -- Simple highlight border for buttons and tiles (you can swap this for a custom BLP later)
-    local TEX_HIGHLIGHT       = "UI\\Widgets\\Glues\\GlueScreen-ButtonBackdrop.blp"
+    local TEX_HIGHLIGHT       = "ui\\HighlightNew.blp"
 
     --------------------------------------------------
     -- Layout constants
     --------------------------------------------------
     local PAD_OUT         = 0.010
     local PAD_IN          = 0.008
-    local TOPBAR_H        = 0.024
+    local TOPBAR_H        = 0.020
 
     local SECTION_H       = 0.145
     local GAP_SECTIONS    = 0.012
@@ -48,13 +48,16 @@ do
     local GRID_COLS       = 4
     local GRID_ROWS       = 2
     local ICON_SIZE       = 0.032
-    local CELL_W          = 0.080
+    local CELL_W          = 0.060
     local CELL_H          = 0.060
     local CELL_GAP_X      = 0.006
     local CELL_GAP_Y      = 0.006
 
     local PAGEBAR_H       = 0.020
     local BUTTON_PAGE_W   = 0.018
+
+    -- push the grid down a bit so it doesn't overlap headers
+    local GRID_OFFSET_Y   = 0.045
 
     --------------------------------------------------
     -- Tooltip layout
@@ -66,46 +69,6 @@ do
     --------------------------------------------------
     -- Per-player UI state
     --------------------------------------------------
-    -- UI[pid] = {
-    --   root,            -- the contentFrame we are attached to
-    --   bgMain,
-    --   topbar,
-    --   txtTitle,
-    --   btnToggleLocked,
-    --   txtToggleLocked,
-    --   hlToggleLocked,
-    --   btnTogglePages,
-    --   txtTogglePages,
-    --   hlTogglePages,
-    --   showLocked,
-    --   showPages,
-    --
-    --   -- Actives
-    --   secActive,
-    --   secActiveHdr,
-    --   txtActiveHdr,
-    --   pageBarActive,
-    --   btnActivePrev,
-    --   btnActiveNext,
-    --   txtActivePage,
-    --   tilesActive = {},
-    --   entriesActive = {},
-    --   pageActive = 1,
-    --   maxPageActive = 1,
-    --
-    --   -- Passives
-    --   secPassive,
-    --   secPassiveHdr,
-    --   txtPassiveHdr,
-    --   pageBarPassive,
-    --   btnPassivePrev,
-    --   btnPassiveNext,
-    --   txtPassivePage,
-    --   tilesPassive = {},
-    --   entriesPassive = {},
-    --   pagePassive = 1,
-    --   maxPagePassive = 1,
-    -- }
     local UI = {}
 
     --------------------------------------------------
@@ -183,6 +146,7 @@ do
         return pd.knownspells
     end
 
+    private_isSpellKnown = private_isSpellKnown or {}
     local function isSpellKnown(pid, entry)
         local need = entry.need or {}
         local checkname = need.checkname
@@ -255,10 +219,15 @@ do
         headline = headline or ""
         body     = body or ""
 
-        BlzFrameSetText(title, headline)
-        BlzFrameSetText(text,  body)
+        -- tiny padding line so the bottom never clips out of the yellow box
+        local finalBody = body .. "\n "
 
-        -- Constrain text width so it wraps horizontally instead of vertical letters
+        if title then
+            BlzFrameSetText(title, headline)
+        end
+        BlzFrameSetText(text, finalBody)
+
+        -- Constrain text width so it wraps cleanly
         BlzFrameSetSize(text, TOOLTIP_WIDTH, 0.0)
         local textH = BlzFrameGetHeight(text)
         local boxW = TOOLTIP_WIDTH + TOOLTIP_PAD_W * 2
@@ -279,6 +248,7 @@ do
         BlzFrameSetVisible(box, true)
     end
 
+    private_hideTooltipFor = private_hideTooltipFor or {}
     local function hideTooltipFor(pid)
         local t = g.spelltooltip
         if not t or not t.box then
@@ -337,26 +307,28 @@ do
     end
 
     --------------------------------------------------
-    -- Tooltip text builder for an entry
-    -- Uses entry.tooltip if present:
-    --   tooltip = { header, title, description, requirements, damage }
+    -- Tooltip text builder (Spellbook)
     --------------------------------------------------
     local function buildTooltipText(abilId, entry)
-        local tooltip = entry.tooltip or {}
+        local tooltip  = entry.tooltip or {}
         local headline = tooltip.header or entry.name or "Ability"
 
         local lines = {}
 
+        -- Title line
         if tooltip.title and tooltip.title ~= "" then
-            lines[#lines+1] = tooltip.title
+            lines[#lines+1] = "|cffffdd88" .. tooltip.title .. "|r"
         end
 
+        -- Main description
         if tooltip.description and tooltip.description ~= "" then
-            lines[#lines+1] = tooltip.description
+            lines[#lines+1] = "|cffdddddd" .. tooltip.description .. "|r"
         end
 
-        local need = entry.need or {}
-        local reqLine = tooltip.requirements
+        -- Requirements
+        local need    = entry.need or {}
+        local reqLine = tooltip.requirements or entry.requirements
+        local dmgLine = tooltip.damage      or entry.damage
 
         if not reqLine or reqLine == "" then
             local reqParts = {}
@@ -379,19 +351,22 @@ do
             end
         end
 
+        -- Damage line from tooltip config (show as text, no calculation)
+        if dmgLine and dmgLine ~= "" then
+            lines[#lines+1] = "|cffffaa00Damage:|r |cffe0e0e0" .. dmgLine .. "|r"
+        end
+
+        -- Requirements line
         if reqLine and reqLine ~= "" then
-            lines[#lines+1] = reqLine
+            lines[#lines+1] = "|cff80ff80Requirements:|r |cffe0e0e0" .. reqLine .. "|r"
         end
 
-        if tooltip.damage and tooltip.damage ~= "" then
-            lines[#lines+1] = tooltip.damage
-        end
-
+        -- Fallback
         if #lines == 0 then
             if isPassiveEntry(entry) then
-                lines[#lines+1] = "Passive ability."
+                lines[#lines+1] = "|cffffdd88Passive ability.|r"
             else
-                lines[#lines+1] = "Active ability."
+                lines[#lines+1] = "|cffffdd88Active ability.|r"
             end
         end
 
@@ -443,10 +418,9 @@ do
         local startIndex = (page - 1) * itemsPerPage + 1
 
         local idx = 0
-        local rowStartY = - (TOPBAR_H + PAD_IN)
+        local rowStartY = - (TOPBAR_H + PAD_IN + GRID_OFFSET_Y)
 
         if not isActive then
-            -- passives sit below actives
             rowStartY = rowStartY - (SECTION_H + GAP_SECTIONS)
         end
 
@@ -496,6 +470,7 @@ do
                     ipath = TEX_ICON_FALLBACK
                 end
                 BlzFrameSetTexture(icon, ipath, 0, true)
+                BlzFrameSetEnable(icon, false)
 
                 -- Highlight on tile
                 local hl = BlzCreateFrameByType("BACKDROP", "", btn, "", 0)
@@ -504,6 +479,7 @@ do
                 BlzFrameSetLevel(hl, 37)
                 BlzFrameSetAlpha(hl, 180)
                 BlzFrameSetVisible(hl, false)
+                BlzFrameSetEnable(hl, false)
 
                 -- Label
                 local lbl = BlzCreateFrameByType("TEXT", "", cell, "", 0)
@@ -513,16 +489,17 @@ do
                     if known then
                         BlzFrameSetText(lbl, "Passive")
                     else
-                        BlzFrameSetText(lbl, "Passive (locked)")
+                        BlzFrameSetText(lbl, "(locked)")
                     end
                 else
                     if known then
                         BlzFrameSetText(lbl, "Active")
                     else
-                        BlzFrameSetText(lbl, "Active (locked)")
+                        BlzFrameSetText(lbl, "(locked)")
                     end
                 end
                 BlzFrameSetLevel(lbl, 38)
+                BlzFrameSetEnable(lbl, false)
 
                 -- Lock icon
                 local lock = BlzCreateFrameByType("BACKDROP", "", cell, "", 0)
@@ -531,6 +508,7 @@ do
                 BlzFrameSetTexture(lock, TEX_ICON_LOCK, 0, true)
                 BlzFrameSetLevel(lock, 39)
                 BlzFrameSetVisible(lock, (not known) and ui.showLocked)
+                BlzFrameSetEnable(lock, false)
 
                 local headline, body = buildTooltipText(abilId, entry)
 
@@ -670,36 +648,41 @@ do
         ui.bgMain = BlzCreateFrameByType("BACKDROP", "SB_MainBG", ui.root, "", 0)
         BlzFrameSetAllPoints(ui.bgMain, ui.root)
         BlzFrameSetTexture(ui.bgMain, TEX_BG_MAIN, 0, true)
-        BlzFrameSetLevel(ui.bgMain, 30)
+        BlzFrameSetLevel(ui.bgMain, 1)
+        BlzFrameSetEnable(ui.bgMain, false)
 
         ui.topbar = BlzCreateFrameByType("BACKDROP", "SB_Topbar", ui.root, "", 0)
         BlzFrameSetPoint(ui.topbar, FRAMEPOINT_TOPLEFT,  ui.root, FRAMEPOINT_TOPLEFT,  PAD_OUT, -PAD_OUT)
         BlzFrameSetPoint(ui.topbar, FRAMEPOINT_TOPRIGHT, ui.root, FRAMEPOINT_TOPRIGHT, -PAD_OUT, -PAD_OUT)
         BlzFrameSetSize(ui.topbar, 0.10, TOPBAR_H)
         BlzFrameSetTexture(ui.topbar, TEX_BG_TOPBAR, 0, true)
-        BlzFrameSetLevel(ui.topbar, 31)
+        BlzFrameSetLevel(ui.topbar, 2)
+        BlzFrameSetEnable(ui.topbar, false)
 
         ui.txtTitle = BlzCreateFrameByType("TEXT", "SB_Title", ui.topbar, "", 0)
         BlzFrameSetPoint(ui.txtTitle, FRAMEPOINT_LEFT, ui.topbar, FRAMEPOINT_LEFT, PAD_IN, 0.0)
         BlzFrameSetTextAlignment(ui.txtTitle, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(ui.txtTitle, "Spellbook")
-        BlzFrameSetLevel(ui.txtTitle, 32)
+        BlzFrameSetLevel(ui.txtTitle, 3)
+        BlzFrameSetEnable(ui.txtTitle, false)
 
         -- Toggle locked
         ui.btnToggleLocked = BlzCreateFrameByType("BUTTON", "SB_ToggleLocked", ui.topbar, "", 0)
         BlzFrameSetSize(ui.btnToggleLocked, 0.100, TOPBAR_H - 0.004)
         BlzFrameSetPoint(ui.btnToggleLocked, FRAMEPOINT_RIGHT, ui.topbar, FRAMEPOINT_RIGHT, -0.010, 0.0)
-        BlzFrameSetLevel(ui.btnToggleLocked, 32)
+        BlzFrameSetLevel(ui.btnToggleLocked, 50)
 
         local bgToggleLocked = BlzCreateFrameByType("BACKDROP", "", ui.btnToggleLocked, "", 0)
         BlzFrameSetAllPoints(bgToggleLocked, ui.btnToggleLocked)
         BlzFrameSetTexture(bgToggleLocked, TEX_BG_SECTION_HDR, 0, true)
+        BlzFrameSetEnable(bgToggleLocked, false)
 
         ui.txtToggleLocked = BlzCreateFrameByType("TEXT", "", ui.btnToggleLocked, "", 0)
         BlzFrameSetAllPoints(ui.txtToggleLocked, ui.btnToggleLocked)
         BlzFrameSetTextAlignment(ui.txtToggleLocked, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(ui.txtToggleLocked, "Show all")
         BlzFrameSetLevel(ui.txtToggleLocked, 33)
+        BlzFrameSetEnable(ui.txtToggleLocked, false)
 
         ui.hlToggleLocked = BlzCreateFrameByType("BACKDROP", "", ui.btnToggleLocked, "", 0)
         BlzFrameSetAllPoints(ui.hlToggleLocked, ui.btnToggleLocked)
@@ -707,22 +690,25 @@ do
         BlzFrameSetLevel(ui.hlToggleLocked, 34)
         BlzFrameSetAlpha(ui.hlToggleLocked, 180)
         BlzFrameSetVisible(ui.hlToggleLocked, false)
+        BlzFrameSetEnable(ui.hlToggleLocked, false)
 
         -- Toggle pages
         ui.btnTogglePages = BlzCreateFrameByType("BUTTON", "SB_TogglePages", ui.topbar, "", 0)
         BlzFrameSetSize(ui.btnTogglePages, 0.090, TOPBAR_H - 0.004)
         BlzFrameSetPoint(ui.btnTogglePages, FRAMEPOINT_RIGHT, ui.btnToggleLocked, FRAMEPOINT_LEFT, -0.006, 0.0)
-        BlzFrameSetLevel(ui.btnTogglePages, 32)
+        BlzFrameSetLevel(ui.btnTogglePages, 50)
 
         local bgTogglePages = BlzCreateFrameByType("BACKDROP", "", ui.btnTogglePages, "", 0)
         BlzFrameSetAllPoints(bgTogglePages, ui.btnTogglePages)
         BlzFrameSetTexture(bgTogglePages, TEX_BG_SECTION_HDR, 0, true)
+        BlzFrameSetEnable(bgTogglePages, false)
 
         ui.txtTogglePages = BlzCreateFrameByType("TEXT", "", ui.btnTogglePages, "", 0)
         BlzFrameSetAllPoints(ui.txtTogglePages, ui.btnTogglePages)
         BlzFrameSetTextAlignment(ui.txtTogglePages, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(ui.txtTogglePages, "Pages on")
         BlzFrameSetLevel(ui.txtTogglePages, 33)
+        BlzFrameSetEnable(ui.txtTogglePages, false)
 
         ui.hlTogglePages = BlzCreateFrameByType("BACKDROP", "", ui.btnTogglePages, "", 0)
         BlzFrameSetAllPoints(ui.hlTogglePages, ui.btnTogglePages)
@@ -730,6 +716,7 @@ do
         BlzFrameSetLevel(ui.hlTogglePages, 34)
         BlzFrameSetAlpha(ui.hlTogglePages, 180)
         BlzFrameSetVisible(ui.hlTogglePages, false)
+        BlzFrameSetEnable(ui.hlTogglePages, false)
 
         -- Active section
         ui.secActive = BlzCreateFrameByType("BACKDROP", "SB_ActiveSection", ui.root, "", 0)
@@ -738,6 +725,7 @@ do
         BlzFrameSetSize(ui.secActive, 0.10, SECTION_H)
         BlzFrameSetTexture(ui.secActive, TEX_BG_SECTION, 0, true)
         BlzFrameSetLevel(ui.secActive, 31)
+        BlzFrameSetEnable(ui.secActive, false)
 
         ui.secActiveHdr = BlzCreateFrameByType("BACKDROP", "SB_ActiveHdr", ui.secActive, "", 0)
         BlzFrameSetPoint(ui.secActiveHdr, FRAMEPOINT_TOPLEFT,  ui.secActive, FRAMEPOINT_TOPLEFT,  PAD_IN, -PAD_IN)
@@ -745,12 +733,14 @@ do
         BlzFrameSetSize(ui.secActiveHdr, 0.10, 0.018)
         BlzFrameSetTexture(ui.secActiveHdr, TEX_BG_SECTION_HDR, 0, true)
         BlzFrameSetLevel(ui.secActiveHdr, 32)
+        BlzFrameSetEnable(ui.secActiveHdr, false)
 
         ui.txtActiveHdr = BlzCreateFrameByType("TEXT", "SB_ActiveHdrText", ui.secActiveHdr, "", 0)
         BlzFrameSetAllPoints(ui.txtActiveHdr, ui.secActiveHdr)
         BlzFrameSetTextAlignment(ui.txtActiveHdr, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(ui.txtActiveHdr, "Active Spells")
         BlzFrameSetLevel(ui.txtActiveHdr, 33)
+        BlzFrameSetEnable(ui.txtActiveHdr, false)
 
         ui.pageBarActive = BlzCreateFrameByType("BACKDROP", "SB_ActivePageBar", ui.secActive, "", 0)
         BlzFrameSetPoint(ui.pageBarActive, FRAMEPOINT_BOTTOMLEFT, ui.secActive, FRAMEPOINT_BOTTOMLEFT, PAD_IN, PAD_IN)
@@ -758,6 +748,7 @@ do
         BlzFrameSetSize(ui.pageBarActive, 0.10, PAGEBAR_H)
         BlzFrameSetTexture(ui.pageBarActive, TEX_BG_PAGEBAR, 0, true)
         BlzFrameSetLevel(ui.pageBarActive, 32)
+        BlzFrameSetEnable(ui.pageBarActive, false)
 
         ui.btnActivePrev = BlzCreateFrameByType("BUTTON", "SB_ActivePrev", ui.pageBarActive, "", 0)
         BlzFrameSetSize(ui.btnActivePrev, BUTTON_PAGE_W, PAGEBAR_H - 0.004)
@@ -767,12 +758,14 @@ do
         local bgAPrev = BlzCreateFrameByType("BACKDROP", "", ui.btnActivePrev, "", 0)
         BlzFrameSetAllPoints(bgAPrev, ui.btnActivePrev)
         BlzFrameSetTexture(bgAPrev, TEX_BG_SECTION_HDR, 0, true)
+        BlzFrameSetEnable(bgAPrev, false)
 
         local txtAPrev = BlzCreateFrameByType("TEXT", "", ui.btnActivePrev, "", 0)
         BlzFrameSetAllPoints(txtAPrev, ui.btnActivePrev)
         BlzFrameSetTextAlignment(txtAPrev, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(txtAPrev, "<")
         BlzFrameSetLevel(txtAPrev, 34)
+        BlzFrameSetEnable(txtAPrev, false)
 
         ui.btnActiveNext = BlzCreateFrameByType("BUTTON", "SB_ActiveNext", ui.pageBarActive, "", 0)
         BlzFrameSetSize(ui.btnActiveNext, BUTTON_PAGE_W, PAGEBAR_H - 0.004)
@@ -782,12 +775,14 @@ do
         local bgANext = BlzCreateFrameByType("BACKDROP", "", ui.btnActiveNext, "", 0)
         BlzFrameSetAllPoints(bgANext, ui.btnActiveNext)
         BlzFrameSetTexture(bgANext, TEX_BG_SECTION_HDR, 0, true)
+        BlzFrameSetEnable(bgANext, false)
 
         ui.txtActivePage = BlzCreateFrameByType("TEXT", "SB_ActivePageText", ui.pageBarActive, "", 0)
         BlzFrameSetPoint(ui.txtActivePage, FRAMEPOINT_CENTER, ui.pageBarActive, FRAMEPOINT_CENTER, 0.0, 0.0)
         BlzFrameSetTextAlignment(ui.txtActivePage, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(ui.txtActivePage, "1 / 1")
         BlzFrameSetLevel(ui.txtActivePage, 34)
+        BlzFrameSetEnable(ui.txtActivePage, false)
 
         -- Passive section (below active)
         ui.secPassive = BlzCreateFrameByType("BACKDROP", "SB_PassiveSection", ui.root, "", 0)
@@ -796,6 +791,7 @@ do
         BlzFrameSetSize(ui.secPassive, 0.10, SECTION_H)
         BlzFrameSetTexture(ui.secPassive, TEX_BG_SECTION, 0, true)
         BlzFrameSetLevel(ui.secPassive, 31)
+        BlzFrameSetEnable(ui.secPassive, false)
 
         ui.secPassiveHdr = BlzCreateFrameByType("BACKDROP", "SB_PassiveHdr", ui.secPassive, "", 0)
         BlzFrameSetPoint(ui.secPassiveHdr, FRAMEPOINT_TOPLEFT,  ui.secPassive, FRAMEPOINT_TOPLEFT,  PAD_IN, -PAD_IN)
@@ -803,12 +799,14 @@ do
         BlzFrameSetSize(ui.secPassiveHdr, 0.10, 0.018)
         BlzFrameSetTexture(ui.secPassiveHdr, TEX_BG_SECTION_HDR, 0, true)
         BlzFrameSetLevel(ui.secPassiveHdr, 32)
+        BlzFrameSetEnable(ui.secPassiveHdr, false)
 
         ui.txtPassiveHdr = BlzCreateFrameByType("TEXT", "SB_PassiveHdrText", ui.secPassiveHdr, "", 0)
         BlzFrameSetAllPoints(ui.txtPassiveHdr, ui.secPassiveHdr)
         BlzFrameSetTextAlignment(ui.txtPassiveHdr, TEXT_JUSTIFY_LEFT, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(ui.txtPassiveHdr, "Passive Spells")
         BlzFrameSetLevel(ui.txtPassiveHdr, 33)
+        BlzFrameSetEnable(ui.txtPassiveHdr, false)
 
         ui.pageBarPassive = BlzCreateFrameByType("BACKDROP", "SB_PassivePageBar", ui.secPassive, "", 0)
         BlzFrameSetPoint(ui.pageBarPassive, FRAMEPOINT_BOTTOMLEFT, ui.secPassive, FRAMEPOINT_BOTTOMLEFT, PAD_IN, PAD_IN)
@@ -816,6 +814,7 @@ do
         BlzFrameSetSize(ui.pageBarPassive, 0.10, PAGEBAR_H)
         BlzFrameSetTexture(ui.pageBarPassive, TEX_BG_PAGEBAR, 0, true)
         BlzFrameSetLevel(ui.pageBarPassive, 32)
+        BlzFrameSetEnable(ui.pageBarPassive, false)
 
         ui.btnPassivePrev = BlzCreateFrameByType("BUTTON", "SB_PassivePrev", ui.pageBarPassive, "", 0)
         BlzFrameSetSize(ui.btnPassivePrev, BUTTON_PAGE_W, PAGEBAR_H - 0.004)
@@ -825,12 +824,14 @@ do
         local bgPPrev = BlzCreateFrameByType("BACKDROP", "", ui.btnPassivePrev, "", 0)
         BlzFrameSetAllPoints(bgPPrev, ui.btnPassivePrev)
         BlzFrameSetTexture(bgPPrev, TEX_BG_SECTION_HDR, 0, true)
+        BlzFrameSetEnable(bgPPrev, false)
 
         local txtPPrev = BlzCreateFrameByType("TEXT", "", ui.btnPassivePrev, "", 0)
         BlzFrameSetAllPoints(txtPPrev, ui.btnPassivePrev)
         BlzFrameSetTextAlignment(txtPPrev, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(txtPPrev, "<")
         BlzFrameSetLevel(txtPPrev, 34)
+        BlzFrameSetEnable(txtPPrev, false)
 
         ui.btnPassiveNext = BlzCreateFrameByType("BUTTON", "SB_PassiveNext", ui.pageBarPassive, "", 0)
         BlzFrameSetSize(ui.btnPassiveNext, BUTTON_PAGE_W, PAGEBAR_H - 0.004)
@@ -840,12 +841,14 @@ do
         local bgPNext = BlzCreateFrameByType("BACKDROP", "", ui.btnPassiveNext, "", 0)
         BlzFrameSetAllPoints(bgPNext, ui.btnPassiveNext)
         BlzFrameSetTexture(bgPNext, TEX_BG_SECTION_HDR, 0, true)
+        BlzFrameSetEnable(bgPNext, false)
 
         ui.txtPassivePage = BlzCreateFrameByType("TEXT", "SB_PassivePageText", ui.pageBarPassive, "", 0)
         BlzFrameSetAllPoints(ui.txtPassivePage, ui.pageBarPassive)
         BlzFrameSetTextAlignment(ui.txtPassivePage, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
         BlzFrameSetText(ui.txtPassivePage, "1 / 1")
         BlzFrameSetLevel(ui.txtPassivePage, 34)
+        BlzFrameSetEnable(ui.txtPassivePage, false)
 
         --------------------------------------------------
         -- Initial flags
@@ -976,6 +979,14 @@ do
             return
         end
 
+        -- PlayerMenu created contentFrame with Enable(false),
+        -- so we must re-enable it here or no child buttons will click.
+        BlzFrameSetEnable(contentFrame, true)
+        if GetLocalPlayer() == Player(pid) then
+            BlzFrameSetTexture(contentFrame, TEX_BG_MAIN, 0, true)
+            BlzFrameSetVisible(contentFrame, true)
+        end
+
         local ui = UI[pid]
         if not ui then
             UI[pid] = {}
@@ -999,11 +1010,14 @@ do
         if not ui then
             return
         end
+
         setTilesVisible(ui.tilesActive, false)
         setTilesVisible(ui.tilesPassive, false)
         setStaticVisible(ui, false)
         hideTooltipFor(pid)
-        BlzFrameSetVisible(ui.root, false)
+
+        -- Do not hide the shared content frame here;
+        -- PlayerMenu / other modules manage it.
         UI[pid] = nil
     end
 end

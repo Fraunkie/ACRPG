@@ -16,7 +16,7 @@ do
         if not valid(dead) then return end
         if _G.LootSystem and LootSystem.OnKill then
             -- Safe-call to avoid cascading errors
-            pcall(LootSystem.OnKill, killer, dead)
+            pcall(LootSystem.DropLoot, killer, dead)
         end
         -- Optional: notify chest systems if they hook kills
         if _G.LootChestSystem and LootChestSystem.OnKill then

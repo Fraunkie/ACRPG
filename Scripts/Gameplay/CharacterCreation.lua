@@ -95,11 +95,17 @@ end
 		CustomHealthBar.Refresh(pid)
         HeroStatSystem.InitializeStats(pid, hero)
         HeroStatSystem.Recalculate(pid)
+        BuffBot.SetMainUnit(Player(pid),hero)
+        SpellUnlockSystem.Refresh(pid)
+        CTT.SetTrees(Player(pid), "LostSoul")
+        CTT.GrantPoints(Player(pid), 1)  
 
         DisplayTextToPlayer(Player(pid), 0, 0, "Soul successfully created.")
 
         -- Local camera + selection
         if GetLocalPlayer() == Player(pid) then
+            SetTerrainFogEx(0, 0, 6000, 0.7, 170, 180, 240)
+            SetCameraField(CAMERA_FIELD_FARZ, 10000, 0.0)
             PanCameraToTimed(spawnX, spawnY, 0.35)
             ClearSelection()
             SelectUnit(hero, true)

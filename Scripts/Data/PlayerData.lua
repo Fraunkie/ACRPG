@@ -45,11 +45,12 @@ do
             talentranks = {},
             knownspells = {
                 passives ={
-                    phantomEcho = false, soulStrike = false,},
+                    phantomEcho = false, soulStrike = false, soulSpirit = false},
                 actives = {
-
+                    energyVolley = false, spiritVortex = false, spiritBurst = false,
                 }
             },
+
 
             -- basic stats mirror
             stats = {
@@ -339,24 +340,53 @@ do
         local str = (pd.stats.basestr or 0) * (pd.stats.strmulti or 1.0)
         local agi = (pd.stats.baseagi or 0) * (pd.stats.agimulti or 1.0)
         local int = (pd.stats.baseint or 0) * (pd.stats.intmulti or 1.0)
-        pd.powerLevel = math.max(0, math.floor(str + agi + int))
-        return pd.powerLevel
+        pd.stats.powerLevel = math.max(0, math.floor(str + agi + int))
+        return pd.stats.powerLevel
     end
 
     function PlayerData.GetPowerLevel(pid)
-        return (PlayerData.Get(pid).powerLevel or 0)
+        return (PlayerData.Get(pid).stats.power or 0)
     end
 
-    function PlayerData.GetEnergyDamage(pid, hero, base, multi)
-        local pd = PlayerData.Get(pid)  -- Get player data
-        local int = GetHeroInt(hero, true)  -- Get hero's intelligence
-        local spb = pd.stats.spellBonusPct  -- Get the player's spell bonus percentage
-        local energyDamage = base + (int * multi)
-            energyDamage = energyDamage * (1.00 + spb)
+function PlayerData.GetEnergyDamage(pid, percent)
+    if percent == nil then
+        percent = true
+    end
 
+    local pd = PlayerData.Get(pid)
+    if not pd or not pd.combat then
+        return 0
+    end
 
-        return energyDamage
-    end 
+    local damage = pd.combat.energyDamage or 0
+    local bonusPct = pd.combat.spellBonusPct or 0
+
+    if percent then
+        return damage + (bonusPct * damage)
+    else
+        return damage
+    end
+end
+function PlayerData.GetPhysicalDamage(pid, percent)
+    -- default: treat as percent=true
+    if percent == nil then
+        percent = true
+    end
+
+    local pd = PlayerData.Get(pid)
+    if not pd or not pd.combat then
+        return 0
+    end
+
+    local damage = pd.combat.damage or 0
+    local bonusPct = pd.combat.physicalBonusPct or 0
+
+    if percent then
+        return damage + (bonusPct * damage)
+    else
+        return damage
+    end
+end
 
     function PlayerData.GetSoulEnergy(pid)
         return (PlayerData.Get(pid).soulXP or 0)
@@ -391,16 +421,17 @@ do
     function PlayerData.SetStats(pid, tbl)
         local pd = PlayerData.Get(pid)
         local s = pd.stats or {}
-        s.power                         = (tbl and tbl.power)           or s.power          or 0
-        s.defense                       = (tbl and tbl.defense)         or s.defense        or 0
-        s.damage                        = (tbl and tbl.damage)          or s.damage        or 0
-        s.speed                         = (tbl and tbl.speed)           or s.speed          or 0
-        s.basestr                       = (tbl and tbl.basestr)         or s.basestr        or 0
-        s.baseagi                       = (tbl and tbl.baseagi)         or s.baseagi        or 0
-        s.baseint                       = (tbl and tbl.baseint)         or s.baseint        or 0
+        s.power                         = (tbl and tbl.power)           or s.power           or 0
+        s.defense                       = (tbl and tbl.defense)         or s.defense         or 0
+        s.damage                        = (tbl and tbl.damage)          or s.damage          or 0
+        s.speed                         = (tbl and tbl.speed)           or s.speed           or 0
+        s.basestr                       = (tbl and tbl.basestr)         or s.basestr         or 0
+        s.baseagi                       = (tbl and tbl.baseagi)         or s.baseagi         or 0
+        s.baseint                       = (tbl and tbl.baseint)         or s.baseint         or 0
         s.strmulti                      = (tbl and tbl.strmulti)        or s.strmulti        or 0.0
         s.agimulti                      = (tbl and tbl.agimulti)        or s.agimulti        or 0.0
         s.intmulti                      = (tbl and tbl.intmulti)        or s.intmulti        or 0.0
+        s.powerLevel                    = (tbl and tbl.powerLevel)      or s.powerLevel      or 0.0
         pd.stats = s
         return s
     end
@@ -411,7 +442,7 @@ do
             pd.stats = {
                 power = 0, defense = 0, speed = 0, damage = 0,
                 basestr = 0, baseagi = 0, baseint = 0,
-                strmulti = 1.0, agimulti = 1.0, intmulti = 1.0,
+                strmulti = 1.0, agimulti = 1.0, intmulti = 1.0, powerLevel = 0,
             }
         end
         return pd.stats

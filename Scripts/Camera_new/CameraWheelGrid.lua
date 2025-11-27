@@ -381,73 +381,89 @@ do
     --------------------------------------------------
     -- CAMERA TICK (applies easing toward targets)
     --------------------------------------------------
-    local function camTick()
-        if not isDirect(pidL) then
-            if GetLocalPlayer() == Player(pidL) then
-                BlzFrameSetEnable(wheel, false)
-                for i=0,15 do if ring1[i] then BlzFrameSetEnable(ring1[i], false) end
+    --------------------------------------------------
+-- CAMERA TICK (applies easing toward targets)
+--------------------------------------------------
+local function camTick()
+    if not isDirect(pidL) then
+        if GetLocalPlayer() == Player(pidL) then
+            BlzFrameSetEnable(wheel, false)
+            for i=0,15 do if ring1[i] then BlzFrameSetEnable(ring1[i], false) end
                                if ring3[i] then BlzFrameSetEnable(ring3[i], false) end end
-                for i=0,11 do if ring2[i] then BlzFrameSetEnable(ring2[i], false) end end
-                BlzEnableCursor(true)
-                EnableDragSelect(true, true)
-            end
-            return
+            for i=0,11 do if ring2[i] then BlzFrameSetEnable(ring2[i], false) end end
+            BlzEnableCursor(true)
+            EnableDragSelect(true, true)
         end
+        return
+    end
 
-        local u = heroOf(pidL)
-        if not snappedHero[pidL] then
-            trySnap(pidL)
-        end
+    local u = heroOf(pidL)
+    if not snappedHero[pidL] then
+        trySnap(pidL)
+    end
 
-        if u then
-            tyaw[pidL]   = (tyaw[pidL]   ~= nil) and tyaw[pidL]   or yaw[pidL]   or 0.0
-            tpitch[pidL] = (tpitch[pidL] ~= nil) and tpitch[pidL] or pitch[pidL] or DEFAULT_PITCH
-            tdist[pidL]  = (tdist[pidL]  ~= nil) and tdist[pidL]  or dist[pidL]  or DEFAULT_DIST
+    if u then
+        tyaw[pidL]   = (tyaw[pidL]   ~= nil) and tyaw[pidL]   or yaw[pidL]   or 0.0
+        tpitch[pidL] = (tpitch[pidL] ~= nil) and tpitch[pidL] or pitch[pidL] or DEFAULT_PITCH
+        tdist[pidL]  = (tdist[pidL]  ~= nil) and tdist[pidL]  or dist[pidL]  or DEFAULT_DIST
 
-            -- decide whether to mirror hero facing
-            local mirrorFacing = true
+        -- Get the unit's Z position (vertical movement)
+        local unitZ = GetUnitZ(u)
+        
+        -- Get the terrain Z level at the unit's current position (to account for terrain elevation)
+        local unitX, unitY = GetUnitX(u), GetUnitY(u)
+        local terrainZ = GetTerrainZ(unitX, unitY)
+        
+        -- Calculate the camera's Z offset: unit Z minus terrain Z
+        local cameraZOffset = CAMERA_Z_OFFSET + (unitZ - terrainZ)
 
-            -- while either button is down, do not mirror
-            if holdL[pidL] or holdR[pidL] then
+        -- decide whether to mirror hero facing
+        local mirrorFacing = true
+
+        -- while either button is down, do not mirror
+        if holdL[pidL] or holdR[pidL] then
+            mirrorFacing = false
+        else
+            -- after LMB release, honor free-look hold window
+            local t = freelookUntil[pidL] or 0
+            if t > 0 and now() < t then
                 mirrorFacing = false
-            else
-                -- after LMB release, honor free-look hold window
-                local t = freelookUntil[pidL] or 0
-                if t > 0 and now() < t then
-                    mirrorFacing = false
-                end
-                -- if snap on move is enabled and W is down, end hold now
-                if FREELOOK_SNAP_ON_MOVE and wHeld[pidL] then
-                    freelookUntil[pidL] = 0
-                end
             end
-
-            if mirrorFacing then
-                tyaw[pidL] = wrap360(GetUnitFacing(u) + YAW_UNIT_OFFSET + CAMERA_LEAD)
+            -- if snap on move is enabled and W is down, end hold now
+            if FREELOOK_SNAP_ON_MOVE and wHeld[pidL] then
+                freelookUntil[pidL] = 0
             end
+        end
 
-            -- ease toward targets
-            yaw[pidL]   = easeAngle(yaw[pidL]   or tyaw[pidL],   tyaw[pidL],   CAMERA_EASE)
-            pitch[pidL] = easeLinear(pitch[pidL] or tpitch[pidL], tpitch[pidL], CAMERA_EASE)
-            dist[pidL]  = easeLinear(dist[pidL]  or tdist[pidL],  tdist[pidL],  CAMERA_EASE)
+        if mirrorFacing then
+            tyaw[pidL] = wrap360(GetUnitFacing(u) + YAW_UNIT_OFFSET + CAMERA_LEAD)
+        end
 
-            -- push camera fields
-            SetCameraField(CAMERA_FIELD_ROTATION,        yaw[pidL] or 0.0,               CAMERA_TICK)
-            SetCameraField(CAMERA_FIELD_ANGLE_OF_ATTACK, pitch[pidL] or DEFAULT_PITCH,   CAMERA_TICK)
-            SetCameraField(CAMERA_FIELD_TARGET_DISTANCE, dist[pidL]  or DEFAULT_DIST,    CAMERA_TICK)
-            SetCameraField(CAMERA_FIELD_ZOFFSET,         CAMERA_Z_OFFSET,                CAMERA_TICK)
+        -- ease toward targets
+        yaw[pidL]   = easeAngle(yaw[pidL]   or tyaw[pidL],   tyaw[pidL],   CAMERA_EASE)
+        pitch[pidL] = easeLinear(pitch[pidL] or tpitch[pidL], tpitch[pidL], CAMERA_EASE)
+        dist[pidL]  = easeLinear(dist[pidL]  or tdist[pidL],  tdist[pidL],  CAMERA_EASE)
 
-            -- hard attach every tick
-            SetCameraTargetController(u, 0.0, 0.0, false)
-            SetCameraTargetControllerNoZForPlayer(Player(pidL), u, 0.0, 0.0, false)
+        -- Push camera fields for yaw, pitch, and distance (horizontal controls)
+        SetCameraField(CAMERA_FIELD_ROTATION,        yaw[pidL] or 0.0,               CAMERA_TICK)
+        SetCameraField(CAMERA_FIELD_ANGLE_OF_ATTACK, pitch[pidL] or DEFAULT_PITCH,   CAMERA_TICK)
+        SetCameraField(CAMERA_FIELD_TARGET_DISTANCE, dist[pidL]  or DEFAULT_DIST,    CAMERA_TICK)
 
-            setPDView(pidL)
+        -- Apply the dynamic Z-offset based on unit's Z-level and terrain height
+        SetCameraField(CAMERA_FIELD_ZOFFSET,         cameraZOffset,                  CAMERA_TICK)  -- Adjusted Z-offset
 
-            if (holdL[pidL] or holdR[pidL]) and worldEligible(pidL) then
-                recenterIfDue(pidL)
-            end
+        -- Hard attach the camera to the unit with no Z for the player
+        SetCameraTargetController(u, 0.0, 0.0, false)
+        SetCameraTargetControllerNoZForPlayer(Player(pidL), u, 0.0, 0.0, false)
+
+        setPDView(pidL)
+
+        if (holdL[pidL] or holdR[pidL]) and worldEligible(pidL) then
+            recenterIfDue(pidL)
         end
     end
+end
+
 
     --------------------------------------------------
     -- INIT

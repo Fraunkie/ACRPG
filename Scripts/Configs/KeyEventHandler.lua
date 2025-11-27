@@ -277,7 +277,16 @@ do
             ProcBus.Emit("RequestTargetCycle", { pid = pid })
         end
     end
-
+    local function onN(pid, isDown)
+        if not isDown or not okToFire(pid, OSKEY_N) then return end
+        if not CTT.IsOpened(Player(pid)) then 
+            CTT.Show(Player(pid), true)
+            PlayerData.SetUIFocus(pid, true)
+        else 
+            CTT.Show(Player(pid), false)
+            PlayerData.SetUIFocus(pid, false)
+        end
+    end
     --------------------------------------------------
     -- Wiring + bus hooks
     --------------------------------------------------
@@ -301,6 +310,8 @@ do
             -- Keys
             BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_O,      0, true)
             BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_O,      0, false)
+            BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_N,      0, true)
+            BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_N,      0, false)
             BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_L,      0, true)
             BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_L,      0, false)
             BlzTriggerRegisterPlayerKeyEvent(trig, Player(pid), OSKEY_P,      0, true)
@@ -335,6 +346,7 @@ do
                 if key == OSKEY_P      then onP(id, down);   return end
                 if key == OSKEY_F      then onF(id, down);   return end
                 if key == OSKEY_ESCAPE then onEsc(id, down); return end
+                if key == OSKEY_N       then onN(id, down); return end
 
                 if key == OSKEY_Q and okToFire(id, OSKEY_Q) then onSlot(id, down, 1); return end
                 if key == OSKEY_E and okToFire(id, OSKEY_E) then onSlot(id, down, 2); return end

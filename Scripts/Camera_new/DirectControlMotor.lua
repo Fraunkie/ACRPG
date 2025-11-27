@@ -200,7 +200,8 @@ do
                     SetUnitFlyHeight(unit, 0, 0)  -- Return to ground level
                     UnitRemoveAbility(unit, FourCC('Amrf'))  -- Remove Crow Form after jump
                     DestroyTimer(GetExpiredTimer())
-                    PlayerData.isJumping = false-- Stop the fall timer
+                    PlayerData.isJumping = false
+                    sbpress.jumpstart = false
                 end
             end)
         end
@@ -217,7 +218,7 @@ end
         end
     end
     -- Define the sbpress table
-    local sbpress = {
+     sbpress = {
         isdown = false,      -- Tracks if spacebar is pressed
         jumpstart = false    -- Tracks if the jump has started
     }
@@ -234,9 +235,6 @@ end
                         -- Or display a message, etc.
                     startJump(pid)  -- Call the function to initiate jump
                 end
-            else
-                -- Reset jump start when space is released (if needed)
-                sbpress.jumpstart = false
             end
         end
     end

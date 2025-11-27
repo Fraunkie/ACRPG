@@ -1,47 +1,38 @@
 if Debug and Debug.beginFile then Debug.beginFile("Spell_SpiritVortex.lua") end
---==================================================
--- Spell_SpiritVortex.lua
--- Ability: A0SV
--- 1) First use -> spawn 6 orbs, start background cooldown
--- 2) While orbs > 0 -> fire one (ignores cooldown) but respects FIRE_GAP
--- 3) When orbs = 0:
---      - if cooldown ready -> respawn 6
---      - else -> show cooldown
---==================================================
-
+--@@debug
 Spell_SpiritVortex = Spell_SpiritVortex or {}
 _G.Spell_SpiritVortex = Spell_SpiritVortex
 
 do
-    -- config
+    -- Config
     local ABIL_ID_STR    = "A0SV"
     local ORB_UNIT_STR   = "e00N"
-    local ORB_COUNT      = 6
+    local ORB_COUNT_BASE      = 3
     local ORB_RADIUS     = 180.0
     local ROTATE_DEG_S   = 180.0
     local TICK           = 0.03
     local COOLDOWN_SEC   = 20.0
 
-    -- fire rate between shots
+    -- Fire rate between shots
     local FIRE_GAP_SEC   = 0.25
 
-    -- hit visual
+    -- Hit visual
     local HIT_FX_PATH    = "Abilities\\Spells\\Human\\Thunderclap\\ThunderClapTarget.mdl"
     local HIT_FX_SCALE   = 1.10
 
-    -- firing
+    -- Firing
     local SEEK_RANGE     = 900.0
     local FIRE_SPEED     = 900.0
     local FIRE_MAX_TIME  = 1.60
 
-    -- damage
+    -- Damage
     local BASE_DMG       = 25.0
     local PL_SCALE       = 0.20
 
-    -- state
-    -- S[pid] = { caster, orbs={ {unit,angle},... }, baseAngle, cooldownUntil, lastFireAt }
+    -- State
     local S = {}
 
+    -- Debugging utility for converting string to FourCC
     local function four(v)
         if type(v) == "string" then
             return FourCC(v)
@@ -51,11 +42,12 @@ do
     local ABIL_ID  = four(ABIL_ID_STR)
     local ORB_UNIT = four(ORB_UNIT_STR)
 
+    -- Unit validation function
     local function validUnit(u)
         return u and GetUnitTypeId(u) ~= 0
     end
 
-    -- global time
+    -- Global time management (for cooldown tracking)
     local gNow = 0.0
     do
         local tim = CreateTimer()
@@ -67,6 +59,7 @@ do
         return gNow
     end
 
+    -- Get player hero
     local function getHero(pid)
         if _G.PlayerData and PlayerData[pid] and validUnit(PlayerData[pid].hero) then
             return PlayerData[pid].hero
@@ -77,15 +70,35 @@ do
         return nil
     end
 
-    local function getEnergyLevel(pid)
-        if _G.PlayerData and PlayerData[pid] and type(PlayerData[pid].powerLevel) == "number" then
-            return PlayerData.GetCombat(pid).energyDamage or 0
-        end
-        return 0
+    -- Calculate energy damage
+    local function getEnergyDamage(pid,percent)
+        local i = PlayerData.GetEnergyDamage(pid,percent)
+        return i
     end
 
+
+    local function getorbtalent (pid)
+        local b = CTT.HasTalent(Player(pid), "Vortex Orbs")
+        local i = CTT.GetTalentRank(Player(pid), "Vortex Orbs")
+        local o = 0
+            if b == false then 
+              --  DisplayTextToPlayer(Player(pid),0,0,"Notalent")
+                return o
+            elseif b == true then
+                if i == 1 then 
+                    o = 3
+                  --  DisplayTextToPlayer(Player(pid),0,0,"3 orbs")
+                    return o
+                elseif i == 2 then
+                    o = 6
+                  --  DisplayTextToPlayer(Player(pid),0,0,"6 orbs")
+                    return 0
+                end
+            end
+    end
+    -- Calculate damage for Spirit Vortex
     local function calcDamage(pid)
-        local dmg = BASE_DMG + getEnergyLevel(pid)
+        local dmg = BASE_DMG + getEnergyDamage(pid,true)
         if _G.PlayerData and PlayerData[pid]
         and PlayerData[pid].combat
         and type(PlayerData[pid].combat.spellBonusPct) == "number" then
@@ -96,6 +109,7 @@ do
         return dmg
     end
 
+    -- Apply damage (using DamageEngine)
     local function dealSpellDamage(caster, target, amount)
         if not validUnit(caster) or not validUnit(target) then return end
         if _G.DamageEngine and DamageEngine.applySpellDamage then
@@ -111,6 +125,7 @@ do
         end
     end
 
+    -- Play hit visual effects
     local function playHitFx(target)
         if not validUnit(target) then return end
         local fx = AddSpecialEffectTarget(HIT_FX_PATH, target, "origin")
@@ -118,6 +133,7 @@ do
         DestroyEffect(fx)
     end
 
+    -- Ensure state for Spirit Vortex (handles orb spawning and cooldown)
     local function ensureState(pid, caster)
         local st = S[pid]
         if not st then
@@ -132,6 +148,7 @@ do
         return st
     end
 
+    -- Clear orbs from the field
     local function clearOrbs(pid)
         local st = S[pid]
         if not st then return end
@@ -144,6 +161,7 @@ do
         st.orbs = {}
     end
 
+    -- Spawn orbs around the caster
     local function spawnOrbs(pid, caster)
         local st = ensureState(pid, caster)
         clearOrbs(pid)
@@ -152,9 +170,9 @@ do
         local cx = GetUnitX(caster)
         local cy = GetUnitY(caster)
         local owner = GetOwningPlayer(caster)
-
-        for i = 1, ORB_COUNT do
-            local a   = (i - 1) * (360.0 / ORB_COUNT)
+        local bonusorb = getorbtalent(pid)
+        for i = 1, ORB_COUNT_BASE + bonusorb do
+            local a   = (i - 1) * (360.0 / (ORB_COUNT_BASE + bonusorb))
             local rad = a * 3.1415926 / 180.0
             local x   = cx + ORB_RADIUS * math.cos(rad)
             local y   = cy + ORB_RADIUS * math.sin(rad)
@@ -170,9 +188,11 @@ do
         end
 
         st.cooldownUntil = now() + COOLDOWN_SEC
-        DisplayTextToPlayer(Player(pid), 0, 0, "Spirit Vortex spawned " .. tostring(ORB_COUNT) .. " orbs.")
+        local orbcount = ORB_COUNT_BASE + getorbtalent(pid)
+        DisplayTextToPlayer(Player(pid), 0, 0, "Spirit Vortex spawned " .. tostring(orbcount).. " orbs spawned")
     end
 
+    -- Find the nearest enemy to the caster
     local function nearestEnemyOf(caster, range)
         local x = GetUnitX(caster)
         local y = GetUnitY(caster)
@@ -198,6 +218,7 @@ do
         return best
     end
 
+    -- Fire one orb at the target
     local function fireOne(pid)
         local st = S[pid]
         if not st or #st.orbs == 0 then
@@ -276,6 +297,7 @@ do
         return true
     end
 
+    -- Driver for orbs rotation and cooldowns
     local driverStarted = false
     local function startDriver()
         if driverStarted then return end
@@ -312,6 +334,7 @@ do
     end
     startDriver()
 
+    -- Cast function called by CustomSpellBar
     function Spell_SpiritVortex.Cast(caster)
         if not validUnit(caster) then
             return false
@@ -326,7 +349,7 @@ do
             return true
         end
 
-        -- no orbs -> check cd
+        -- no orbs -> check cooldown
         if tnow < (st.cooldownUntil or 0) then
             local remain = math.floor((st.cooldownUntil - tnow) + 0.5)
             DisplayTextToPlayer(Player(pid), 0, 0, "Spirit Vortex on cooldown " .. tostring(remain) .. "s")
@@ -337,40 +360,6 @@ do
         return true
     end
 
-    function Spell_SpiritVortex.Use(pid)
-        local st   = S[pid]
-        local tnow = now()
-
-        if not st or not st.caster or not validUnit(st.caster) then
-            local hero = getHero(pid)
-            if hero then
-                spawnOrbs(pid, hero)
-            else
-                DisplayTextToPlayer(Player(pid), 0, 0, "Spirit Vortex needs a hero.")
-            end
-            return
-        end
-
-        -- orbs available -> try to fire (will respect FIRE_GAP_SEC)
-        if #st.orbs > 0 then
-            local fired = fireOne(pid)
-            if not fired then
-                -- optional small message here, but can be silent
-            end
-            return
-        end
-
-        -- no orbs -> now cooldown matters
-        if tnow >= (st.cooldownUntil or 0) then
-            spawnOrbs(pid, st.caster)
-        else
-            local remain = math.floor((st.cooldownUntil - tnow) + 0.5)
-            DisplayTextToPlayer(Player(pid), 0, 0, "Spirit Vortex on cooldown " .. tostring(remain) .. "s")
-        end
-    end
-
-    OnInit.final(function()
-    end)
 end
 
 if Debug and Debug.endFile then Debug.endFile() end

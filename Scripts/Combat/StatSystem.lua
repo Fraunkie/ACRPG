@@ -1,6 +1,20 @@
-if Debug and Debug.beginFile then Debug.beginFile('StatSystem v0.01') end
+-- StatSystem.lua (merged: abilities + source aggregation + combat emit) [BJ-free percent math]
+-- Version: v0.02  (adds PlayerData -> hero base STR/AGI/INT sync)
+-- Functions:
+--   - SafeAddAbility(unit, abilId)
+--   - SetAbilityField(unit, abilityId, field, value, isInteger)
+--   - GetUnitStat(unit, statType)
+--   - SetUnitStat(unit, statType, value)
+--   - RegisterStatEvent(handler)
+--   - ToggleDebug()
+--   - ApplySource(pid, key, mods)
+--   - RemoveSource(pid, key)
+--   - Recompute(pid)
+--   - SyncPrimaryFromPlayer(pid)   <-- NEW (writes PlayerData base stats to hero natives)
 
-StatSystem = {}
+if Debug and Debug.beginFile then Debug.beginFile("StatSystem v0.02") end
+
+StatSystem = StatSystem or {}
 _G.StatSystem = StatSystem
 
 do
@@ -25,17 +39,17 @@ do
     StatSystem.STAT_SIGHT_RANGE      = 13
 
     -- Hidden abilities (must exist in the object editor)
-    local DAMAGE_ABILITY        = FourCC('A00R')
-    local ARMOR_ABILITY         = FourCC('A00O')
-    local STATS_ABILITY         = FourCC('A00N')
-    local HEALTH_ABILITY        = FourCC('A00T')
-    local MANA_ABILITY          = FourCC('A00W')
-    local MOVEMENT_ABILITY      = FourCC('A00X')
-    local ATTACK_SPEED_ABILITY  = FourCC('A00P')
-    local HEALTH_REGEN_ABILITY  = FourCC('A015')
-    local MANA_REGEN_ABILITY    = FourCC('A016')
-    local MAGIC_RESIST_ABILITY  = FourCC('A00B')
-    local SIGHT_ABILITY         = FourCC('A00Y')
+    local DAMAGE_ABILITY        = FourCC("A00R")
+    local ARMOR_ABILITY         = FourCC("A00O")
+    local STATS_ABILITY         = FourCC("A00N")
+    local HEALTH_ABILITY        = FourCC("A00T")
+    local MANA_ABILITY          = FourCC("A00W")
+    local MOVEMENT_ABILITY      = FourCC("A00X")
+    local ATTACK_SPEED_ABILITY  = FourCC("A00P")
+    local HEALTH_REGEN_ABILITY  = FourCC("A015")
+    local MANA_REGEN_ABILITY    = FourCC("A016")
+    local MAGIC_RESIST_ABILITY  = FourCC("A00B")
+    local SIGHT_ABILITY         = FourCC("A00Y")
 
     -- Ability fields
     local DAMAGE_FIELD        = ABILITY_ILF_ATTACK_BONUS
@@ -56,7 +70,9 @@ do
     -- DEBUG
     --------------------------------------------------
     local function debugPrint(msg)
-        if DEBUG_ENABLED then print("[StatSystem] " .. tostring(msg)) end
+        if DEBUG_ENABLED then
+            print("[StatSystem] " .. tostring(msg))
+        end
     end
     function StatSystem.ToggleDebug()
         DEBUG_ENABLED = not DEBUG_ENABLED
@@ -96,12 +112,17 @@ do
         if GetUnitAbilityLevel(unit, abilityId) == 0 and not SafeAddAbility(unit, abilityId) then
             return false
         end
-        local ua = BlzGetUnitAbility(unit, abilityId); if not ua then return false end
-        local ok = isInteger
-            and BlzSetAbilityIntegerLevelField(ua, field, 0, value)
-            or  BlzSetAbilityRealLevelField(ua, field, 0, value)
+        local ua = BlzGetUnitAbility(unit, abilityId)
+        if not ua then return false end
+        local ok
+        if isInteger then
+            ok = BlzSetAbilityIntegerLevelField(ua, field, 0, value)
+        else
+            ok = BlzSetAbilityRealLevelField(ua, field, 0, value)
+        end
         if not ok then return false end
-        IncUnitAbilityLevel(unit, abilityId); DecUnitAbilityLevel(unit, abilityId)
+        IncUnitAbilityLevel(unit, abilityId)
+        DecUnitAbilityLevel(unit, abilityId)
         return true
     end
 
@@ -172,7 +193,10 @@ do
     local eventTriggers = {}
     local currentUnit, currentStat, currentAmount = nil, nil, nil
     function StatSystem.RegisterStatEvent(handler)
-        if type(handler) == 'function' then table.insert(eventTriggers, handler); return true end
+        if type(handler) == "function" then
+            eventTriggers[#eventTriggers + 1] = handler
+            return true
+        end
         return false
     end
     function StatSystem.GetStatEventUnit() return currentUnit end
@@ -185,9 +209,14 @@ do
     function StatSystem.SetUnitStat(unit, statType, value)
         if not unit then return false end
 
-        currentUnit, currentStat, currentAmount = unit, statType, value
+        currentUnit  = unit
+        currentStat  = statType
+        currentAmount = value
         for i = 1, #eventTriggers do
-            local ok, err = pcall(eventTriggers[i]); if not ok then debugPrint(err) end
+            local ok, err = pcall(eventTriggers[i])
+            if not ok then
+                debugPrint(err)
+            end
         end
 
         if statType == StatSystem.STAT_DAMAGE then
@@ -275,7 +304,8 @@ do
     --------------------------------------------------
     -- SOURCE AGGREGATION (items, buffs, etc.)
     --------------------------------------------------
-    local SRC, LAST = {}, {}
+    local SRC  = {}
+    local LAST = {}
 
     local function getHeroByPid(pid)
         local PD = rawget(_G, "PlayerData")
@@ -289,171 +319,174 @@ do
         return nil
     end
 
-    local function add(t, k, v) 
-    if type(v) == "number" then 
-        t[k] = (t[k] or 0) + v 
+    -- NEW: sync PlayerData base stats onto the actual unit (natives, not item bonuses)
+    function StatSystem.SyncPrimaryFromPlayer(pid)
+        if type(pid) ~= "number" then return end
+        local PD = rawget(_G, "PlayerData")
+        if not PD or not PD.Get then return end
+        local pd = PD.Get(pid)
+        if not pd or not pd.hero then return end
+        local u = pd.hero
+
+        -- PlayerData keeps base stats in pd.stats
+        local s = pd.stats or {}
+        local bstr = s.basestr or 10
+        local bagi = s.baseagi or 10
+        local bint = s.baseint or 10
+
+        -- safety clamp
+        if bstr < 0 then bstr = 0 end
+        if bagi < 0 then bagi = 0 end
+        if bint < 0 then bint = 0 end
+
+        -- write to hero natives so HP/mana etc scale correctly
+        SetHeroStr(u, bstr, true)
+        SetHeroAgi(u, bagi, true)
+        SetHeroInt(u, bint, true)
     end
-end
 
-local function foldKey(k)
-    -- Existing mappings for basic stats
-    if k == "strength" then return "str" end
-    if k == "agility" then return "agi" end
-    if k == "intelligence" then return "int" end
-    if k == "damage" then return "damage" end  -- Ensures it maps to the "DMG"
-    if k == "armor" then return "armor" end
-    if k == "moveSpeed" then return "speed" end
-    
-    -- New mappings for the added stats
-    if k == "energyDamage" then return "energyDamage" end
-    if k == "energyResist" then return "energyResist" end
-    if k == "dodge" then return "dodge" end
-    if k == "parry" then return "parry" end
-    if k == "block" then return "block" end
-    if k == "critChance" then return "critChance" end
-    if k == "critMult" then return "critMult" end
-
-    -- Default return for unknown stat types
-    return k
-end
-
--- Mapping for Stats
-local MAP = {
-    str = "STR", 
-    agi = "AGI", 
-    int = "INT", 
-    hp = "HP", 
-    mp = "MP",
-    armor = "ARMOR", 
-    damage = "DMG", 
-    speed = "MS", 
-    attackSpeedPct = "AS",
-    spellPowerPct = "SPB", 
-    physPowerPct = "PWB",
-    
-    -- New mappings for additional stats
-    energyDamage = "ENERGY_DMG",      -- Energy damage
-    energyResist = "ENERGY_RESIST",   -- Energy resist
-    dodge = "DODGE",                  -- Dodge chance
-    parry = "PARRY",                  -- Parry chance
-    block = "BLOCK",                  -- Block chance
-    critChance = "CRIT",              -- Crit chance
-    critMult = "CRIT_MULT",           -- Crit multiplier
-}
-
+    local function add(t, k, v)
+        if type(v) == "number" then
+            t[k] = (t[k] or 0) + v
+        end
+    end
+    local function foldKey(k)
+        if k == "strength" then return "str" end
+        if k == "agility" then return "agi" end
+        if k == "intelligence" then return "int" end
+        if k == "damage" then return "attack" end
+        if k == "armor" then return "defense" end
+        if k == "moveSpeed" then return "speed" end
+        return k
+    end
+    local MAP = {
+        str  = "STR",
+        agi  = "AGI",
+        int  = "INT",
+        hp   = "HP",
+        mp   = "MP",
+        defense = "ARMOR",
+        attack  = "DMG",
+        speed   = "MS",
+        attackSpeedPct = "AS",
+        spellPowerPct  = "SPB",
+        physPowerPct   = "PWB",
+    }
 
     local function pushTotals(pid, u, totals)
-    local prev = LAST[pid] or {}
-    local keys = {"STR", "AGI", "INT", "HP", "MP", "ARMOR", "DMG", "MS", "AS", "ENERGY_DMG", "ENERGY_RESIST", "DODGE", "PARRY", "BLOCK", "CRIT", "CRIT_MULT"}
-    
-    for i=1, #keys do
-        local k = keys[i]
-        local new = totals[k] or 0
-        local old = prev[k] or 0
-        if new ~= old then
-            if k == "STR" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_STRENGTH, new)
-            elseif k == "AGI" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_AGILITY, new)
-            elseif k == "INT" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_INTELLIGENCE, new)
-            elseif k == "HP" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_HEALTH, new)
-            elseif k == "MP" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_MANA, new)
-            elseif k == "ARMOR" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_ARMOR, new)
-            elseif k == "DMG" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_DAMAGE, new)
-            elseif k == "MS" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_MOVEMENT_SPEED, new)
-            elseif k == "AS" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_ATTACK_SPEED, new)
-            elseif k == "ENERGY_DMG" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_ENERGY_DAMAGE, new)  -- New energy damage stat
-            elseif k == "ENERGY_RESIST" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_MAGIC_RESISTANCE, new)  -- Energy resist = Magic resist
-            elseif k == "DODGE" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_DODGE, new)  -- Dodge stat
-            elseif k == "PARRY" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_PARRY, new)  -- Parry stat
-            elseif k == "BLOCK" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_BLOCK, new)  -- Block stat
-            elseif k == "CRIT" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_CRIT_CHANCE, new)  -- Crit chance stat
-            elseif k == "CRIT_MULT" then
-                StatSystem.SetUnitStat(u, StatSystem.STAT_CRIT_MULT, new)  -- Crit multiplier stat
+        local prev = LAST[pid] or {}
+        local keys = { "STR", "AGI", "INT", "HP", "MP", "ARMOR", "DMG", "MS", "AS" }
+        for i = 1, #keys do
+            local k   = keys[i]
+            local new = totals[k] or 0
+            local old = prev[k] or 0
+            if new ~= old then
+                if k == "STR" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_STRENGTH, new)
+                elseif k == "AGI" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_AGILITY, new)
+                elseif k == "INT" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_INTELLIGENCE, new)
+                elseif k == "HP" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_HEALTH, new)
+                elseif k == "MP" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_MANA, new)
+                elseif k == "ARMOR" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_ARMOR, new)
+                elseif k == "DMG" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_DAMAGE, new)
+                elseif k == "MS" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_MOVEMENT_SPEED, new)
+                elseif k == "AS" then
+                    StatSystem.SetUnitStat(u, StatSystem.STAT_ATTACK_SPEED, new)
+                end
             end
+        end
+        LAST[pid] = totals
+
+        local PB = rawget(_G, "ProcBus")
+        if PB and PB.Emit then
+            PB.Emit("CombatStatsChanged", {
+                pid = pid,
+                unit = u,
+                totals = totals,
+                combat = {
+                    armor = totals.ARMOR or 0,
+                    spellBonusPct = totals.SPB or 0.0,
+                    physicalBonusPct = totals.PWB or 0.0,
+                }
+            })
         end
     end
 
-    LAST[pid] = totals
-
-    local PB = rawget(_G, "ProcBus")
-    if PB and PB.Emit then
-        PB.Emit("CombatStatsChanged", {
-            pid = pid,
-            unit = u,
-            totals = totals,
-            combat = {
-                armor = totals.ARMOR or 0,
-                damage = totals.DAMAGE or 0,
-                spellBonusPct = totals.SPB or 0.0,
-                physicalBonusPct = totals.PWB or 0.0,
-                energyDamage = totals.ENERGY_DMG or 0.0,
-                energyResist = totals.ENERGY_RESIST or 0.0,
-                dodge = totals.DODGE or 0.0,
-                parry = totals.PARRY or 0.0,
-                block = totals.BLOCK or 0.0,
-                critChance = totals.CRIT or 0.0,
-                critMult = totals.CRIT_MULT or 150.0,
-            }
-        })
-    end
-end
-
-
     local function recompute(pid)
-        local u = getHeroByPid(pid); if not u then return end
-        local totals, book = {}, SRC[pid]
+        local u = getHeroByPid(pid)
+        if not u then return end
+
+        -- always sync base STR/AGI/INT from PlayerData first
+        StatSystem.SyncPrimaryFromPlayer(pid)
+
+        local totals = {}
+        local book   = SRC[pid]
         if book then
             for _, mods in pairs(book) do
-                if type(mods)=="table" then
-                    for k,v in pairs(mods) do
-                        if type(k)=="string" and type(v)=="number" then
-                            k = foldKey(k); local tag = MAP[k]; if tag then add(totals, tag, v) end
+                if type(mods) == "table" then
+                    for k, v in pairs(mods) do
+                        if type(k) == "string" and type(v) == "number" then
+                            k = foldKey(k)
+                            local tag = MAP[k]
+                            if tag then
+                                add(totals, tag, v)
+                            end
                         end
                     end
                 end
             end
         end
+
         pushTotals(pid, u, totals)
     end
 
     function StatSystem.ApplySource(pid, key, mods)
-        if type(pid)~="number" or type(key)~="string" or type(mods)~="table" then return false end
+        if type(pid) ~= "number" or type(key) ~= "string" or type(mods) ~= "table" then
+            return false
+        end
         SRC[pid] = SRC[pid] or {}
-        local copy = {}; for k,v in pairs(mods) do copy[k]=v end
+        local copy = {}
+        for k, v in pairs(mods) do
+            copy[k] = v
+        end
         SRC[pid][key] = copy
         recompute(pid)
         return true
     end
 
     function StatSystem.RemoveSource(pid, key)
-        local book = SRC[pid]; if not book then return false end
-        book[key] = nil; recompute(pid); return true
+        local book = SRC[pid]
+        if not book then return false end
+        book[key] = nil
+        recompute(pid)
+        return true
     end
 
-    function StatSystem.Recompute(pid) if type(pid)=="number" then recompute(pid) end end
+    function StatSystem.Recompute(pid)
+        if type(pid) == "number" then
+            recompute(pid)
+        end
+    end
 
     --------------------------------------------------
     -- COMBAT SNAPSHOT
     --------------------------------------------------
-    local function pidOf(u) if not u then return nil end return GetPlayerId(GetOwningPlayer(u)) end
+    local function pidOf(u)
+        if not u then return nil end
+        return GetPlayerId(GetOwningPlayer(u))
+    end
     function StatSystem.GetCombat(unit)
         local out = {
             armor = StatSystem.GetUnitStat(unit, StatSystem.STAT_ARMOR) or 0,
-            spellBonusPct = 0.0, physicalBonusPct = 0.0,
+            spellBonusPct = 0.0,
+            physicalBonusPct = 0.0,
         }
         local pid = pidOf(unit)
         if pid and LAST[pid] then
@@ -467,7 +500,7 @@ end
     -- INIT
     --------------------------------------------------
     local function InitializeStatSystem()
-        debugPrint("StatSystem ready (merged, BJ-free)")
+        debugPrint("StatSystem ready (merged, BJ-free, PD-sync)")
     end
 
     if OnInit and OnInit.final then

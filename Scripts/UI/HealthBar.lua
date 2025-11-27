@@ -17,7 +17,7 @@ do
     local FILL_W_PAD   = 0.04     -- padding for width of the fill
     local FILL_H_PAD   = 0.011     -- padding for height of the fill
     local FILL_PAD     = 0.006     -- inner padding from backdrop to fill
-    local BOTTOM_Y     = 0.06     -- distance from bottom of screen
+    local BOTTOM_Y     = 0.2     -- distance from bottom of screen
 
 
     local TEXT_SCALE   = 0.90
@@ -47,45 +47,46 @@ do
     local function wantWidth()  return BAR_W end
     local function wantHeight() return BAR_H end
 
-    local function ensureFrames(pid)
-        if root[pid] then return end
+local function ensureFrames(pid)
+    if root[pid] then return end
 
-        local parent = uiWorld()
-        local r = BlzCreateFrameByType("FRAME", "HPRoot"..pid, parent, "", 0)
-        root[pid] = r
-        BlzFrameSetLevel(r, 1)
-        BlzFrameSetSize(r, wantWidth(), wantHeight())
-        -- center bottom
-        BlzFrameSetPoint(r, FRAMEPOINT_BOTTOM, parent, FRAMEPOINT_BOTTOM, 0.0, BOTTOM_Y)
+    local parent = uiWorld()
+    local r = BlzCreateFrameByType("FRAME", "HPRoot"..pid, parent, "", 0)
+    root[pid] = r
+    BlzFrameSetLevel(r, 1)
+    BlzFrameSetSize(r, wantWidth(), wantHeight())
+    -- Change the point to top-right instead of bottom-center
+    BlzFrameSetPoint(r, FRAMEPOINT_TOPLEFT, parent, FRAMEPOINT_TOPLEFT, 0.0, 0.0)
 
-        -- Backdrop sits under the simple status bar
-        local bg = BlzCreateFrameByType("BACKDROP", "HPBg"..pid, uiRoot(), "", 0)
-        back[pid] = bg
-        BlzFrameSetAllPoints(bg, r)
-        BlzFrameSetTexture(bg, TEX_BACK, 0, true)
-        BlzFrameSetAlpha(bg, 180)
-        BlzFrameSetLevel(bg, 15)
+    -- Backdrop sits under the simple status bar
+    local bg = BlzCreateFrameByType("BACKDROP", "HPBg"..pid, uiRoot(), "", 0)
+    back[pid] = bg
+    BlzFrameSetAllPoints(bg, r)
+    BlzFrameSetTexture(bg, TEX_BACK, 0, true)
+    BlzFrameSetAlpha(bg, 180)
+    BlzFrameSetLevel(bg, 3)
 
-        -- Fill bar
-        local sb = BlzCreateFrameByType("SIMPLESTATUSBAR", "HPFill"..pid, bg, "", 0)
-        bar[pid] = sb
-        BlzFrameSetPoint(sb, FRAMEPOINT_TOPLEFT, r, FRAMEPOINT_TOPLEFT, FILL_W_PAD, -FILL_H_PAD)
-        BlzFrameSetPoint(sb, FRAMEPOINT_BOTTOMRIGHT, r, FRAMEPOINT_BOTTOMRIGHT, -FILL_W_PAD, FILL_H_PAD)
-        BlzFrameSetSize(sb, FILL_W_PAD, FILL_H_PAD)
-        BlzFrameSetTexture(sb, TEX_FILL, 0, false)  -- Apply the red fill texture
-        BlzFrameSetMinMaxValue(sb, 0, 1)  -- Min/max values (will be updated later)
-        BlzFrameSetValue(sb, 0)  -- Initial fill value (0)
-        BlzFrameSetLevel(sb, 3)  -- Set the fill level (highest, on top)
+    -- Fill bar
+    local sb = BlzCreateFrameByType("SIMPLESTATUSBAR", "HPFill"..pid, bg, "", 0)
+    bar[pid] = sb
+    BlzFrameSetPoint(sb, FRAMEPOINT_TOPLEFT, r, FRAMEPOINT_TOPLEFT, FILL_W_PAD, -FILL_H_PAD)
+    BlzFrameSetPoint(sb, FRAMEPOINT_BOTTOMRIGHT, r, FRAMEPOINT_BOTTOMRIGHT, -FILL_W_PAD, FILL_H_PAD)
+    BlzFrameSetSize(sb, FILL_W_PAD, FILL_H_PAD)
+    BlzFrameSetTexture(sb, TEX_FILL, 0, false)  -- Apply the red fill texture
+    BlzFrameSetMinMaxValue(sb, 0, 1)  -- Min/max values (will be updated later)
+    BlzFrameSetValue(sb, 0)  -- Initial fill value (0)
+    BlzFrameSetLevel(sb, 1)  -- Set the fill level (highest, on top)
 
-        -- Text
-        local t = BlzCreateFrameByType("TEXT", "HPText"..pid, uiRoot(), "", 0)
-        label[pid] = t
-        -- anchor in the visual center of the bar
-        BlzFrameSetPoint(t, FRAMEPOINT_CENTER, r, FRAMEPOINT_CENTER, 0.0, 0.0)
-        BlzFrameSetTextAlignment(t, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
-        BlzFrameSetScale(t, TEXT_SCALE)
-        BlzFrameSetText(t, "HP 0 / 0")
-    end
+    -- Text
+    local t = BlzCreateFrameByType("TEXT", "HPText"..pid, uiRoot(), "", 0)
+    label[pid] = t
+    -- anchor in the visual center of the bar
+    BlzFrameSetPoint(t, FRAMEPOINT_CENTER, r, FRAMEPOINT_CENTER, 0.0, 0.0)
+    BlzFrameSetTextAlignment(t, TEXT_JUSTIFY_CENTER, TEXT_JUSTIFY_MIDDLE)
+    BlzFrameSetScale(t, TEXT_SCALE)
+    BlzFrameSetText(t, "HP 0 / 0")
+end
+
 
     local function currentHero(pid)
         -- prefer PlayerData if present, else global mirror

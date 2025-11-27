@@ -208,88 +208,97 @@ do
     -- Evaluation (per player)
     --------------------------------------------------
     local function Evaluate(pid)
-        local GB = rawget(_G, "GameBalance")
-        if not GB then
-            return
-        end
+    local GB = rawget(_G, "GameBalance")
+    if not GB then
+        return
+    end
 
-        local perUnit = (GB.GetSpellUnlocksByUnit and GB.GetSpellUnlocksByUnit())
-            or GB.SPELL_UNLOCKS_BY_UNIT
-        if not perUnit then
-            return
-        end
+    local perUnit = (GB.GetSpellUnlocksByUnit and GB.GetSpellUnlocksByUnit())
+        or GB.SPELL_UNLOCKS_BY_UNIT
+    if not perUnit then
+        return
+    end
 
-        local hero = Hero(pid)
-        if not ValidUnit(hero) then
-            return
-        end
+    local hero = Hero(pid)
+    if not ValidUnit(hero) then
+        return
+    end
 
-        local unitTypeId = GetUnitTypeId(hero)
-        local list = perUnit[unitTypeId]
-        if not list then
-            return
-        end
+    local unitTypeId = GetUnitTypeId(hero)
+    local list = perUnit[unitTypeId]
+    if not list then
+        return
+    end
 
-        local role    = GetRole(pid)
-        local power   = GetPowerLevel(pid)
-        local soulLvl = GetSoulLevel(pid)
+    local role    = GetRole(pid)
+    local power   = GetPowerLevel(pid)
+    local soulLvl = GetSoulLevel(pid)
+    local knownSpell = ensureKnownTables(pid)
+    -- Get the player's known passive spells
+     -- This already gets passives from knownspells
 
-        for i = 1, #list do
-            local entry = list[i]
-            if entry then
-                local need = entry.need or {}
+    for i = 1, #list do
+        local entry = list[i]
+        if entry then
+            local need = entry.need or {}
 
-                local reqSL   = tonumber(need.sl_min or 0) or 0
-                local reqPL   = tonumber(need.pl_min or 0) or 0
-                local reqRole = need.role
-                local reqFam  = need.family
+            local reqSL   = tonumber(need.sl_min or 0) or 0
+            local reqPL   = tonumber(need.pl_min or 0) or 0
+            local reqRole = need.role
+            local reqFam  = need.family
 
-                local roleOK = (not reqRole) or (reqRole == role)
-                local famOK  = HasFamily(pid, reqFam)
-                local lvlOK  = (soulLvl >= reqSL)
-                local powOK  = (power >= reqPL)
+            local roleOK = (not reqRole) or (reqRole == role)
+            local famOK  = HasFamily(pid, reqFam)
+            local lvlOK  = (soulLvl >= reqSL)
+            local powOK  = (power >= reqPL)
 
-                if roleOK and famOK and lvlOK and powOK then
-                    -- Convert abil string to FourCC if needed
-                    local abilId = entry.abil
-                    if type(abilId) == "string" then
-                        abilId = FourCC(abilId)
+            if roleOK and famOK and lvlOK and powOK then
+
+                -- Continue with the existing ability unlocking logic
+                local abilId = entry.abila
+                if type(abilId) == "string" then
+                    abilId = FourCC(abilId)
+                end
+
+                local alreadyKnown = isKnown(pid, entry)
+                local gaveAbility  = false
+
+                if abilId and abilId ~= 0 then
+                    gaveAbility = TryGiveAbility(hero, abilId)
+                end
+
+                if (not alreadyKnown) or gaveAbility then
+                    markKnown(pid, entry)
+        
+                    local check = knownSpell.passives.soulSpirit
+                     if check  == true then Spell_SoulSpirit.setunit(hero) end
+                    -- Trigger ProcBus event for spell unlock
+                    if rawget(_G, "ProcBus") and ProcBus.Emit then
+                        ProcBus.Emit("OnSpellUnlocked", {
+                            pid   = pid,
+                            abil  = abilId,
+                            name  = entry.name or "Unknown",
+                            kind  = entry.type or "spell",
+                            reason = "auto",
+                        })
                     end
 
-                    local alreadyKnown = isKnown(pid, entry)
-                    local gaveAbility  = false
-
-                    if abilId and abilId ~= 0 then
-                        gaveAbility = TryGiveAbility(hero, abilId)
-                    end
-
-                    if (not alreadyKnown) or gaveAbility then
-                        markKnown(pid, entry)
-
-                        if rawget(_G, "ProcBus") and ProcBus.Emit then
-                            ProcBus.Emit("OnSpellUnlocked", {
-                                pid   = pid,
-                                abil  = abilId,
-                                name  = entry.name or "Unknown",
-                                kind  = entry.type or "spell",
-                                reason = "auto",
-                            })
-                        end
-
-                        if Debug and Debug.log then
-                            Debug.log(
-                                "[SpellUnlock] " ..
-                                tostring(entry.name) ..
-                                " (p" .. tostring(pid) ..
-                                ", SL " .. tostring(soulLvl) ..
-                                ", PL " .. tostring(power) .. ")"
-                            )
-                        end
+                    if Debug and Debug.log then
+                        Debug.log(
+                            "[SpellUnlock] " ..
+                            tostring(entry.name) ..
+                            " (p" .. tostring(pid) ..
+                            ", SL " .. tostring(soulLvl) ..
+                            ", PL " .. tostring(power) .. ")"
+                        )
                     end
                 end
             end
         end
     end
+end
+
+
 
     --------------------------------------------------
     -- Public API

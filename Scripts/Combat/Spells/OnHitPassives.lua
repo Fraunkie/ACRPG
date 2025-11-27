@@ -202,13 +202,6 @@ do
                 -- apply as magic so we get BLUE tag
                 applyBonusMagic(src, tgt, bonus)
 
-                -- Check if Phantom Echo is unlocked and apply
-                if p.id == "PHANTOM_ECHO" then
-                    if isPassiveUnlockedFor(pid, FourCC("A0PE")) then
-                        -- Apply Phantom Echo buff
-                        Spell_PassivePhantomEcho.AddToUnit(src)
-                    end
-                end
             else
                 if DEBUG then
                     DisplayTextToPlayer(
